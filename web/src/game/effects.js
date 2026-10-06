@@ -246,7 +246,7 @@ export const EFFECTS = {
   SANDSTORM: (ctx) => ctx.b.setWeather('SAND'), HAIL: (ctx) => ctx.b.setWeather('HAIL'),
   WATER_SPORT: (ctx) => { ctx.b.sides[ctx.us].waterSport = true; ctx.b.msg("FIRE's power was weakened!"); },
   MUD_SPORT: (ctx) => { ctx.b.sides[ctx.us].mudSport = true; ctx.b.msg("ELECTRICITY's power was weakened!"); },
-  DISABLE: (ctx) => { ctx.b.sides[ctx.them].disabled = 2; ctx.b.msg(`${ctx.b.sideName(ctx.them)}'s move was disabled!`); },
+  DISABLE: (ctx) => { ctx.b.sides[ctx.them].disabled = 1; ctx.b.msg(`${ctx.b.sideName(ctx.them)}'s move was disabled!`); },
   ENCORE: (ctx) => { ctx.b.sides[ctx.them].disabled = 1; ctx.b.msg(`${ctx.b.sideName(ctx.them)} got an ENCORE!`); },
   TAUNT: (ctx) => { ctx.b.sides[ctx.them].taunt = 3; ctx.b.msg(`${ctx.b.sideName(ctx.them)} fell for the TAUNT!`); },
   TORMENT: (ctx) => { ctx.b.sides[ctx.them].torment = true; ctx.b.msg(`${ctx.b.sideName(ctx.them)} was subjected to TORMENT!`); },

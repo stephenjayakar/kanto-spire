@@ -258,7 +258,7 @@ PSYCHIC · HP 25 · ATK 20 · DEF 15 · SPA 105 · SPD 55 · SPE 90 (total 310) 
 | CONFUSION | PSYCHIC | Special | 50 | 100 | 25 | 5 | 10% chance to confuse. |
 | POUND | NORMAL | Physical | 40 | 100 | 35 | 6 | Plain hit. |
 | KINESIS | PSYCHIC | Status | - | 80 | 15 | 1 | **FOE ACC -1** |
-| DISABLE | NORMAL | Status | - | 55 | 20 | 1 | **DISABLE**: Blocks the foe's next two moves. |
+| DISABLE | NORMAL | Status | - | 55 | 20 | 1 | **DISABLE**: Blocks the foe's next move. |
 
 #### 11. SWINUB
 

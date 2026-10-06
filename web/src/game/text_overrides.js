@@ -104,7 +104,7 @@ export const MOVE_DESC = {
   GRUDGE: 'If the user faints this turn, the foe faints too (bosses lose 40% of their HP).',
   DESTINY_BOND: 'If the user faints this turn, the foe faints too (bosses lose 40% of their HP).',
   TORMENT: 'Has no effect here.',
-  DISABLE: "The foe's next two moves are blocked.",
+  DISABLE: "The foe's next move is blocked.",
   ENCORE: 'The foe loses its next move.',
   MAGIC_COAT: 'The next status move the foe aims at you is reflected back at it.',
   SNATCH: 'Works like MAGIC COAT: the next status move the foe aims at you is reflected back.',
