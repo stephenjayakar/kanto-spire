@@ -1,0 +1,15 @@
+rom/
+pokefirered/
+node_modules/
+web/assets/
+*.wav
+test-results/
+tests/out/
+tools/gfx_verify/
+.env.local
+.convex/
+web/cloud.json
+dist/
+.openai/
+__pycache__/
+tests/adversarial*/

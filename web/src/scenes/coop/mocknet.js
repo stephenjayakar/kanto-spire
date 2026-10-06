@@ -1,0 +1,231 @@
+// DEV ONLY (?coopdev on the local, offline build): a fake co-op server living in IndexedDB, with the same
+// exports and return shapes as net/coopnet.js. Tabs of the same origin share it, each tab is one player
+// (identity in sessionStorage; ?coopdev=Name picks the display name). Never used when Cloud.url is set.
+// Every call is ONE IndexedDB transaction, serialized across tabs like a Convex mutation (the old localStorage
+// store lost writes when 3-4 tabs posted at once: each tab's cached copy overwrote the others').
+import { coopAscCap } from '../../game/unlocks.js';
+import { COOP_WORLDS } from '../../game/regions.js';
+const DB_NAME = 'kantospire-coopdev', STORE = 'rooms';
+const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+export const MAX_MEMBERS = 4; // (same as convex/coop.ts)
+// (same rules as convex/coop.ts: members without maxPlayers are older 2-player clients and keep the room at 2)
+const supports = (m) => Math.max(2, Math.min(MAX_MEMBERS, Math.floor(m.maxPlayers ?? 2)));
+const roomCap = (members, joiner) => Math.min(MAX_MEMBERS, ...members.map(supports), ...(joiner ? [supports(joiner)] : []));
+const CLIENT_MAX = MAX_MEMBERS; // what this (mock) client sends as maxPlayers
+
+function me() {
+  let id = null;
+  try { id = JSON.parse(sessionStorage.getItem('coopdev.me')); } catch {}
+  const want = new URLSearchParams(location.search).get('coopdev');
+  if (!id) id = { email: 'tab' + Math.random().toString(36).slice(2, 8) + '@dev', name: '' };
+  if (want && want !== '1') id.name = want.slice(0, 12);
+  if (!id.name) id.name = 'TAB-' + id.email.slice(3, 7).toUpperCase();
+  sessionStorage.setItem('coopdev.me', JSON.stringify(id));
+  return id;
+}
+const delay = (v) => new Promise((res, rej) => setTimeout(() => (v instanceof Error ? rej(v) : res(v)), 40 + Math.random() * 60));
+let dbP = null;
+const idb = () => (dbP ||= new Promise((res, rej) => {
+  const r = indexedDB.open(DB_NAME, 1);
+  r.onupgradeneeded = () => r.result.createObjectStore(STORE, { keyPath: '_id' });
+  r.onsuccess = () => res(r.result);
+  r.onerror = () => rej(r.error);
+}));
+// One atomic step over the room records: fn(rooms, put, del) runs inside a single transaction (rooms = [that room]
+// for an id, else every room); put(room) / del(room) are written when fn returns, nothing if it throws. Resolves
+// (or rejects) with a clone of fn's result after a fake network delay.
+async function atomic(fn, { id = null, write = true } = {}) {
+  const db = await idb();
+  const out = await new Promise((res, rej) => {
+    const t = db.transaction(STORE, write ? 'readwrite' : 'readonly'), st = t.objectStore(STORE);
+    let val, err = null;
+    const q = id !== null ? st.get(id) : st.getAll();
+    q.onsuccess = () => {
+      const rooms = id !== null ? (q.result ? [q.result] : []) : q.result;
+      const puts = new Set(), dels = new Set();
+      try { val = structuredClone(fn(rooms, (r) => puts.add(r), (r) => dels.add(r))); } catch (e) { err = e; return; }
+      for (const r of puts) if (!dels.has(r)) st.put(r);
+      for (const r of dels) st.delete(r._id);
+    };
+    t.oncomplete = () => (err ? rej(err) : res(val));
+    t.onabort = t.onerror = () => rej(err || t.error);
+  }).catch(e => (e instanceof Error ? e : new Error(String(e))));
+  return delay(out);
+}
+
+function withRoom(roomId, fn, { write = false } = {}) {
+  const self = me();
+  return atomic(([room], put) => {
+    const mine = room?.members.find(m => m.email === self.email);
+    if (!room || !mine || room.status === 'deleted') throw new Error('Room not found');
+    const out = fn(room, mine, self);
+    if (write) { room.updatedAt = Date.now(); put(room); }
+    return out;
+  }, { id: roomId, write });
+}
+function view(room, mine) {
+  const members = [...room.members].sort((a, b) => a.slot - b.slot).map(m => ({ slot: m.slot, name: m.name, starter: m.starter ?? null, ascMax: m.ascMax ?? null, sketchV: m.sketchV ?? 0, ready: m.ready, left: !!m.left, lastSeen: m.lastSeen, lastSeq: m.lastSeq, maxPlayers: supports(m) }));
+  const host = room.members.find(m => m.email === room.host);
+  return {
+    room: { _id: room._id, code: room.code, status: room.status, host: host ? host.slot : 0, ascension: room.ascension, world: room.world, seed: room.seed, nextSeq: room.nextSeq, createdAt: room.createdAt, updatedAt: room.updatedAt, maxPlayers: roomCap(room.members) },
+    members, me: mine.slot, isHost: mine.email === room.host,
+  };
+}
+const lobbyHost = (room, mine) => {
+  if (room.host !== mine.email) throw new Error('Only the host can do that.');
+  if (room.status !== 'lobby') throw new Error('The run has already started.');
+};
+
+export function randomNonce() { return Math.random().toString(36).slice(2) + Date.now().toString(36); }
+export const isNetworkError = () => false;
+
+export function createRoom(opts = {}) {
+  const self = me();
+  return atomic((rooms, put) => {
+    const now = Date.now();
+    let code;
+    do { code = Array.from({ length: 5 }, () => ALPHABET[Math.floor(Math.random() * ALPHABET.length)]).join(''); } while (rooms.some(r => r.code === code && r.status !== 'closed'));
+    const _id = 'dev_' + randomNonce();
+    put({
+      _id, code, status: 'lobby', host: self.email, ascension: opts.ascension ?? 0, world: opts.world ?? 'kanto',
+      seed: String(Math.floor(Math.random() * 2 ** 31)), nextSeq: 1, createdAt: now, updatedAt: now, actions: [],
+      members: [{ email: self.email, name: self.name, slot: 0, ready: false, starter: null, lastSeen: now, lastSeq: 0, joinedAt: now, maxPlayers: opts.maxPlayers ?? CLIENT_MAX }],
+    });
+    return { roomId: _id, code };
+  });
+}
+export function joinRoom(code, maxPlayers = CLIENT_MAX) {
+  const self = me();
+  code = String(code || '').trim().toUpperCase();
+  return atomic((rooms, put) => {
+    const now = Date.now();
+    const room = rooms.find(r => r.code === code && r.status !== 'closed' && r.status !== 'deleted');
+    if (!room) throw new Error('Room not found');
+    const mine = room.members.find(m => m.email === self.email);
+    if (mine) { // (rejoining by code undoes a delete from the REJOIN list, as on the server)
+      if (mine.dismissed || mine.left) { mine.dismissed = false; mine.left = false; mine.lastSeen = now; put(room); }
+      return { roomId: room._id, slot: mine.slot, code: room.code, status: room.status };
+    }
+    if (room.status !== 'lobby') throw new Error('Room not found');
+    if (room.members.length >= roomCap(room.members, { maxPlayers })) throw new Error('That room is full.');
+    let slot = 0;
+    while (room.members.some(m => m.slot === slot)) slot++;
+    room.members.push({ email: self.email, name: self.name, slot, ready: false, starter: null, lastSeen: now, lastSeq: 0, joinedAt: now, maxPlayers });
+    room.updatedAt = now;
+    put(room);
+    return { roomId: room._id, slot, code: room.code, status: room.status };
+  });
+}
+export const getRoom = (roomId) => withRoom(roomId, (room, mine) => ({ ...view(room, mine), now: Date.now() }));
+// (same rules as convex/coop.ts: the room's ascension is capped by the lower of the members' ascMax)
+export const setStarter = (roomId, starter, ascMax) => withRoom(roomId, (room, mine) => {
+  if (room.status !== 'lobby') throw new Error('The run has already started.');
+  mine.starter = starter; mine.lastSeen = Date.now();
+  if (ascMax !== undefined) mine.ascMax = Math.max(0, Math.min(10, ascMax | 0));
+  room.ascension = Math.min(room.ascension, coopAscCap(room.members));
+  return null;
+}, { write: true });
+// map sketches (same rules as convex/coop.ts setSketch / sketches)
+export const setSketch = (roomId, sketch, all = false) => withRoom(roomId, (room, mine) => {
+  mine.sketch = sketch; mine.sketchV = (mine.sketchV ?? 0) + 1;
+  if (all) for (const m of room.members) if (m !== mine) { m.sketch = ''; m.sketchV = (m.sketchV ?? 0) + 1; }
+  return { v: mine.sketchV };
+}, { write: true });
+export const getSketches = (roomId) => withRoom(roomId, (room) => room.members.map(m => ({ slot: m.slot, sketch: m.sketch || null, sketchV: m.sketchV ?? 0 })));
+export const setReady = (roomId, ready) => withRoom(roomId, (room, mine) => { if (room.status !== 'lobby') throw new Error('The run has already started.'); mine.ready = !!ready; mine.lastSeen = Date.now(); return null; }, { write: true });
+export const configure = (roomId, opts = {}) => withRoom(roomId, (room, mine) => {
+  lobbyHost(room, mine);
+  if (opts.ascension !== undefined) room.ascension = Math.min(Math.max(0, Math.min(10, opts.ascension | 0)), coopAscCap(room.members));
+  if (opts.world !== undefined) room.world = COOP_WORLDS.includes(opts.world) ? opts.world : 'spire';
+  return { ascension: room.ascension, world: room.world };
+}, { write: true });
+export const startRoom = (roomId) => withRoom(roomId, (room, mine) => {
+  lobbyHost(room, mine);
+  const ms = [...room.members].sort((a, b) => a.slot - b.slot);
+  if (ms.length < 2) throw new Error('Waiting for a second player.');
+  if (ms.some(m => !m.starter)) throw new Error('Every player needs a starter.');
+  if (ms.length > roomCap(ms)) throw new Error('Every player needs the latest version for 3-4 players: reload the page.');
+  if (room.ascension > coopAscCap(ms)) throw new Error("That ascension isn't unlocked for every starter.");
+  // slots are renumbered 0..n-1 in seat order (a lobby leaver can leave a gap); the init lists them in that order
+  ms.forEach((m, i) => { m.slot = i; });
+  room.actions.push({ seq: 1, p: 0, json: JSON.stringify({ type: 'init', seed: room.seed, ascension: room.ascension, world: room.world, starters: ms.map(m => m.starter), names: ms.map(m => m.name), nonce: 'init' }) });
+  room.status = 'playing'; room.nextSeq = 2;
+  return { seq: 1 };
+}, { write: true });
+export const leaveRoom = (roomId) => withRoom(roomId, (room, mine) => {
+  if (room.status === 'lobby') {
+    room.members = room.members.filter(m => m !== mine);
+    if (room.host === mine.email) room.status = 'closed';
+  } else if (room.status === 'playing') mine.left = true;
+  return { closed: room.status === 'closed' };
+}, { write: true });
+// (same rules as convex/coop.ts dismiss)
+export const dismissRoom = (roomId) => withRoom(roomId, (room, mine) => {
+  if (room.status === 'lobby') {
+    room.members = room.members.filter(m => m !== mine);
+    if (room.host === mine.email) room.status = 'closed';
+  } else { mine.dismissed = true; mine.left = true; }
+  if (room.members.every(m => m.dismissed)) { room.status = 'deleted'; return { deleted: true }; }
+  return { deleted: false };
+}, { write: true });
+export function myRooms() {
+  const self = me(), cutoff = Date.now() - 864e5;
+  return atomic((rooms, put, del) => {
+    for (const r of rooms) if (r.status === 'deleted') del(r);
+    const out = rooms.filter(r => r.status !== 'closed' && r.status !== 'deleted' && r.updatedAt > cutoff && r.members.some(m => m.email === self.email && !m.dismissed)).map(r => ({
+      roomId: r._id, code: r.code, status: r.status, ascension: r.ascension, world: r.world, slot: r.members.find(m => m.email === self.email).slot,
+      isHost: r.host === self.email, nextSeq: r.nextSeq, createdAt: r.createdAt, updatedAt: r.updatedAt,
+      members: r.members.map(m => ({ slot: m.slot, name: m.name, starter: m.starter ?? null, left: !!m.left })),
+    }));
+    return out.sort((a, b) => b.updatedAt - a.updatedAt);
+  });
+}
+export const heartbeat = (roomId, seq) => withRoom(roomId, (room, mine) => {
+  mine.lastSeen = Date.now(); if (seq != null) mine.lastSeq = seq; if (mine.left && room.status === 'playing') mine.left = false;
+  return { now: mine.lastSeen };
+}, { write: true });
+export const postAction = (roomId, action) => withRoom(roomId, (room, mine) => {
+  if (room.status !== 'playing') throw new Error('The run is not in progress.');
+  const { seq: _s, p: _p, ...rest } = action || {};
+  const nonce = rest.nonce || randomNonce();
+  const dup = room.actions.find(a => (a.nonce ?? JSON.parse(a.json).nonce) === nonce);
+  if (dup) return { seq: dup.seq, nonce, duplicate: true };
+  const seq = room.nextSeq++;
+  room.actions.push({ seq, p: mine.slot, nonce, json: JSON.stringify({ ...rest, nonce }) });
+  if (mine.left) mine.left = false;
+  return { seq, nonce, duplicate: false };
+}, { write: true });
+export const fetchSince = (roomId, after = 0) => withRoom(roomId, (room, mine) => {
+  const actions = room.actions.filter(a => a.seq > after).slice(0, 200).map(a => ({ ...JSON.parse(a.json), seq: a.seq, p: a.p }));
+  const last = actions.length ? actions[actions.length - 1].seq : after;
+  return { actions, more: last < room.nextSeq - 1, status: room.status, ...view(room, mine), now: Date.now() };
+});
+
+// Same interface as coopnet's CoopPoller.
+export class CoopPoller {
+  constructor(roomId, { intervalMs = 700, after = 0, onActions, onRoom, onError } = {}) {
+    Object.assign(this, { roomId, intervalMs, after, onActions, onRoom, onError, running: false, busy: false, _timer: null, _gen: 0 });
+  }
+  start() { if (!this.running) { this.running = true; this._schedule(0); } return this; }
+  stop() { this.running = false; this._gen++; clearTimeout(this._timer); return this; }
+  setAfter(seq) { this.after = Math.max(0, seq | 0); this._gen++; if (this.running && !this.busy) this._schedule(0); return this; }
+  kick() { if (this.running && !this.busy) this._schedule(0); return this; }
+  _schedule(ms) { clearTimeout(this._timer); this._timer = setTimeout(() => this._tick(), ms); }
+  async _tick() {
+    if (!this.running || this.busy) return;
+    this.busy = true;
+    const gen = this._gen;
+    let next = this.intervalMs;
+    try {
+      const r = await fetchSince(this.roomId, this.after);
+      if (gen === this._gen && this.running) {
+        const fresh = r.actions.filter(a => a.seq > this.after);
+        if (fresh.length) { this.after = fresh[fresh.length - 1].seq; await this.onActions?.(fresh); }
+        await this.onRoom?.(r.room, r.members, { room: r.room, members: r.members, me: r.me, isHost: r.isHost, status: r.status, now: r.now });
+        if (r.more && fresh.length) next = 0;
+      } else next = 0;
+    } catch (e) { try { this.onError?.(e); } catch {} }
+    finally { this.busy = false; }
+    if (this.running) this._schedule(next);
+  }
+}

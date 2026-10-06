@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kanto Spire — a FireRed roguelike</title>
+<link rel="icon" href="data:,">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=6, user-scalable=yes">
+<style>
+  html, body { margin: 0; height: 100%; background: #08090d; overflow: hidden; }
+  body { display: flex; align-items: center; justify-content: center; }
+  canvas { image-rendering: pixelated; image-rendering: crisp-edges; display: block; outline: none; touch-action: pinch-zoom; }
+  #loading { position: absolute; color: #ddd; font: 14px monospace; }
+  [hidden] { display: none !important; }
+  #signin { color: #e8e8f0; font: 15px/1.5 ui-monospace, Consolas, monospace; text-align: center; max-width: 420px; padding: 32px 28px;
+    background: #161a26; border: 3px solid #2c3346; border-radius: 10px; box-shadow: 0 8px 0 #0c0e14; }
+  #signin h1 { margin: 0 0 6px; font-size: 30px; letter-spacing: 2px; color: #f8d038; text-shadow: 3px 3px 0 #7a5a10; }
+  #signin p { margin: 6px 0 18px; color: #a8b0c8; }
+  #signin button { font: inherit; font-weight: bold; color: #fff; background: #3a9a58; border: 0; border-radius: 6px; padding: 12px 22px;
+    box-shadow: 0 4px 0 #1f5a32; cursor: pointer; }
+  #signin button:disabled { background: #556; box-shadow: 0 4px 0 #334; cursor: default; }
+  #privacy { color: #d8dcea; font: 15px/1.6 ui-monospace, Consolas, monospace; max-width: 680px; padding: 20px; align-self: flex-start; }
+  #privacy h1 { color: #f8d038; font-size: 26px; } #privacy h2 { color: #fff; font-size: 17px; margin-top: 24px; } #privacy a { color: #8ab4f8; }
+  body.page { overflow: auto; }
+  #signin-error { color: #ff7a7a; min-height: 1.5em; margin: 14px 0 0 !important; }
+</style>
+</head>
+<body>
+<div id="loading">Loading Kanto Spire...</div>
+<div id="privacy" hidden><h1>Kanto Spire: privacy</h1>
+<p>Kanto Spire is a small, private, non-commercial fan game. Playing it requires signing in with Google, and only invited accounts can play.</p>
+<h2>What we store</h2>
+<ul>
+  <li>Your Google account's email address, name and profile picture URL, to sign you in and check that you are invited.</li>
+  <li>Your game data: save file, unlocks, trainer name, finished runs and a log of how each run went (battles, picks, purchases), used to show records and to balance the game.</li>
+</ul>
+<h2>What we don't do</h2>
+<ul>
+  <li>We don't sell or share your data, show ads, or use it for anything except running this game.</li>
+  <li>We only ask Google for your basic profile and email; we can't see anything else in your account.</li>
+</ul>
+<h2>Where it lives</h2>
+<p>Data is stored with Convex (the game's backend). The game itself is hosted on ChatGPT Sites.</p>
+<h2>Deleting your data</h2>
+<p>Email <a href="mailto:aj12ay@gmail.com">aj12ay@gmail.com</a> and your account and game data will be deleted.</p>
+<p><a href="/">Back to the game</a></p></div>
+<div id="signin" hidden>
+  <h1>KANTO SPIRE</h1>
+  <p id="signin-msg">A roguelike deckbuilder. Sign in to load the game, your save and your records.</p>
+  <button id="signin-btn">Sign in with Google</button>
+  <p id="signin-error"></p>
+</div>
+<canvas id="game" tabindex="0"></canvas>
+<script type="module" src="src/main.js"></script>
+</body>
+</html>
