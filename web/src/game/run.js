@@ -17,7 +17,7 @@ export const ASCENSIONS = [
   { n: 2, name: 'Fog of War', desc: 'Enemy moves are hidden (no intent, no move list). Foes are 1 level higher; you earn 10% less EXP.' },
   { n: 3, name: 'Gym Prep', desc: 'Bosses and the ELITE FOUR are 2 levels higher with 10% more HP.' },
   { n: 4, name: 'Shoestring', desc: 'Start with less money, fewer POKé BALLS and no POTIONS. Shop prices +25% and battles pay 20% less.' },
-  { n: 5, name: 'Level Cap', desc: "Battle EXP stops at each act's level cap: its boss's top level +2. EXP past the cap goes to your lowest-level POKéMON." },
+  { n: 5, name: 'Level Cap', desc: "Battle EXP stops at each act's level cap: its boss's top level +2. EXP past the cap is lost." },
   { n: 6, name: 'Reinforcements', desc: 'From mid Act 1 on, trainers and elites bring one more POKéMON (worth no EXP).' },
   { n: 7, name: 'Bulky Foes', desc: 'Enemies have 15% more HP.' },
   { n: 8, name: 'Nuzlocke', desc: 'A POKéMON that faints in battle is released for good. Only the first wild POKéMON of each act can be caught.' },
@@ -690,10 +690,9 @@ export class Run {
 
   // Distribute EXP: lead/participants full, bench half (Exp. Share: full), each share scaled by the recipient's level
   // against every defeated foe's (expLevelScale). POKéMON fainted when the battle ended get nothing (Gen 3), even if
-  // revived since (result.fainted). A5+: a POKéMON stops at the level cap and the rest of its share flows to the
-  // lowest-level teammates still under the cap (not fainted). Returns [{mon, gained, events, before, scale, capped,
-  // passed: [{mon, exp}], extra}] (scale: the level multiplier for the reward screen's OVERLEVELED / UNDERLEVELED tag;
-  // capped: it hit / sits at the cap, passed: where its overflow went; extra: overflow EXP it got from capped teammates).
+  // revived since (result.fainted). A5+: a POKéMON stops at the level cap and the rest of its share is lost.
+  // Returns [{mon, gained, events, before, scale, capped}] (scale: the level multiplier for the reward screen's
+  // OVERLEVELED / UNDERLEVELED tag; capped: it hit / sits at the cap).
   distributeExp(result, battleKind) {
     const out = [];
     if (!result.exp) return out;
@@ -709,25 +708,12 @@ export class Run {
       const scale = expShareScale(result.foes, mon.level);
       const share = Math.max(1, Math.floor(total * (full ? 1 : 0.5) * scale));
       const take = Math.min(share, room(mon));
-      list.push({ mon, scale, take, over: share - take, extra: 0, passed: [] });
-    }
-    // overflow past the cap: to the lowest-level POKéMON still under it (party order breaks ties)
-    const under = list.filter(e => room(e.mon) > e.take).sort((a, b) => a.mon.level - b.mon.level);
-    for (const src of list) {
-      let left = src.over;
-      for (const dst of under) {
-        if (left <= 0) break;
-        if (dst === src) continue;
-        const n = Math.min(left, room(dst.mon) - dst.take - dst.extra);
-        if (n <= 0) continue;
-        dst.extra += n; left -= n;
-        src.passed.push({ mon: dst.mon, exp: n });
-      }
+      list.push({ mon, scale, take, over: share - take });
     }
     for (const e of list) {
-      const before = e.mon.level, gained = e.take + e.extra;
+      const before = e.mon.level, gained = e.take;
       const events = gained > 0 ? gainExp(e.mon, gained) : [];
-      out.push({ mon: e.mon, gained, events, before, scale: e.scale, capped: e.over > 0, passed: e.passed, extra: e.extra });
+      out.push({ mon: e.mon, gained, events, before, scale: e.scale, capped: e.over > 0 });
     }
     return out;
   }

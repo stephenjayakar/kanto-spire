@@ -280,7 +280,7 @@ export function drawHUD(ctx, run, opts = {}) {
     const cx = 6 + measure(opts.title || `${act.short}`) + 6, cw = measure(`Lv cap ${cap}`, 'small');
     if (cx + cw <= 108) {
       text(ctx, `Lv cap ${cap}`, cx, 3, { color: 'orange', font: 'small' });
-      if (hover(cx - 2, 0, cw + 4, 13)) tip(`LEVEL CAP: Lv${cap}`, `A${LEVEL_CAP_ASC}+: battle EXP stops at Lv${cap} in this act (its boss's top level +${TUNING.levelCapOffset}). EXP past the cap goes to your lowest-level POKéMON. RARE CANDY can still go past it.`, { width: 200 });
+      if (hover(cx - 2, 0, cw + 4, 13)) tip(`LEVEL CAP: Lv${cap}`, `A${LEVEL_CAP_ASC}+: battle EXP stops at Lv${cap} in this act (its boss's top level +${TUNING.levelCapOffset}). EXP past the cap is lost. RARE CANDY can still go past it.`, { width: 200 });
     }
   }
   text(ctx, opts.subtitle || (run.floor >= 0 ? (run.floor >= act.floors ? 'BOSS' : `FLOOR ${run.floor + 1}/${act.floors}`) : act.name), 6, 13, { color: 'gray', font: 'small' });

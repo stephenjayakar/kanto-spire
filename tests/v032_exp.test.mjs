@@ -238,29 +238,16 @@ t('cap: a POKéMON at the cap gets no battle EXP; one below stops exactly at the
   assert.ok(run4.party.every(m => m.level > cap));
 });
 
-t('cap: the EXP past the cap flows to the lowest-level teammates under it (never to fainted ones)', () => {
-  const run = cappedParty([18, 12, 9, 7]);
-  const [top, mid, low, down] = run.party;
-  down.hp = 0;
-  const r = res(run, 300, 15, [top]);
-  const lowExp = low.exp, midExp = mid.exp, downExp = down.exp;
-  const out = run.distributeExp(r, 'trainer');
-  const rt = out.find(x => x.mon === top), rl = out.find(x => x.mon === low), rm = out.find(x => x.mon === mid);
+t('cap: the EXP past the cap is lost (teammates only get their own share)', () => {
+  const run = cappedParty([18, 12, 9]);
+  const [top, mid, low] = run.party;
+  const before = run.party.map(m => m.exp);
+  const out = run.distributeExp(res(run, 300, 15, [top]), 'trainer');
+  const rt = out.find(x => x.mon === top), rl = out.find(x => x.mon === low);
   assert.ok(rt.capped && rt.gained === 0);
-  const share = Math.max(1, Math.floor(300 * TUNING.expMult * 0.9 * expLevelScale(15, 18)));
-  assert.deepEqual(rt.passed.map(p => [p.mon.uid, p.exp]), [[low.uid, share]], 'all of it to the lowest-level POKéMON standing');
-  assert.equal(rl.extra, share);
-  assert.equal(low.exp - lowExp, rl.gained);
-  assert.equal(rl.gained, Math.max(1, Math.floor(300 * TUNING.expMult * 0.9 * 0.5 * expLevelScale(15, 9))) + share);
-  assert.equal(rm.extra, 0); assert.ok(mid.exp > midExp);
-  assert.ok(!out.some(x => x.mon === down)); assert.equal(down.exp, downExp);
-  // overflow bigger than the lowest one's room: the rest goes to the next lowest
-  const run2 = cappedParty([18, 17, 16]);
-  const [t2, m2, l2] = run2.party;
-  const out2 = run2.distributeExp(res(run2, 1500, 15, [t2]), 'trainer');
-  const p2 = out2.find(x => x.mon === t2).passed;
-  assert.equal(p2[0].mon, l2); assert.equal(p2[1]?.mon, m2, 'then the next lowest');
-  assert.ok(run2.party.every(m => m.level <= run2.levelCap()));
+  assert.equal(top.exp, before[0], 'the capped POKéMON gets nothing');
+  assert.equal(rl.gained, Math.max(1, Math.floor(300 * TUNING.expMult * 0.9 * 0.5 * expLevelScale(15, 9))), 'no overflow on top of its own bench share');
+  assert.ok(!('passed' in rt) && !('extra' in rl));
 });
 
 t('cap: RARE CANDY still goes past the cap', () => {
@@ -300,7 +287,7 @@ t('A5+: a win still unlocks the starter\'s shiny (A4 doesn\'t)', () => {
   assert.equal(unlockShiny(Run.create({ seed: 'S', starter: 'BULBASAUR', ascension: 5 }), meta), 'BULBASAUR');
 });
 
-t('co-op A5: the room\'s ascension caps each player\'s own team (and the overflow stays in that team)', () => {
+t('co-op A5: the room\'s ascension caps each player\'s own team (EXP past the cap is lost)', () => {
   const g = CoopGame.fromInit({ ...INIT('XCAP'), ascension: 5 });
   const caps = g.runs.map(r => r.levelCap());
   assert.ok(caps.every(c => c === 16 + TUNING.levelCapOffset), JSON.stringify(caps));
@@ -309,7 +296,7 @@ t('co-op A5: the room\'s ascension caps each player\'s own team (and the overflo
   top.level = caps[0]; top.exp = expForLevel(D.species[top.species].growthRate, top.level);
   const low = makeMon('RATTATA', 5, { rng: r0.rng }); r0.party.push(low);
   const out = r0.distributeExp({ outcome: 'win', exp: 200, foes: [{ level: 10, exp: 200 }], participants: [top.uid], fainted: [] }, 'wild');
-  assert.ok(out.find(x => x.mon === top).capped && out.find(x => x.mon === low).extra > 0);
+  assert.ok(out.find(x => x.mon === top).capped && out.find(x => x.mon === top).gained === 0);
   assert.ok(r1.party.every(m => !out.some(x => x.mon === m)), 'the partner\'s team is untouched');
   const g0 = CoopGame.fromInit(INIT('XCAP'));
   assert.ok(g0.runs.every(r => r.levelCap() === null), 'A0 room: no cap');

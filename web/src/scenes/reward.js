@@ -201,15 +201,14 @@ export class RewardScene {
       const lvUp = r && m.level > (bef?.level || 0) && this.expAnim >= 1 ? `LEVEL UP! (${bef.level}→${m.level})` : null;
       if (lvUp) text(ctx, lvUp, 58, y + 24, { color: 'gold', font: 'small' });
       // scaled EXP (run.distributeExp r.scale): over-leveled POKéMON earned less, under-leveled ones a bonus;
-      // A5+ level cap (r.capped): the EXP past the cap went to teammates (r.passed)
+      // A5+ level cap (r.capped): the EXP past the cap is lost
       const pct = r && r.scale ? Math.round((r.scale - 1) * 100) : 0;
-      const passed = r?.passed?.reduce((a, p) => a + p.exp, 0) || 0;
-      const tag = r?.capped ? (passed ? `CAPPED, +${passed} EXP to ${monName(r.passed[0].mon)}${r.passed.length > 1 ? ' +' + (r.passed.length - 1) : ''}` : 'CAPPED')
+      const tag = r?.capped ? 'CAPPED'
         : pct <= -1 ? `${pct}% overleveled` : pct >= 1 ? `+${pct}% underleveled` : null;
       const tagW = tag ? Math.min(measure(tag, 'small'), 188 - (lvUp ? measure(lvUp, 'small') + 6 : 0)) : 0;
       if (tag) textFit(ctx, tag, 246, y + 24, tagW, { align: 'right', color: r.capped ? 'orange' : pct < 0 ? 'gray' : ['#80d0ff', '#203850'], font: 'small' });
       if (tag && hover(246 - tagW - 2, y + 22, tagW + 4, 14)) {
-        if (r.capped) tip('LEVEL CAP', `${monName(m)} is at this act's level cap (Lv${G.run.levelCap?.() ?? m.level}), so it earns no more battle EXP. ${passed ? r.passed.map(p => `+${p.exp} EXP went to ${monName(p.mon)}`).join(', ') + '.' : 'Everyone else is capped or fainted: the EXP was lost.'}`, { width: 190, x: 262, y });
+        if (r.capped) tip('LEVEL CAP', `${monName(m)} is at this act's level cap (Lv${G.run.levelCap?.() ?? m.level}), so the battle EXP past the cap is lost. Rotate in a lower-level POKéMON.`, { width: 190, x: 262, y });
         else tip('SCALED EXP', 'POKéMON above the foe\'s level earn less EXP (below it, more): rotate your team!', { width: 180, x: 262, y });
       } else if (hover(6, y - 4, 250, 40)) monTooltip(m, 262, y);
     });

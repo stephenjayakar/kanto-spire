@@ -160,7 +160,7 @@ const ABOUT = [
     'PP is actually how many cards you have for each move (attacks get PP/10 + 1 cards, 2 to 5; status moves 1 or 2)',
     'You play multiple "moves" per turn',
     'You only have a team of 6 max. Catching a new Pokemon replaces one',
-    'EXP is scaled like Gen 5: a Pokemon above the foe’s level earns less EXP, one below it earns more, so rotate your team. The Pokemon that fought get full EXP, the bench half, and fainted Pokemon get none. From Ascension 5 on each act has a level cap (its boss’s top level +2): battle EXP past it goes to your lowest-level Pokemon',
+    'EXP is scaled like Gen 5: a Pokemon above the foe’s level earns less EXP, one below it earns more, so rotate your team. The Pokemon that fought get full EXP, the bench half, and fainted Pokemon get none. From Ascension 5 on each act has a level cap (its boss’s top level +2): battle EXP past it is lost.',
   ]],
   ['BALATRO', [
     'Combat is Balatro-like: you play up to 5 cards a turn, and poker-style combos of the same type (pair, triple, full house...) boost your damage. There are no chips or mult: every card deals real Pokemon damage (level, power, attack vs defense, STAB, type matchups), and you also take damage each turn',
