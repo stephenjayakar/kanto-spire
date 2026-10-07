@@ -57,7 +57,8 @@ function scaleEnemies(cfg, coopKind, world, n = 2) {
     dmg *= P.dmg?.[coopKind] ?? P.dmgAll ?? 1;
     cfg.expScale = coopKind === 'wild' ? 2 / n : 1; // (n wild foes beaten instead of 2)
   }
-  for (const e of cfg.enemies) { e.maxHp = Math.max(10, Math.round(e.maxHp * hp)); e.hp = e.maxHp; }
+  // (coopHp: shown in the foe's tooltip so the bigger HP bars aren't read as weaker hands; display only)
+  for (const e of cfg.enemies) { e.maxHp = Math.max(10, Math.round(e.maxHp * hp)); e.hp = e.maxHp; e.coopHp = Math.round(hp * 100) / 100; }
   cfg.dmgScale = (cfg.dmgScale ?? 1) * dmg;
   cfg.coopKind = coopKind;
   return cfg;

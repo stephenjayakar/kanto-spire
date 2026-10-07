@@ -33,8 +33,9 @@ async function changedLogic(fn, factor = 1.37) {
   try { return await fn(); } finally { COOP_TUNING.hpComp = old; }
 }
 // A stamped 2-4 player bot game: { game, log, cks (checksum after each action, by seq) }
-function botGame(seed, { n = 2, stop = null, stamp = STAMP, max = 20000 } = {}) {
-  const game = new CoopGame();
+// Game: any engine's CoopGame (default: the current code's).
+function botGame(seed, { n = 2, stop = null, stamp = STAMP, max = 20000, Game = CoopGame } = {}) {
+  const game = new Game();
   const P = coopPlayer(game, seed, stamp);
   P.post(INIT(seed, n));
   const cks = new Map([[1, game.checksum() >>> 0]]);
@@ -69,7 +70,7 @@ t('checkpoint round trip: at every safe point the restored game has the same che
 
 t('checkpoint: a restored game plays on to the end exactly like the original', () => {
   const { game, log } = botGame('RT4', { max: 6000 });
-  const at = log.findIndex((a, i) => i > 200 && isSafePoint(replayAll(log.slice(0, i + 1))));
+  const at = log.findIndex((a, i) => i > Math.min(200, log.length / 2) && isSafePoint(replayAll(log.slice(0, i + 1))));
   const g = replayAll(log.slice(0, at + 1));
   const r = restoreGame(JSON.parse(JSON.stringify(snapshotGame(g))), CURRENT);
   for (const a of log.slice(at + 1)) r.apply(clone(a));
@@ -151,10 +152,14 @@ t('resume: a tail that no longer replays falls back to the checkpoint (start of 
   }, Y);
 });
 
-t('resume: logic changed but LOGIC_ID not bumped: the frozen copy of the old logic still carries the room', async () => {
-  const { game, log } = botGame('RS4', { max: 900, stop: g => g.seq > 60 && g.phase === 'battle' && g.battle.turn >= 2 });
+// A room played on v0.3.6 (logic v035, stamped), resumed on this code (v0.3.7+: LOGIC_ID moved on).
+const V036 = { v: 'v0.3.6', eng: 'v035' };
+t('resume: a v0.3.6 room mid-battle replays on the frozen v035 engine and hands over on the map', async () => {
+  assert.notEqual(LOGIC_ID, 'v035');
+  const Game = (await getEngine('v035', dataLoader)).CoopGame;
+  const { game, log } = botGame('RS4', { max: 900, stop: g => g.seq > 60 && g.phase === 'battle' && g.battle.turn >= 2, stamp: V036, Game });
   assert.equal(game.phase, 'battle');
-  const res = await changedLogic(() => resumeRoom({ actions: log, dataLoader }));
+  const res = await changedLogic(() => resumeRoom({ actions: log, dataLoader })); // (whatever the current logic is)
   assert.equal(res.mode, 'legacy');
   assert.equal(res.engine, 'v035');
   assert.equal(res.game.phase, 'map');
@@ -162,9 +167,10 @@ t('resume: logic changed but LOGIC_ID not bumped: the frozen copy of the old log
 });
 
 t('resume: a finished game stays finished after a logic change (no hand-over back to the map)', async () => {
-  const { game, log } = botGame('FIN', { max: 30000 });
+  const Game = (await getEngine('v035', dataLoader)).CoopGame;
+  const { game, log } = botGame('FIN', { max: 30000, stamp: V036, Game });
   assert.ok(['over', 'victory'].includes(game.phase), game.phase);
-  const res = await changedLogic(() => resumeRoom({ actions: log, dataLoader, logicId: 'v037' }));
+  const res = await resumeRoom({ actions: log, dataLoader });
   assert.equal(res.mode, 'legacy');
   assert.equal(res.game.phase, game.phase);
   assert.equal(res.safe, null);
@@ -200,12 +206,13 @@ t('resume: unverifiable rooms (no checksums) replay as before', async () => {
 
 // ------------------------------------------------------------------------------------- legacy engine
 t('engines: selection is explicit (stamp first, then the current code, then the other frozen copies)', () => {
-  assert.equal(LOGIC_ID, 'v035', 'v0.3.6 changed no game logic');
+  assert.equal(LOGIC_ID, 'v037', 'v0.3.7 changed game logic');
   assert.equal(UNSTAMPED, 'v035');
   const ids = (l) => l.map(e => (e.current ? 'current:' : '') + e.id);
-  // v0.3.6 (logic v035): an unstamped / v035 log tries the current code, then the frozen copies
+  // v0.3.6 (logic v035): an unstamped / v035 log tried the current code, then the frozen copies
   assert.deepEqual(ids(engineOrder('v035', 'v035')), ['current:v035', 'v035', 'v031']);
-  // after the next logic change (LOGIC_ID 'v037'): a v035 room goes to frozen v035 first
+  // v0.3.7 (LOGIC_ID 'v037'): a v035 room goes to frozen v035 first
+  assert.deepEqual(ids(engineOrder('v035')), ['v035', 'current:v037', 'v031']);
   assert.deepEqual(ids(engineOrder('v035', 'v037')), ['v035', 'current:v037', 'v031']);
   assert.deepEqual(ids(engineOrder('v037', 'v037')), ['current:v037', 'v035', 'v031']);
   assert.deepEqual(ids(engineOrder('zzz', 'v037')), ['current:v037', 'v035', 'v031']);
@@ -337,15 +344,20 @@ t('SAVE & QUIT: checkpoint on the map, partner sees it, REJOIN resumes at the sa
 // ------------------------------------------------------------------------------------------ fixtures
 t('old solo save (v0.3.5) loads, round-trips unchanged and plays on', () => {
   const fx = fixture('solo_v035.json');
-  const before = JSON.stringify(fx.save);
   const run = Run.fromJSON(clone(fx.save));
-  assert.equal(JSON.stringify(run), before, 'a save of this version comes out exactly as it went in');
+  // v0.3.7 added run.moveOffers: the old save gets it (empty), everything else comes out exactly as it went in
+  assert.deepEqual(run.moveOffers, {}, 'v0.3.7 default');
+  const { moveOffers, ...rest } = JSON.parse(JSON.stringify(run));
+  assert.equal(JSON.stringify(rest), JSON.stringify(fx.save), 'the v0.3.5 fields are unchanged');
   assert.ok(run.party.length >= 1 && run.map && run.rng);
+  // a save of this version comes out exactly as it went in, and upgradeJSON is a no-op on it
+  const now = JSON.stringify(run);
+  assert.equal(JSON.stringify(Run.fromJSON(JSON.parse(now))), now, 'round trip');
+  const o = JSON.parse(now);
+  Run.upgradeJSON(o);
+  assert.equal(JSON.stringify(o), now, 'upgradeJSON is a no-op on a current save');
   const played = playSoloNodes(run, 3, 'SOLO2');
   assert.ok(played >= 1);
-  const o = clone(fx.save);
-  Run.upgradeJSON(o);
-  assert.equal(JSON.stringify(o), before, 'upgradeJSON is a no-op on a current save');
 });
 
 t('older solo saves: missing fields get defaults, removed fields are ignored', () => {

@@ -43,7 +43,7 @@ export const createRoom = (opts = {}) => m('coop:create', { ascension: opts.asce
 export const joinRoom = code => m('coop:join', { code: String(code || ''), maxPlayers: MAX_PLAYERS });
 // -> { room:{_id,code,status,host(slot),ascension,world,seed,nextSeq,...}, members:[{slot,name,starter,ready,left,lastSeen,lastSeq}], me, isHost, now }
 export const getRoom = roomId => q('coop:room', { roomId });
-// ascMax: the ascension this player has unlocked with that starter (the room is capped by the lower one)
+// ascMax: the ascension this player has unlocked with that starter (the room is capped by the highest one)
 export const setStarter = (roomId, starter, ascMax) => m('coop:setStarter', { roomId, starter, ...(ascMax !== undefined ? { ascMax } : {}) });
 export const setReady = (roomId, ready) => m('coop:setReady', { roomId, ready: !!ready });
 // host only, lobby only; opts: { ascension?, world? }

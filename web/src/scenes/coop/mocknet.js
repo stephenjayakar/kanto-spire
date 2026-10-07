@@ -117,7 +117,7 @@ export function joinRoom(code, maxPlayers = CLIENT_MAX) {
   });
 }
 export const getRoom = (roomId) => withRoom(roomId, (room, mine) => ({ ...view(room, mine), now: Date.now() }));
-// (same rules as convex/coop.ts: the room's ascension is capped by the lower of the members' ascMax)
+// (same rules as convex/coop.ts: the room's ascension is capped by the highest of the members' ascMax)
 export const setStarter = (roomId, starter, ascMax) => withRoom(roomId, (room, mine) => {
   if (room.status !== 'lobby') throw new Error('The run has already started.');
   mine.starter = starter; mine.lastSeen = Date.now();
@@ -145,7 +145,7 @@ export const startRoom = (roomId) => withRoom(roomId, (room, mine) => {
   if (ms.length < 2) throw new Error('Waiting for a second player.');
   if (ms.some(m => !m.starter)) throw new Error('Every player needs a starter.');
   if (ms.length > roomCap(ms)) throw new Error('Every player needs the latest version for 3-4 players: reload the page.');
-  if (room.ascension > coopAscCap(ms)) throw new Error("That ascension isn't unlocked for every starter.");
+  if (room.ascension > coopAscCap(ms)) throw new Error("No player has that ascension unlocked for their starter.");
   // slots are renumbered 0..n-1 in seat order (a lobby leaver can leave a gap); the init lists them in that order
   ms.forEach((m, i) => { m.slot = i; });
   room.actions.push({ seq: 1, p: 0, json: JSON.stringify({ type: 'init', seed: room.seed, ascension: room.ascension, world: room.world, starters: ms.map(m => m.starter), names: ms.map(m => m.name), nonce: 'init' }) });

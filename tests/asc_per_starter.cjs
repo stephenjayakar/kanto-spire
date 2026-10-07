@@ -3,7 +3,7 @@
 //    run history, saved back, nothing else touched;
 // 2. starter select: each unlocked cell shows its A-badge, the picker follows the selected starter and is
 //    capped by its unlock (real clicks on the cells and the > button);
-// 3. co-op lobby (?coopdev mock backend, two pages): the room is capped by the lower of the two players'
+// 3. co-op lobby (?coopdev mock backend, two pages): the room is capped by the highest of the players'
 //    unlocks for their picked starters.
 //   node tests/asc_per_starter.cjs [port=8144] [outdir=tests/out/visfix/asc]
 const { spawn } = require('child_process');
@@ -95,20 +95,24 @@ const OLD_META = {
     }, r.roomId);
     await p1.waitForTimeout(800);
     // starter picks through the lobby's own code path (it sends ascMax from this player's meta)
-    const lobbyPick = (p, sp) => p.evaluate(async (sp) => { const s = window.__engine.Engine.scene; const { ascUnlocked } = await import('/src/game/unlocks.js'); await s.act(n => n.setStarter(s.roomId, sp, ascUnlocked(G.meta, sp))); await s.poll(); }, sp);
+    // (waits out any call already in flight: act() silently drops a call while the scene is busy)
+    const lobbyPick = (p, sp) => p.evaluate(async (sp) => { const s = window.__engine.Engine.scene; const { ascUnlocked } = await import('/src/game/unlocks.js'); for (let i = 0; i < 100 && (s.busy || !s.net); i++) await new Promise(res => setTimeout(res, 50)); await s.act(n => n.setStarter(s.roomId, sp, ascUnlocked(G.meta, sp))); await s.poll(); }, sp);
     await lobbyPick(p1, 'GASTLY');
     let room = await net(p1, 'getRoom', [r.roomId]);
     check('host picks GASTLY (A5): room stays A5', room.room.ascension === 5, `A${room.room.ascension}`);
     await lobbyPick(p2, 'SQUIRTLE');
     room = await net(p1, 'getRoom', [r.roomId]);
-    check('guest picks SQUIRTLE (A2): room drops to A2', room.room.ascension === 2, `A${room.room.ascension}`);
+    check('guest picks SQUIRTLE (A2): room stays A5 (the host has it)', room.room.ascension === 5, `A${room.room.ascension}`);
+    await lobbyPick(p1, 'BULBASAUR');
+    room = await net(p1, 'getRoom', [r.roomId]);
+    check('host switches to BULBASAUR (A3): room drops to A3', room.room.ascension === 3, `A${room.room.ascension}`);
     await net(p1, 'configure', [r.roomId, { ascension: 5 }]);
     room = await net(p1, 'getRoom', [r.roomId]);
-    check('host asks for A5: clamped to A2', room.room.ascension === 2, `A${room.room.ascension}`);
+    check('host asks for A5: clamped to A3', room.room.ascension === 3, `A${room.room.ascension}`);
     await p1.evaluate(() => window.__engine.Engine.scene.poll());
     await p1.waitForTimeout(500);
     const hostCap = await p1.evaluate(() => { const s = window.__engine.Engine.scene, v = s.view; return v ? v.room.ascension : null; });
-    check('host lobby shows A2', hostCap === 2);
+    check('host lobby shows A3', hostCap === 3);
     await p1.mouse.move(2 * 300, 2 * 215);
     await p1.waitForTimeout(300);
     await p1.screenshot({ path: `${out}/coop_lobby_cap.png` });

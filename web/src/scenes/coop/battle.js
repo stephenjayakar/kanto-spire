@@ -778,7 +778,7 @@ export class CoopBattleScene {
     if (!this.sel.length || !this.canSimulate() || this.busy) return null;
     const d = this.duo, s = this.sub, slot = this.target, ri = d.field[slot];
     const e = d.enemyAt(slot);
-    const key = [this.sel.join(','), d.turn, s.handsPlayed, slot, ri, e?.hp || 0, JSON.stringify(d.locks.filter((L, q) => q !== this.me))].join('|');
+    const key = [this.sel.join(','), slot, ri, e?.hp || 0, s.withFocus(ri, () => s.previewKey()), JSON.stringify(d.locks.filter((L, q) => q !== this.me))].join('|');
     if (this._simKey !== key) {
       this._simKey = key;
       this._sim = d.simulate(this.me, this.sel, slot);
@@ -1291,11 +1291,12 @@ export class CoopBattleScene {
     const st = e.stats;
     const ab = e.ability ? (D.abilities[e.ability]?.name || e.ability) : '';
     const rule = e.bossRule && BOSS_RULES[e.bossRule] ? `\n\n${BOSS_RULES[e.bossRule].name}: ${BOSS_RULES[e.bossRule].desc}` : '';
+    const coopHp = e.coopHp && e.coopHp !== 1 ? `\nCO-OP: x${e.coopHp} HP (your hands deal full damage)` : '';
     const all = Object.keys(TYPE_COLORS).filter(t => D.types.chart[t]);
     const by = f => all.filter(t => f(typeEffect(t, e.types)));
     const weak4 = by(x => x >= 4), weak = by(x => x === 2), res = by(x => x > 0 && x < 1), imm = by(x => x === 0);
     const matchup = `\n\nWEAK TO: ${[...weak4.map(t => t + ' x4'), ...weak].join(', ') || 'nothing'}\nRESISTS: ${res.join(', ') || 'nothing'}${imm.length ? `\nIMMUNE TO: ${imm.join(', ')}` : ''}`;
-    tip(`${speciesName(e.species)}  Lv${e.level}`, `${e.types.join('/')}  ·  ${ab}${ab && D.abilities[e.ability] ? ': ' + D.abilities[e.ability].desc : ''}\nATK ${st.atk} DEF ${st.def} SPA ${st.spa} SPD ${st.spd} SPE ${st.spe}\nMoves: ${this.run().ascension >= 2 ? '??? (hidden at A2+)' : e.moves.map(m => D.moves[m]?.name).join(', ')}${matchup}${rule}${this.canAct() ? '\n\nClick to target it.' : ''}`, { width: 230, accent: TYPE_COLORS[e.types[0]] });
+    tip(`${speciesName(e.species)}  Lv${e.level}`, `${e.types.join('/')}  ·  ${ab}${ab && D.abilities[e.ability] ? ': ' + D.abilities[e.ability].desc : ''}\nATK ${st.atk} DEF ${st.def} SPA ${st.spa} SPD ${st.spd} SPE ${st.spe}${coopHp}\nMoves: ${this.run().ascension >= 2 ? '??? (hidden at A2+)' : e.moves.map(m => D.moves[m]?.name).join(', ')}${matchup}${rule}${this.canAct() ? '\n\nClick to target it.' : ''}`, { width: 230, accent: TYPE_COLORS[e.types[0]] });
   }
 
   drawLeftPanel(ctx) {

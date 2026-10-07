@@ -614,6 +614,16 @@ export class Battle {
 
   effVsEnemy(type) { const e = this.enemy(); return e ? effectiveness(type, e.types, e.ability, this.sides.enemy.foresight) : 1; }
 
+  // Everything besides the selection that can change a hand's preview during a turn (an X item, a switch, a
+  // discard, a partner's heal...). The scenes cache simulate() on it; it used to be only the turn and the foe's HP,
+  // so an X ATTACK used mid-turn left a stale (lower) number on screen.
+  previewKey() {
+    const ps = this.sides.player, es = this.sides.enemy, l = this.lead(), e = this.enemy();
+    return [this.turn, this.handsPlayed, this.leadUid, l?.hp, l?.status, this.enemyIndex, e?.uid, e?.hp, e?.status, JSON.stringify(ps.stages), JSON.stringify(es.stages),
+      ps.focus, ps.charge, ps.helpingHand, ps.confused, es.reflect, es.lightScreen, es.substitute, this.weather, this.discardsLeft, this.deck.hand.length, this.leadStreak,
+      this.run.relics.length, this.run.badges.length].join('|');
+  }
+
   // Exact preview: runs the real scoring with no crits/misses/paralysis and restores all state.
   simulate(ids) {
     const cards = this.findCards(ids);
@@ -754,7 +764,7 @@ export class Battle {
     if (enemyFirst) {
       this.emit({ t: 'foeFirst' });
       this.enemyAct();
-      if (this.result) return this.takeEvents();
+      if (this.result) { this.lateRest(infos); return this.takeEvents(); }
     }
     // If the lead fainted to a faster enemy, cards from it fizzle; others still go.
     this.resolveHand(infos);
@@ -782,6 +792,18 @@ export class Battle {
     if (!this.result) this.endTurn();
     if (!this.result) this.startTurn();
     return this.takeEvents();
+  }
+
+  // REST cards of a hand that never got to resolve because the battle ended first (a faster partner or the foe's
+  // own move finished it): the user still recovers fully and is cured. No sleep: the battle is over.
+  lateRest(infos) {
+    for (const i of infos) {
+      const mon = i.owner;
+      if (i.move?.effect !== 'REST' || !mon || isFainted(mon)) continue;
+      this.healSide('player', mon, 1, 'REST');
+      if (mon.status) { mon.status = null; this.emit({ t: 'status', side: 'player', uid: mon.uid, status: null }); }
+      const st = this.ms(mon.uid); st.sleep = 0; st.toxic = 0;
+    }
   }
 
   resolveHand(infos) {
@@ -844,10 +866,15 @@ export class Battle {
     const bonus = comboBonus(combo.key, level);
     const scoring = combo.scoring.map(i => infos[i]);
     const ps = this.sides.player, es = this.sides.enemy;
+    // The lead's deck for the deck-counting items (UP-GRADE, SOOT SACK, HELIX FOSSIL...). A played hand is out of
+    // every pile while it resolves: count its cards too, so the real hand sees the same deck as the preview
+    // (which runs with the selected cards still in hand). v0.3.7: they used to be missing, so the hand dealt less.
+    const piles = new Set([...this.deck.draw, ...this.deck.hand, ...this.deck.discard]);
+    const inFlight = infos.filter(i => i.card && i.card.uid === this.leadUid && !piles.has(i.card));
     const S = {
       cardTotal: 0, flatTotal: 0, pctTotal: bonus, timesTotal: 1, fixed: 0, ohko: false, falseSwipe: false, after: [],
       battle: this, run: this.run, rng: this.rng, combo: combo.key, comboKey: combo.key, comboRank: COMBOS[combo.key].rank,
-      cards: infos, scoring, deckSize: this.deckSize(), deckCards: this.allDeckInfos(), effLabel: null,
+      cards: infos, scoring, deckSize: this.deckSize() + inFlight.length, deckCards: [...this.allDeckInfos(), ...inFlight], effLabel: null, attackHits: 0,
       typesOf: m => typesOf(m),
       // hooks for held items, badges and boss rules
       flat: (n, src) => { n *= TUNING.itemScale ?? 1; S.flatTotal += n; this.emit({ t: 'flat', add: Math.round(n), src }); },
@@ -933,7 +960,7 @@ export class Battle {
           if (enemy.ability !== 'SHIELD_DUST' || !move.chance) (EFFECTS[move.effect] || EFFECTS.HIT)(ctx);
           if (move.flags?.includes('MAKES_CONTACT')) this.contactAbility('enemy', enemy, 'player', owner);
         }
-        if (h === 0) for (const [def, inst] of this.relicHooks('onCard')) def.onCard(S, { ...info, type }, inst.state);
+        if (h === 0) { S.attackHits++; for (const [def, inst] of this.relicHooks('onCard')) def.onCard(S, { ...info, type }, inst.state); }
         this.chainBump(info);
       }
       if (anyHit) this.sides.player.lastMove = move.key;

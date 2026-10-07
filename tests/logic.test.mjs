@@ -6,7 +6,7 @@ import { GEN4_MOVES } from '../web/src/game/gen4_moves.js';
 import { SPECIAL_MOVES, PHYSICAL_MOVES } from '../web/src/game/move_categories.js';
 import { EFFECTS } from '../web/src/game/effects.js';
 import { detectCombo, comboBonus } from '../web/src/game/hands.js';
-import { Run } from '../web/src/game/run.js';
+import { Run, movePool, MOVE_POOL, FALLBACK_MOVES } from '../web/src/game/run.js';
 import { Battle } from '../web/src/game/battle.js';
 import { makeMon, maxHp, gainExp, defaultMoves, canLearn, defaultCopies, replacedCopies, DECK_RULES } from '../web/src/game/pokemon.js';
 import { generateMap, reachable } from '../web/src/game/map.js';
@@ -207,6 +207,81 @@ t('gen 4 moves: offered as rewards', () => {
   const seen = new Set();
   for (let i = 0; i < 200; i++) for (const c of run.moveRewardChoices(new RNG('r' + i))) seen.add(c.move);
   assert.ok(seen.has('FIRE_FANG') && seen.has('SHADOW_CLAW'), [...seen].join());
+});
+t('move rewards: offers are recorded per mon and survive a save', () => {
+  const run = Run.create({ starter: 'CHARMANDER', seed: 'mo1' });
+  assert.deepEqual(run.toJSON().moveOffers, {}, 'every new run has the field (saves keep their keys on reload)');
+  const uid = run.party[0].uid;
+  const a = run.moveRewardChoices(new RNG('mo1a'));
+  assert.ok(a.length);
+  for (const c of a) assert.equal(run.moveOfferCount(c.uid, c.move), 1);
+  const r2 = Run.fromJSON(JSON.parse(JSON.stringify(run)));
+  for (const c of a) assert.equal(r2.moveOfferCount(c.uid, c.move), 1);
+  r2.moveRewardChoices(new RNG('mo1b'));
+  const total = Object.values(r2.moveOffers[uid]).reduce((x, y) => x + y, 0);
+  assert.equal(total, a.length * 2);
+});
+t('move rewards: an old save without moveOffers (or with junk) loads and works', () => {
+  const run = Run.create({ starter: 'BULBASAUR', seed: 'mo2' });
+  const o = JSON.parse(JSON.stringify(run));
+  delete o.moveOffers;
+  const r = Run.fromJSON(o);
+  assert.deepEqual(r.moveOffers, {}, 'upgradeJSON default');
+  assert.ok(r.moveRewardChoices(new RNG('mo2a')).length);
+  assert.ok(r.moveOffers && typeof r.moveOffers === 'object');
+  for (const junk of [[1, 2], 'x', 5, null]) {
+    const j = Run.fromJSON({ ...JSON.parse(JSON.stringify(run)), moveOffers: junk });
+    assert.ok(j.moveOffers && typeof j.moveOffers === 'object' && !Array.isArray(j.moveOffers), 'sanitized ' + JSON.stringify(junk));
+    assert.ok(j.moveRewardChoices(new RNG('mo2b')).length);
+  }
+  const k = Run.fromJSON({ ...JSON.parse(JSON.stringify(run)), moveOffers: { [run.party[0].uid]: 'bad' } });
+  assert.ok(k.moveRewardChoices(new RNG('mo2c')).length);
+});
+t('move rewards: a seen move recurs less for the same mon', () => {
+  // over 40 reward screens for one mon: how often the most-offered move came up, and repeats in the first 10
+  const stats = (track, sp, seed) => {
+    const run = Run.create({ starter: 'CHARMANDER', seed });
+    run.party = [makeMon(sp, 25, { rng: new RNG(seed + 'm') })];
+    const seen = new Set(), cnt = {};
+    let early = 0;
+    for (let i = 0; i < 40; i++) {
+      if (!track) delete run.moveOffers;
+      for (const c of run.moveRewardChoices(new RNG(seed + 'r' + i))) { if (i < 10 && seen.has(c.move)) early++; seen.add(c.move); cnt[c.move] = (cnt[c.move] || 0) + 1; }
+    }
+    return { top: Math.max(...Object.values(cnt)), early };
+  };
+  let off = { top: 0, early: 0 }, on = { top: 0, early: 0 };
+  for (const [sp, seed] of [['CHARMELEON', 'mo3a'], ['PIKACHU', 'mo3b'], ['GEODUDE', 'mo3c'], ['MAGIKARP', 'mo3d']]) {
+    const a = stats(false, sp, seed), b = stats(true, sp, seed);
+    off.top += a.top; off.early += a.early; on.top += b.top; on.early += b.early;
+  }
+  assert.ok(on.top < off.top * 0.75, `most-offered move: ${on.top} with tracking vs ${off.top} without`);
+  assert.ok(on.early < off.early, `early repeats: ${on.early} with tracking vs ${off.early} without`);
+});
+t('move rewards: thin species get a decent pool; caps and gates hold', () => {
+  for (const k of ['MAGIKARP', 'DITTO', 'UNOWN', 'SMEARGLE', 'METAPOD', 'KAKUNA', 'WOBBUFFET', 'BELDUM']) {
+    assert.ok(movePool(makeMon(k, 10, { rng: new RNG(k) }), 0).length >= 6, 'act 1 pool ' + k);
+    assert.ok(movePool(makeMon(k, 30, { rng: new RNG(k) }), 1).length >= 8, 'act 2 pool ' + k);
+  }
+  for (const [t, list] of Object.entries(FALLBACK_MOVES)) for (const m of list) {
+    assert.ok(D.moves[m], 'fallback move exists ' + m);
+    assert.ok(EFFECTS[D.moves[m].effect], 'fallback effect ' + m);
+    assert.ok(D.moves[m].power === 0 || D.moves[m].power >= 10, 'fixed power ' + m);
+  }
+  for (const k of Object.keys(D.species)) for (const [lv, act] of [[8, 0], [25, 1], [45, 2], [60, 3]]) {
+    const mon = makeMon(k, lv, { rng: new RNG(k + lv) });
+    const pool = movePool(mon, act);
+    for (const { move } of pool) {
+      assert.ok(!(D.moves[move].power > MOVE_POOL.maxPower[act]), `${k} ${move} over the act ${act + 1} cap`);
+      assert.ok(act >= 2 || !MOVE_POOL.lateMoves.includes(move), `${k} ${move} too early`);
+      assert.ok(!mon.moves.some(x => x.move === move), `${k} offered known ${move}`);
+    }
+    assert.equal(new Set(pool.map(x => x.move)).size, pool.length, 'no duplicates ' + k);
+  }
+  // the reward choices respect the cap too
+  const run = Run.create({ starter: 'SQUIRTLE', seed: 'mo4' });
+  run.party = [makeMon('MAGIKARP', 12, { rng: run.rng }), makeMon('DITTO', 12, { rng: run.rng })];
+  for (let i = 0; i < 50; i++) for (const c of run.moveRewardChoices(new RNG('mo4' + i))) assert.ok(!(D.moves[c.move].power > 70), c.move);
 });
 t('gen 4 moves: every move works as a card and as an enemy move', () => {
   for (const m of Object.values(D.moves).filter(x => x.gen === 4)) {
@@ -729,11 +804,17 @@ t('ascension: unlocks come from clears only (no fallback from the old global lev
     assert.equal(S.applyClears(meta, meta.runs).changed, false); // re-running changes nothing
   });
 }
-t('ascension: co-op room cap is the lower of both players\' unlocks for their picks', () => {
-  assert.equal(U.coopAscCap([{ ascMax: 4 }, { ascMax: 2 }]), 2);
-  assert.equal(U.coopAscCap([{ ascMax: 4 }, { ascMax: null }]), 4); // a partner without the field (older client) doesn't cap
+t('ascension: co-op room cap is the highest of the players\' unlocks for their picks', () => {
+  assert.equal(U.coopAscCap([{ ascMax: 4 }, { ascMax: 2 }]), 4);
+  assert.equal(U.coopAscCap([{ ascMax: 2 }, { ascMax: null }]), 2); // a partner without the field (older client) doesn't count
   assert.equal(U.coopAscCap([{}, {}]), U.MAX_ASC);
-  assert.equal(U.coopAscCap([{ ascMax: 0 }, { ascMax: 7 }]), 0);
+  assert.equal(U.coopAscCap([]), U.MAX_ASC);
+  assert.equal(U.coopAscCap([{ ascMax: 0 }, { ascMax: 7 }]), 7);
+  assert.equal(U.coopAscCap([{ ascMax: 0 }, { ascMax: 0 }, { ascMax: 1 }, {}]), 1);
+  // it's the unlock for each player's PICKED starter: P1 picked BULBASAUR (A3, though A9 with another starter),
+  // P2 picked SQUIRTLE (A5) -> A5
+  const p1 = { ascBy: { BULBASAUR: 3, GASTLY: 9 } }, p2 = { ascBy: { SQUIRTLE: 5 } };
+  assert.equal(U.coopAscCap([{ ascMax: U.ascUnlocked(p1, 'BULBASAUR') }, { ascMax: U.ascUnlocked(p2, 'SQUIRTLE') }]), 5);
   assert.equal(U.coopAscCap([{ ascMax: 99 }]), U.MAX_ASC);
 });
 t('ascension: the shiny unlock (A5+) and Nuzlocke (A8) rules are unchanged', () => {
@@ -1539,6 +1620,14 @@ t("co-op win unlocks the next ascension for the player's own starter (idempotent
   assert.equal(grantCoopWin(m, 'BULBASAUR', 10), true); assert.equal(ascUnlocked(m, 'BULBASAUR'), 10);
 });
 
+t('co-op win above my own unlock (room ran at a partner\'s higher level) still unlocks the next level', () => {
+  const m = { ascBy: { SQUIRTLE: 2 }, bestAscensionWon: 1, maxAscension: 2, shinies: [] };
+  assert.equal(grantCoopWin(m, 'SQUIRTLE', 7), true);
+  assert.equal(ascUnlockedFor(m, 'SQUIRTLE'), 8, 'own A2, win at A7 -> A8');
+  assert.equal(m.bestAscensionWon, 7); assert.equal(m.maxAscension, 8);
+  assert.ok(unlockShiny({ starter: 'SQUIRTLE', ascension: 7 }, m), 'and the A5+ shiny, though A7 was above my own unlock');
+});
+
 t("co-op win at A5+ unlocks the shiny of the player's own starter (and not below A5)", () => {
   const m = { shinies: [] };
   assert.equal(unlockShiny({ starter: 'CYNDAQUIL', ascension: 4 }, m), null, 'A4 is not enough');
@@ -1673,6 +1762,69 @@ t('boss preferred types (map / act clear / E4 break)', () => {
   assert.deepEqual(bossTypes('LEGEND_MEWTWO'), ['PSYCHIC']);
   for (const k of Object.keys(BOSS_TYPES)) assert.ok(D.trainers[k], 'boss key exists: ' + k);
   for (const a of [...ACTS, ...HOENN_ACTS]) for (const k of [...(a.bosses || []), ...(a.gauntlet || []).slice(0, 4)]) if (/^(LEADER|ELITE_FOUR)_/.test(k)) assert.ok(BOSS_TYPES[k], 'signature type for ' + k);
+});
+
+
+// ---- v0.3.7: REST, KING'S ROCK, deck-counting items --------------------------------------------------
+const slowFoe = (moves = ['GROWL'], hp = 2000) => { const e = makeEnemyT('RATTATA', 5, { rng: new RNG('foe'), moves }); e.moves = moves.slice(); e.maxHp = e.hp = hp; e.stats.spe = 1; e.stats.atk = 1; e.stats.spa = 1; return e; };
+const handOf = (b, moves) => { const lead = b.lead(); b.deck.hand = []; return moves.map((m, i) => { const c = { id: 9100 + i, uid: lead.uid, move: m }; b.deck.hand.push(c); return c.id; }); };
+const soloWith = (foe, relics = [], seed = 'R37') => { const run = Run.create({ starter: 'CHARMANDER', seed }); for (const k of relics) run.addRelic(k); const b = new Battle(run, { kind: 'wild', enemies: [foe], rng: new RNG('b' + seed) }); b.start(); return { run, b, lead: b.lead() }; };
+
+t('REST: full heal, status cured, then asleep (2 turns)', () => {
+  const { b, lead } = soloWith(slowFoe());
+  lead.hp = 3; lead.status = 'PSN';
+  b.play(handOf(b, ['REST']));
+  assert.equal(lead.hp, maxHp(lead));
+  assert.equal(lead.status, 'SLP');
+  assert.ok(b.ms(lead.uid).sleep >= 1);
+});
+
+t('REST in the hand that knocks out the last foe: the heal and cure stay, the sleep ends with the battle', () => {
+  for (const order of [['REST', 'EMBER'], ['EMBER', 'REST']]) for (const st of ['PSN', 'TOX', 'BRN', null]) { // (PAR: a fully paralyzed card does nothing, as in Gen 3)
+    const { b, lead } = soloWith(slowFoe(['GROWL'], 3), [], 'RK' + st);
+    lead.hp = 3; lead.status = st;
+    b.play(handOf(b, order));
+    assert.equal(b.result?.outcome, 'win', order + st);
+    assert.equal(lead.hp, maxHp(lead), order + st);
+    assert.equal(lead.status, null, `${order} ${st}: no status after the won battle`);
+  }
+});
+
+t("REST still heals when the foe's own move ends the battle before the hand (EXPLOSION first)", () => {
+  const foe = slowFoe(['EXPLOSION'], 50); foe.stats.spe = 999;
+  const { b, lead } = soloWith(foe, [], 'RX');
+  lead.hp = maxHp(lead) - 5; lead.status = 'BRN';
+  b.intent = { move: b.moveData('EXPLOSION'), first: true };
+  const ids = handOf(b, ['REST', 'EMBER']);
+  b.play(ids);
+  assert.equal(b.result?.outcome, 'win');
+  if (lead.hp > 0) { assert.equal(lead.hp, maxHp(lead)); assert.equal(lead.status, null); }
+});
+
+t("KING'S ROCK rolls once per hand (10%), not once per card", () => {
+  let flinches = 0;
+  for (let i = 0; i < 300; i++) {
+    const { b } = soloWith(slowFoe(), ['KINGS_ROCK'], 'KQ' + i);
+    const ev = b.play(handOf(b, ['SCRATCH', 'SCRATCH', 'SCRATCH', 'SCRATCH', 'SCRATCH']));
+    flinches += ev.filter(e => e.t === 'relic' && e.key === 'KINGS_ROCK').length;
+  }
+  const rate = flinches / 300;
+  assert.ok(rate > 0.04 && rate < 0.18, `flinch rate per 5-card hand ${rate} (per card it was ~0.41)`);
+  assert.match(RELICS.KINGS_ROCK.desc, /per hand/i);
+});
+
+t('deck-counting held items: the preview equals the real hand (UP-GRADE, SOOT SACK, HELIX FOSSIL, ENERGY POWDER, DOME FOSSIL)', () => {
+  for (const k of ['UP_GRADE', 'SOOT_SACK', 'HELIX_FOSSIL', 'ENERGY_POWDER', 'DOME_FOSSIL']) {
+    const { b } = soloWith(slowFoe(), [k], 'DK' + k);
+    const lead = b.lead();
+    b.deck.hand = []; b.deck.draw = []; b.deck.discard = [];
+    for (let i = 0; i < 14; i++) b.deck.discard.push({ id: 9300 + i, uid: lead.uid, move: i % 2 ? 'EMBER' : 'GROWL' });
+    const ids = handOf(b, ['EMBER', 'EMBER', 'SCRATCH']);
+    b.deck.hand.push({ id: 9400, uid: lead.uid, move: 'GROWL' }); // one card stays in hand (DOME FOSSIL)
+    const sim = b.simulate(ids).damage;
+    const ev = b.play(ids);
+    assert.equal(ev.find(e => e.t === 'total').damage, sim, k);
+  }
 });
 
 console.log(`${pass} passed, ${fail} failed`);

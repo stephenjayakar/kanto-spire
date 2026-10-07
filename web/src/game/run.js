@@ -127,6 +127,7 @@ export class Run {
     r.gauntletIndex = -1;
     r.finished = false;
     r.victory = false;
+    r.moveOffers = {}; // uid -> { move: times offered } (move rewards: repeats weigh less)
     const st = STARTERS.find(s => s.species === starter) || STARTERS[1];
     const lucky = r.rng.chance(1 / 64); // (rolled either way, so picking the shiny form doesn't change the run)
     const mon = makeMon(st.species, 6, { rng: r.rng, moves: st.moves.filter(m => D.moves[m]), minIV: 10, shiny: shiny || lucky });
@@ -766,27 +767,27 @@ export class Run {
   }
 
   // ---- rewards --------------------------------------------------------------------------
+  // How many times `move` was offered to the mon `uid` this run (run.moveOffers; old saves get {} from upgradeJSON).
+  moveOfferCount(uid, move) {
+    const o = this.moveOffers?.[uid];
+    return o && typeof o === 'object' && Number.isFinite(o[move]) ? o[move] : 0;
+  }
   moveRewardChoices(rng, n = 3) {
     n += this.mods().moveChoices || 0;
-    const maxPower = [70, 90, 120, 150, 150][this.actIndex] ?? 150;
     const cands = [];
     for (const mon of this.party) {
-      const s = D.species[mon.species];
-      const pool = new Set();
-      for (const [l, m] of s.learnset || []) if (l <= mon.level + 5) pool.add(m);
-      for (const m of s.tmhm || []) pool.add(m);
-      for (const m of s.tutor || []) pool.add(m);
-      for (const m of pool) {
+      for (const { move: m, fallback } of movePool(mon, this.actIndex)) {
         const mv = D.moves[m];
-        if (!mv || knowsMove(mon, m)) continue;
-        if (mv.power > maxPower) continue;
-        if (['SELFDESTRUCT', 'EXPLOSION', 'FOCUS_PUNCH'].includes(m) && this.actIndex < 2) continue;
         const stab = typesOf(mon).includes(mv.type);
         const weakest = Math.min(...mon.moves.map(x => D.moves[x.move]?.power || 0));
         let w = 1;
         if (mv.power > 0) w += (mv.power / 40) * (stab ? 2 : 1);
         if (mv.power > weakest) w += 1;
         if (mv.power === 0) w = ['SWORDS_DANCE','THUNDER_WAVE','SLEEP_POWDER','HYPNOSIS','TOXIC','PROTECT','RECOVER','SOFT_BOILED','CALM_MIND','BULK_UP','DRAGON_DANCE','REFLECT','LIGHT_SCREEN','SPORE','LEECH_SEED','REST','AGILITY','GROWTH','WILL_O_WISP','STUN_SPORE','SING','CONFUSE_RAY','SUBSTITUTE'].includes(m) ? 1.2 : 0.25;
+        if (fallback) w *= MOVE_POOL.fallbackWeight;
+        // Seen it already: each earlier offer of this move to this mon quarters its weight.
+        const seen = this.moveOfferCount(mon.uid, m);
+        if (seen) w *= Math.pow(MOVE_POOL.repeatMult, seen);
         cands.push({ uid: mon.uid, move: m, w });
       }
     }
@@ -797,6 +798,14 @@ export class Run {
       out.push({ uid: c.uid, move: c.move });
       usedMons.set(c.uid, (usedMons.get(c.uid) || 0) + 1);
       for (let j = cands.length - 1; j >= 0; j--) if (cands[j].move === c.move) cands.splice(j, 1);
+    }
+    if (out.length) {
+      if (!this.moveOffers || typeof this.moveOffers !== 'object' || Array.isArray(this.moveOffers)) this.moveOffers = {};
+      for (const { uid, move } of out) {
+        let o = this.moveOffers[uid];
+        if (!o || typeof o !== 'object' || Array.isArray(o)) o = this.moveOffers[uid] = {};
+        o[move] = this.moveOfferCount(uid, move) + 1;
+      }
     }
     return out;
   }
@@ -954,6 +963,8 @@ export class Run {
     def('gauntletIndex', -1);
     def('finished', false);
     def('victory', false);
+    def('moveOffers', {}); // (v0.3.7)
+    if (typeof o.moveOffers !== 'object' || Array.isArray(o.moveOffers)) o.moveOffers = {};
     for (const x of o.relics) if (x && typeof x === 'object' && x.state === undefined) x.state = {};
     for (const m of o.party) {
       if (!m || typeof m !== 'object') continue;
@@ -976,6 +987,81 @@ export class Run {
     setUidCounter(maxUid + 1000);
     return r;
   }
+}
+
+// ---- move reward pools ----------------------------------------------------------------------
+// The moves a mon can be offered: its own level-up (up to 5 levels ahead), TM/HM and tutor moves, plus its
+// evolution line's level-up moves (pre-evolutions, and evolutions; past a branching evolution such as EEVEE's
+// only moves of the mon's own types or NORMAL). Thin pools (MAGIKARP, DITTO, UNOWN, the cocoons) top up from a
+// per-type fallback list. Per call: the level gate, the act's power cap and the act gating of risky moves.
+export const MOVE_POOL = {
+  maxPower: [70, 90, 120, 150, 150], // per act
+  lateMoves: ['SELFDESTRUCT', 'EXPLOSION', 'FOCUS_PUNCH'], // offered from act 3 on
+  thinMoves: 8, thinAttacks: 3, // fewer eligible moves (or attacks) than this: add the fallback list
+  fallbackWeight: 0.75, // fallback moves weigh less than the mon's own
+  repeatMult: 0.25, // weight x this per earlier offer of the same move to the same mon
+};
+// Fallback moves per type (all with working effects here; no fixed/variable-power moves).
+export const FALLBACK_MOVES = {
+  NORMAL: ['TACKLE', 'QUICK_ATTACK', 'SWIFT', 'HEADBUTT', 'SECRET_POWER', 'SLASH', 'STRENGTH', 'BODY_SLAM', 'HYPER_VOICE', 'DOUBLE_EDGE'],
+  FIRE: ['EMBER', 'FLAME_WHEEL', 'FIRE_FANG', 'FIRE_PUNCH', 'LAVA_PLUME', 'FLAMETHROWER', 'FIRE_BLAST'],
+  WATER: ['WATER_GUN', 'AQUA_JET', 'WATER_PULSE', 'BUBBLE_BEAM', 'BRINE', 'WATERFALL', 'AQUA_TAIL', 'SURF', 'HYDRO_PUMP'],
+  GRASS: ['MEGA_DRAIN', 'RAZOR_LEAF', 'MAGICAL_LEAF', 'GIGA_DRAIN', 'LEAF_BLADE', 'SEED_BOMB', 'ENERGY_BALL', 'STUN_SPORE'],
+  ELECTRIC: ['THUNDER_SHOCK', 'SHOCK_WAVE', 'SPARK', 'THUNDER_FANG', 'THUNDER_PUNCH', 'DISCHARGE', 'THUNDERBOLT', 'THUNDER_WAVE'],
+  ICE: ['POWDER_SNOW', 'ICE_SHARD', 'ICY_WIND', 'AURORA_BEAM', 'ICE_FANG', 'ICE_PUNCH', 'ICE_BEAM'],
+  FIGHTING: ['KARATE_CHOP', 'FORCE_PALM', 'BRICK_BREAK', 'DRAIN_PUNCH', 'SKY_UPPERCUT', 'CROSS_CHOP', 'BULK_UP'],
+  POISON: ['ACID', 'POISON_FANG', 'SLUDGE', 'POISON_JAB', 'SLUDGE_BOMB', 'TOXIC'],
+  GROUND: ['MUD_SHOT', 'DIG', 'BONE_CLUB', 'MUD_BOMB', 'EARTH_POWER', 'EARTHQUAKE'],
+  FLYING: ['GUST', 'WING_ATTACK', 'AERIAL_ACE', 'PLUCK', 'AIR_SLASH', 'DRILL_PECK'],
+  PSYCHIC: ['CONFUSION', 'PSYBEAM', 'PSYCHO_CUT', 'EXTRASENSORY', 'ZEN_HEADBUTT', 'PSYCHIC', 'CALM_MIND'],
+  BUG: ['BUG_BITE', 'SILVER_WIND', 'SIGNAL_BEAM', 'X_SCISSOR', 'BUG_BUZZ', 'MEGAHORN'],
+  ROCK: ['ROCK_THROW', 'ROCK_TOMB', 'ANCIENT_POWER', 'ROCK_SLIDE', 'POWER_GEM', 'STONE_EDGE'],
+  GHOST: ['ASTONISH', 'SHADOW_SNEAK', 'SHADOW_PUNCH', 'SHADOW_CLAW', 'SHADOW_BALL'],
+  DRAGON: ['TWISTER', 'DRAGON_BREATH', 'DRAGON_CLAW', 'DRAGON_PULSE'],
+  DARK: ['BITE', 'FAINT_ATTACK', 'PAYBACK', 'NIGHT_SLASH', 'CRUNCH', 'DARK_PULSE'],
+  STEEL: ['METAL_CLAW', 'BULLET_PUNCH', 'STEEL_WING', 'IRON_HEAD', 'FLASH_CANNON', 'IRON_TAIL'],
+};
+const NORMAL_STAPLES = ['QUICK_ATTACK', 'HEADBUTT', 'BODY_SLAM']; // offered to every thin pool
+// Species that copy moves (DITTO's TRANSFORM, SMEARGLE's SKETCH) also get coverage of every kind.
+const COPYCAT_FALLBACK = ['WATER_PULSE', 'SHOCK_WAVE', 'AERIAL_ACE', 'ROCK_TOMB', 'BRICK_BREAK', 'FLAME_WHEEL', 'ICY_WIND', 'MAGICAL_LEAF',
+  'SHADOW_PUNCH', 'BITE', 'FLAMETHROWER', 'THUNDERBOLT', 'ICE_BEAM', 'SURF', 'PSYCHIC', 'SHADOW_BALL'];
+const COPYCATS = new Set(['DITTO', 'SMEARGLE']);
+// Per species: [[level, move]] (own learnset + the evolution line's), TM/HM + tutor moves. Cached (keyed on the
+// species object so a reloaded D rebuilds it).
+const POOL_CACHE = new WeakMap();
+function speciesPool(key) {
+  const s = D.species[key];
+  if (!s) return { levels: [], other: [] };
+  if (POOL_CACHE.has(s)) return POOL_CACHE.get(s);
+  const levels = (s.learnset || []).map(([l, m]) => [l, m]);
+  const own = new Set(s.types || []);
+  const add = (sp, filter) => { for (const [l, m] of D.species[sp]?.learnset || []) if (!filter || own.has(D.moves[m]?.type) || D.moves[m]?.type === 'NORMAL') levels.push([l, m]); };
+  for (let k = key, i = 0; i < 4 && (k = familyParent(k)); i++) add(k, false); // pre-evolutions
+  const down = (sp, branched, depth) => { // evolutions
+    const evos = [...new Set((D.species[sp]?.evolutions || []).map(e => e.into))];
+    for (const e of evos) if (D.species[e] && depth < 4) { add(e, branched || evos.length > 1); down(e, branched || evos.length > 1, depth + 1); }
+  };
+  down(key, false, 0);
+  const pool = { levels, other: [...(s.tmhm || []), ...(s.tutor || [])] };
+  POOL_CACHE.set(s, pool);
+  return pool;
+}
+function familyParent(sp) { familyOf(sp); return PREVO[sp] || null; }
+// The eligible reward moves for `mon` in act `actIndex`: [{ move, fallback }], never a move it knows.
+export function movePool(mon, actIndex) {
+  const maxPower = MOVE_POOL.maxPower[actIndex] ?? 150;
+  const ok = (m) => { const mv = D.moves[m]; return mv && !knowsMove(mon, m) && !(mv.power > maxPower) && !(MOVE_POOL.lateMoves.includes(m) && actIndex < 2); };
+  const out = [], seen = new Set();
+  const push = (m, fallback) => { if (!seen.has(m)) { seen.add(m); if (ok(m)) out.push({ move: m, fallback }); } };
+  const sp = speciesPool(mon.species);
+  for (const [l, m] of sp.levels) if (l <= mon.level + 5) push(m, false);
+  for (const m of sp.other) push(m, false);
+  if (out.length < MOVE_POOL.thinMoves || out.filter(x => D.moves[x.move].power > 0).length < MOVE_POOL.thinAttacks) {
+    for (const t of typesOf(mon)) for (const m of FALLBACK_MOVES[t] || []) push(m, true);
+    for (const m of NORMAL_STAPLES) push(m, true);
+    if (COPYCATS.has(mon.species)) for (const m of COPYCAT_FALLBACK) push(m, true);
+  }
+  return out;
 }
 
 function ivsFrom(iv) {

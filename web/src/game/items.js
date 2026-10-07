@@ -43,7 +43,8 @@ Object.assign(RELICS, {
   WHITE_HERB: { rarity: 'common', desc: 'At the end of each turn, your lowered stats are restored.', onTurnEnd(b) { b.clearNegativeStages('player', 'WHITE_HERB'); } },
   MENTAL_HERB: { rarity: 'common', desc: 'Your lead cannot become confused. +6 damage on every hand.', mods: { noConfuse: 1 }, onHand(s) { s.flat(6, 'MENTAL_HERB'); } },
 
-  KINGS_ROCK: { rarity: 'uncommon', desc: 'Scoring attack cards have a 10% chance to make the enemy flinch.', onCard(s, c) { if (!c.status && s.rng.chance(0.1)) s.flinch('KINGS_ROCK'); } },
+  // (v0.3.7: one roll per hand; it used to roll for every scoring attack card)
+  KINGS_ROCK: { rarity: 'uncommon', desc: 'Once per hand: if an attack card hits, 10% chance to make the enemy flinch.', onHand(s) { if (s.attackHits > 0 && s.rng.chance(0.1)) s.flinch('KINGS_ROCK'); } },
   QUICK_CLAW: { rarity: 'uncommon', desc: 'Your first hand in each battle always goes first. 20% chance after that.', mods: { quickClaw: 1 } },
   SHELL_BELL: { rarity: 'uncommon', desc: 'When a hand knocks out an enemy, your lead heals 1/4 of its max HP.', onKO(b) { b.healLead(1 / 4, 'SHELL_BELL'); } },
   FOCUS_BAND: { rarity: 'uncommon', desc: 'Once per battle, your lead survives a fatal hit with 1 HP.', mods: { focusBand: 1 } },
@@ -114,7 +115,7 @@ Object.assign(RELICS, {
   ENERGY_POWDER: { rarity: 'common', desc: "+12% damage per status card in your lead's deck (max +60%).", onHand(s) { const n = Math.min(5, s.deckCards.filter(c => c.status).length); if (n) s.pct(12 * n, 'ENERGY_POWDER'); } },
   HEAL_POWDER: { rarity: 'common', desc: 'Your lead is cured of status at the start of every battle. +10% damage.', onBattleStart(b) { const l = b.lead(); if (l?.status) { l.status = null; b.msg('HEAL POWDER cured your lead!'); } }, onHand(s) { s.pct(10, 'HEAL_POWDER'); } },
   GOOD_ROD: { rarity: 'uncommon', desc: '+24% damage for every discard you have left.', onHand(s) { const n = s.battle.discardsLeft || 0; if (n) s.pct(24 * n, 'GOOD_ROD'); } },
-  DOME_FOSSIL: { rarity: 'common', desc: '+16% damage for every card left in your hand after playing.', onHand(s) { const n = s.battle.deck.hand.length; if (n) s.pct(16 * n, 'DOME_FOSSIL'); } },
+  DOME_FOSSIL: { rarity: 'common', desc: '+16% damage for every card left in your hand after playing.', onHand(s) { const n = s.battle.deck.hand.filter(c => !s.cards.some(i => i.card === c)).length; if (n) s.pct(16 * n, 'DOME_FOSSIL'); } }, // (the preview runs with the played cards still in hand)
   HELIX_FOSSIL: { rarity: 'uncommon', desc: "+10% damage for each different attack type in your lead's deck.", onHand(s) { const n = new Set(s.deckCards.filter(c => !c.status).map(c => c.type)).size; if (n) s.pct(10 * n, 'HELIX_FOSSIL'); } },
   POKEBLOCK_CASE: { rarity: 'common', desc: '+16% damage for every POKéMON that has led this battle (max +80%).', onHand(s) { const n = Math.min(5, s.battle.participants.size); if (n) s.pct(16 * n, 'POKEBLOCK_CASE'); } },
   RED_ORB: { rarity: 'rare', desc: '+80% damage on hands with 4 or more attack cards.', onHand(s) { if (s.cards.filter(c => !c.status).length >= 4) s.pct(80, 'RED_ORB'); } },
