@@ -87,7 +87,7 @@ export function drawMonCentered(ctx, species, cx, cy, opts = {}) {
 // A w x h window of an image at 1x: horizontally centred on its opaque pixels, from their top down
 // (a head-and-shoulders crop of a trainer pic), for small slots that would otherwise need a resample.
 export function drawPortrait(ctx, path, x, y, w, h, opts = {}) {
-  const im = img(path), b = opaqueBounds(path, im.naturalWidth, im.naturalHeight); // (HGSS portraits are 80x80)
+  const im = img(path), b = opaqueBounds(path, im.naturalWidth, im.naturalHeight); // (any pic size)
   if (!b) return;
   const iw = im.naturalWidth, ih = im.naturalHeight;
   const sx = Math.max(0, Math.min(iw - w, b.x + Math.floor((b.w - w) / 2))), sy = Math.max(0, Math.min(ih - h, b.y));
@@ -97,8 +97,9 @@ export function drawPortrait(ctx, path, x, y, w, h, opts = {}) {
   ctx.restore();
 }
 
-// A trainer pic in the 64x64 FireRed frame at (x, y): bigger pics (HGSS portraits keep their 80x80 frame) sit at its
-// bottom centre, so feet line up and the extra height grows upward. opts.minTop: the figure's top (its opaque pixels)
+// A trainer pic in the 64x64 FireRed frame at (x, y). All shipped pics are 64x64 (tools/extract_hgss.py shrinks the
+// 80x80 HGSS portraits to FireRed's scale); a pic of any other size would sit at the frame's bottom centre, so feet
+// line up and extra height grows upward. opts.minTop: the figure's top (its opaque pixels)
 // never goes above this y (it moves down instead), for clipped scenes. Same integer scale, never resampled.
 export function drawTrainer(ctx, pic, x, y, opts = {}) {
   const path = trainerPath(pic), im = img(path);

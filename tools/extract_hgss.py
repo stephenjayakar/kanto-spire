@@ -7,18 +7,23 @@ browser-ready RGBA PNGs (palette index 0 = transparent) into web/assets/gfx:
 
     gfx/trainers/hgss/<name>.png   Johto trainer portraits (a/0/5/8: NCGR + NCLR + NCER per class)
     gfx/overworld/people/hgss/<name>.png  overworld walkers (a/0/8/1 mmodel BTX0 textures), 32x32 frames in
-                                   FireRed's people order: down, up, left, down-walk x2, up-walk x2, left-walk x2
+                                   FireRed's people order: down, up, left, down-walk x2, up-walk x2, left-walk x2;
+                                   the figure is shrunk 0.8 like the portraits (~21 px tall, FireRed's walker height)
     gfx/items/hgss/<key>.png       Apricorn balls + Apricorns (a/0/1/8 item icons; the art sits in the
                                    top-left 24x24 of the 32x32 cell, cropped to 24x24 like FireRed icons)
 
-Trainer portraits keep the native HGSS 80x80 frame (most figures are 66-80 px
-tall, so a 64x64 crop would cut heads off). The game's draw code anchors any
-non-64 pic at the bottom centre of the 64x64 FireRed frame (same integer scale,
-no resampling), so feet line up and the extra height grows upward.
+Trainer portraits are drawn natively in an 80x80 frame (figures up to 79 px
+tall), ~25% bigger than FireRed's 64x64 pics (figures 57-63 px). A 64x64 crop
+would cut heads off, so they are downscaled 80 -> 64 (5 source px -> 4) to
+FireRed's scale with a pixel-art-safe filter (see downscale(): area-weighted
+majority vote over the sprite's own palette indices, outline colour favoured,
+hard alpha), so every output pixel is one of the sprite's own colours and the
+figure keeps its feet on the bottom row and its centre on x=32 like FireRed's.
 
 Usage (needs ndspy, Pillow: pip install ndspy pillow):
     python tools/extract_hgss.py [path/to/heartgold_usa.nds]   (default: rom/heartgold.nds)
     ... --sheet    also writes tests/out/johto/hgss_sheet.png (contact sheet for eyeballing)
+    ... --native   keep trainer portraits (80x80) and walker figures at native DS size (no downscale)
 
 Re-runnable: overwrites its outputs and prints every file written. Only the
 pinned USA dump (IPKE, sha1 below) is accepted. Outputs live under web/assets
@@ -142,6 +147,62 @@ def trainer_pic(trf, cls: int) -> Image.Image:
     return img
 
 
+def _weights(src: int, dst: int) -> list[list[tuple[int, float]]]:
+    """1-D area weights: for each output pixel, [(source pixel, overlap)] (overlaps sum to src/dst)."""
+    f, out = src / dst, []
+    for j in range(dst):
+        a, b = j * f, (j + 1) * f
+        out.append([(i, min(b, i + 1) - max(a, i)) for i in range(int(a), min(src, int(-(-b // 1)))) if min(b, i + 1) > max(a, i)])
+    return out
+
+
+def downscale(img: Image.Image, size=64, method: str = "vote", outline_boost: float = 1.6) -> Image.Image:
+    """Shrink a palette sprite (fully opaque or fully clear pixels) to size (int: square, or (w, h)), pixel-art safe.
+
+    vote:    each output pixel takes the colour (or transparency) with the largest area overlap of its source
+             footprint; the sprite's darkest colour (the outline) counts outline_boost x, so 1-px outlines that a
+             5->4 grid squeezes to a 40% share survive. Only original colours, hard alpha.
+    box:     premultiplied area average, alpha >= 50% opaque, colour snapped to the nearest palette colour.
+    nearest: plain nearest-neighbour (drops every 5th row and column).
+    """
+    W, H = img.size
+    ow, oh = (size, size) if isinstance(size, int) else size
+    if method == "nearest":
+        return img.resize((ow, oh), Image.NEAREST)
+    px = img.load()
+    cols = sorted({px[x, y][:3] for y in range(H) for x in range(W) if px[x, y][3]})
+    lum = lambda c: 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]
+    dark = min(cols, key=lum) if cols else None
+    wx, wy = _weights(W, ow), _weights(H, oh)
+    out = Image.new("RGBA", (ow, oh), (0, 0, 0, 0))
+    op = out.load()
+    for j, ry in enumerate(wy):
+        for i, rx in enumerate(wx):
+            if method == "vote":
+                score: dict = {}
+                for sy, ay in ry:
+                    for sx, ax in rx:
+                        p = px[sx, sy]
+                        k = p[:3] if p[3] else None
+                        score[k] = score.get(k, 0.0) + ax * ay * (outline_boost if k == dark else 1.0)
+                k = max(score, key=lambda c: (score[c], c is not None and -lum(c)))  # ties: opaque, then darker
+                if k is not None:
+                    op[i, j] = (*k, 255)
+            else:  # box
+                tot = a = r = g = b = 0.0
+                for sy, ay in ry:
+                    for sx, ax in rx:
+                        w, p = ax * ay, px[sx, sy]
+                        tot += w
+                        if p[3]:
+                            a += w; r += w * p[0]; g += w * p[1]; b += w * p[2]
+                if a >= tot / 2:
+                    m = (r / a, g / a, b / a)
+                    rm = lambda c: (2 + (c[0] + m[0]) / 512) * (c[0] - m[0]) ** 2 + 4 * (c[1] - m[1]) ** 2 + (2 + (255 - (c[0] + m[0]) / 2) / 256) * (c[2] - m[2]) ** 2
+                    op[i, j] = (*min(cols, key=rm), 255)
+    return out
+
+
 def item_icon(icons, gi: int, pi: int) -> Image.Image:
     px, tw, th, scanned = ncgr(icons[gi])
     pal = palette(icons[pi])
@@ -169,8 +230,9 @@ def _dict(b: bytes, d: int):
     return [(b[p + i * 16: p + (i + 1) * 16].split(b"\0")[0].decode("latin1"), e) for i, e in enumerate(ents)]
 
 
-def overworld(b: bytes) -> Image.Image:
-    """BTX0 (one 32x32 4bpp texture per frame, one palette) -> a strip of 32x32 frames in OW_ORDER."""
+def overworld(b: bytes, shrink: bool = True) -> Image.Image:
+    """BTX0 (one 32x32 4bpp texture per frame, one palette) -> a strip of 32x32 frames in OW_ORDER.
+    shrink: scale the figure to FireRed's walker size (0.8, like the portraits), keeping the 32x32 frame."""
     assert b[:4] == b"BTX0", "not a BTX0"
     t, = struct.unpack_from("<I", b, 0x10)
     assert b[t:t + 4] == b"TEX0"
@@ -196,6 +258,10 @@ def overworld(b: bytes) -> Image.Image:
             v = (b[base + i // 2] >> ((i & 1) * 4)) & 15
             if v:
                 img.putpixel((i % w, i // w), (*pal[v], 255))
+        if shrink:  # figures are ~26 px tall vs FireRed's ~20: scale the 30x30 above the frame's bottom edge by 0.8
+            small = downscale(img.crop((1, 2, 31, 32)), 24)
+            img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+            img.paste(small, (4, 8))  # same centre (x=16), same bottom edge
         frames[int(name.rsplit(".", 1)[1])] = img
     strip = Image.new("RGBA", (32 * len(OW_ORDER), 32), (0, 0, 0, 0))
     for k, n in enumerate(OW_ORDER):
@@ -220,6 +286,8 @@ def main() -> None:
     tdir.mkdir(parents=True, exist_ok=True)
     for name, cls in TRAINERS.items():
         img = trainer_pic(trf, cls)
+        if "--native" not in sys.argv:
+            img = downscale(img, 64)  # 80x80 -> FireRed's 64x64 scale
         f = tdir / f"{name}.png"
         img.save(f)
         written.append((f, img))
@@ -238,7 +306,7 @@ def main() -> None:
     odir = OUT / "overworld" / "people" / "hgss"
     odir.mkdir(parents=True, exist_ok=True)
     for name, idx in OVERWORLD.items():
-        img = overworld(bytes(mmodel[idx]))
+        img = overworld(bytes(mmodel[idx]), shrink="--native" not in sys.argv)
         f = odir / f"{name}.png"
         img.save(f)
         written.append((f, img.crop((0, 0, 32, 32))))
