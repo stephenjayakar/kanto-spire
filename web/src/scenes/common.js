@@ -589,7 +589,8 @@ export class MessageBox {
     const col = style === 'battle' ? 'white' : 'dark';
     const lines = wrap(shown, w - 20);
     lines.slice(-2).forEach((l, i) => text(ctx, l, x + 10, y + 7 + i * 15, { color: col }));
-    if (this.shown >= this.cur.str.length && !this.cur.auto && Math.floor(Engine.time * 3) % 2) draw(ctx, 'gfx/ui/cursors/text_advance_arrow.png', x + w - 16, y + h - 14);
+    // the advance arrow: one 10x12 frame of the 4-frame strip at a time (FireRed's bobbing arrow), not the whole strip
+    if (this.shown >= this.cur.str.length && !this.cur.auto) draw(ctx, 'gfx/ui/cursors/text_advance_arrow.png', x + w - 16, y + h - 14, { sx: (Math.floor(Engine.time * 6) % 4) * 10, sy: 0, sw: 10, sh: 12 });
   }
 }
 
