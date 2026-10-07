@@ -31,7 +31,7 @@ export class CoopLobbyScene {
     this.busy = false;
     this.view = null;            // coop:room result while in a room
     this.rooms = null;           // coop:mine for REJOIN
-    this.asc = Math.min(this.ownBest(), G.meta.lastAscension ?? 0); // capped again once both starters are picked
+    this.asc = Math.min(this.ownBest(), G.meta.lastAscension ?? 0); // the server clamps it to the room's best unlock once starters are picked
     Sound.playBGM('mus_oak_lab');
     this.onPaste = (e) => {
       if (this.mode !== 'join') return;
@@ -259,15 +259,16 @@ export class CoopLobbyScene {
     // settings
     panel(ctx, 224, 184, 402, 100);
     text(ctx, isHost ? 'RUN SETTINGS (host)' : 'RUN SETTINGS (the host picks)', 425, 190, { align: 'center', color: 'white', font: 'small' });
-    // per-starter unlocks: the lowest of the players' levels for the starters they picked (the server enforces it)
-    const maxA = Math.min(mine?.starter ? ascUnlocked(G.meta, mine.starter) : this.ownBest(), coopAscCap(v.members.filter(m => m.slot !== me)));
+    // per-starter unlocks: the highest of the players' levels for the starters they picked, not their best
+    // overall (the server enforces it); my own pick counts with my local unlock, no picks yet = no cap
+    const maxA = coopAscCap([...v.members.filter(m => m.slot !== me), { ascMax: mine?.starter ? ascUnlocked(G.meta, mine.starter) : null }]);
     const a = room.ascension || 0;
     text(ctx, 'ASCENSION', 236, 210, { color: 'whiteSoft', font: 'small' });
     if (isHost && button(ctx, '<', 300, 205, 22, 20, { color: '#506080', disabled: a <= 0 || this.busy })) this.config({ ascension: a - 1 });
     text(ctx, 'A' + a, 344, 207, { align: 'center', color: a ? 'red' : 'gold' });
     if (isHost && button(ctx, '>', 366, 205, 22, 20, { color: '#506080', disabled: a >= maxA || this.busy })) this.config({ ascension: a + 1 });
     textBlock(ctx, coopAscDesc(ASCENSIONS[a]), 236, 230, 170, { color: 'gray', font: 'small', lineHeight: 10 });
-    if (hover(236, 205, 160, 70)) tip(`ASCENSION ${a}`, (a > 0 ? ASCENSIONS.slice(1, a + 1).map(x => `A${x.n}: ${coopAscDesc(x)}`).join('\n') + '\n\n' : '') + `Ascension unlocks are per starter: this room can go up to A${maxA}, the lowest of what each of you has unlocked with the starter you picked.`, { width: 220 });
+    if (hover(236, 205, 160, 70)) tip(`ASCENSION ${a}`, (a > 0 ? ASCENSIONS.slice(1, a + 1).map(x => `A${x.n}: ${coopAscDesc(x)}`).join('\n') + '\n\n' : '') + `Ascension unlocks are per starter: this room can go up to A${maxA}, the highest any of you has unlocked with the starter you picked.`, { width: 220 });
     // the region pool (the host's: HOENN acts join once the host has won a run, JOHTO acts after 2 wins)
     text(ctx, 'REGIONS', 430, 210, { color: 'whiteSoft', font: 'small' });
     text(ctx, isSpireWorld(world) ? coopWorldRegions(world) : coopWorldLabel(world), 560, 210, { align: 'center', color: 'gold', font: 'small' });

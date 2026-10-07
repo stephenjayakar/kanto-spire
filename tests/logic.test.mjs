@@ -804,11 +804,17 @@ t('ascension: unlocks come from clears only (no fallback from the old global lev
     assert.equal(S.applyClears(meta, meta.runs).changed, false); // re-running changes nothing
   });
 }
-t('ascension: co-op room cap is the lower of both players\' unlocks for their picks', () => {
-  assert.equal(U.coopAscCap([{ ascMax: 4 }, { ascMax: 2 }]), 2);
-  assert.equal(U.coopAscCap([{ ascMax: 4 }, { ascMax: null }]), 4); // a partner without the field (older client) doesn't cap
+t('ascension: co-op room cap is the highest of the players\' unlocks for their picks', () => {
+  assert.equal(U.coopAscCap([{ ascMax: 4 }, { ascMax: 2 }]), 4);
+  assert.equal(U.coopAscCap([{ ascMax: 2 }, { ascMax: null }]), 2); // a partner without the field (older client) doesn't count
   assert.equal(U.coopAscCap([{}, {}]), U.MAX_ASC);
-  assert.equal(U.coopAscCap([{ ascMax: 0 }, { ascMax: 7 }]), 0);
+  assert.equal(U.coopAscCap([]), U.MAX_ASC);
+  assert.equal(U.coopAscCap([{ ascMax: 0 }, { ascMax: 7 }]), 7);
+  assert.equal(U.coopAscCap([{ ascMax: 0 }, { ascMax: 0 }, { ascMax: 1 }, {}]), 1);
+  // it's the unlock for each player's PICKED starter: P1 picked BULBASAUR (A3, though A9 with another starter),
+  // P2 picked SQUIRTLE (A5) -> A5
+  const p1 = { ascBy: { BULBASAUR: 3, GASTLY: 9 } }, p2 = { ascBy: { SQUIRTLE: 5 } };
+  assert.equal(U.coopAscCap([{ ascMax: U.ascUnlocked(p1, 'BULBASAUR') }, { ascMax: U.ascUnlocked(p2, 'SQUIRTLE') }]), 5);
   assert.equal(U.coopAscCap([{ ascMax: 99 }]), U.MAX_ASC);
 });
 t('ascension: the shiny unlock (A5+) and Nuzlocke (A8) rules are unchanged', () => {
@@ -1612,6 +1618,14 @@ t("co-op win unlocks the next ascension for the player's own starter (idempotent
   assert.equal(grantCoopWin(m, 'SQUIRTLE', 1), false, 'a second call changes nothing');
   assert.equal(grantCoopWin(m, 'BULBASAUR', 0), false, 'a lower win never lowers an unlock');
   assert.equal(grantCoopWin(m, 'BULBASAUR', 10), true); assert.equal(ascUnlocked(m, 'BULBASAUR'), 10);
+});
+
+t('co-op win above my own unlock (room ran at a partner\'s higher level) still unlocks the next level', () => {
+  const m = { ascBy: { SQUIRTLE: 2 }, bestAscensionWon: 1, maxAscension: 2, shinies: [] };
+  assert.equal(grantCoopWin(m, 'SQUIRTLE', 7), true);
+  assert.equal(ascUnlockedFor(m, 'SQUIRTLE'), 8, 'own A2, win at A7 -> A8');
+  assert.equal(m.bestAscensionWon, 7); assert.equal(m.maxAscension, 8);
+  assert.ok(unlockShiny({ starter: 'SQUIRTLE', ascension: 7 }, m), 'and the A5+ shiny, though A7 was above my own unlock');
 });
 
 t("co-op win at A5+ unlocks the shiny of the player's own starter (and not below A5)", () => {

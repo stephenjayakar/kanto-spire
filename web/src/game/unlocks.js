@@ -140,10 +140,11 @@ export function grantCoopWin(meta, species, ascension) {
 // The level the picker opens on for a starter: the one last used with it, else the old global pick, capped.
 export const ascDefault = (meta, species) => Math.min(ascUnlocked(meta, species), clampAsc(meta?.lastAscBy?.[species] ?? meta?.lastAscension ?? 0));
 
-// A co-op room's cap: the lower of the players' unlocks for the starters they picked (unknown = no cap).
+// A co-op room's cap: the highest of the players' unlocks for the starters they picked (members without a
+// known value don't count; none known = no cap).
 export function coopAscCap(members) {
   const known = (members || []).map(m => m?.ascMax).filter(n => typeof n === 'number');
-  return known.length ? Math.min(...known.map(clampAsc)) : MAX_ASC;
+  return known.length ? Math.max(...known.map(clampAsc)) : MAX_ASC;
 }
 
 // A history entry counts as a win if it says so, or if it reached the post-game act (a CHAMPION who carried
