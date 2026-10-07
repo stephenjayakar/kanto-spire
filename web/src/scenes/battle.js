@@ -487,7 +487,7 @@ export class BattleScene {
   previewSim() {
     const b = this.b;
     if (this.busy || !this.sel.length) return null;
-    const key = this.sel.join(',') + '|' + b.turn + '|' + b.handsPlayed + '|' + b.enemyIndex + '|' + (b.enemy()?.hp || 0);
+    const key = this.sel.join(',') + '|' + b.previewKey();
     if (this._simKey !== key) { this._simKey = key; this._sim = b.simulate(this.sel); this._prev = b.preview(this.sel); }
     return this._prev ? { ...this._prev, sim: this._sim } : null;
   }

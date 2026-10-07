@@ -1675,5 +1675,68 @@ t('boss preferred types (map / act clear / E4 break)', () => {
   for (const a of [...ACTS, ...HOENN_ACTS]) for (const k of [...(a.bosses || []), ...(a.gauntlet || []).slice(0, 4)]) if (/^(LEADER|ELITE_FOUR)_/.test(k)) assert.ok(BOSS_TYPES[k], 'signature type for ' + k);
 });
 
+
+// ---- v0.3.7: REST, KING'S ROCK, deck-counting items --------------------------------------------------
+const slowFoe = (moves = ['GROWL'], hp = 2000) => { const e = makeEnemyT('RATTATA', 5, { rng: new RNG('foe'), moves }); e.moves = moves.slice(); e.maxHp = e.hp = hp; e.stats.spe = 1; e.stats.atk = 1; e.stats.spa = 1; return e; };
+const handOf = (b, moves) => { const lead = b.lead(); b.deck.hand = []; return moves.map((m, i) => { const c = { id: 9100 + i, uid: lead.uid, move: m }; b.deck.hand.push(c); return c.id; }); };
+const soloWith = (foe, relics = [], seed = 'R37') => { const run = Run.create({ starter: 'CHARMANDER', seed }); for (const k of relics) run.addRelic(k); const b = new Battle(run, { kind: 'wild', enemies: [foe], rng: new RNG('b' + seed) }); b.start(); return { run, b, lead: b.lead() }; };
+
+t('REST: full heal, status cured, then asleep (2 turns)', () => {
+  const { b, lead } = soloWith(slowFoe());
+  lead.hp = 3; lead.status = 'PSN';
+  b.play(handOf(b, ['REST']));
+  assert.equal(lead.hp, maxHp(lead));
+  assert.equal(lead.status, 'SLP');
+  assert.ok(b.ms(lead.uid).sleep >= 1);
+});
+
+t('REST in the hand that knocks out the last foe: the heal and cure stay, the sleep ends with the battle', () => {
+  for (const order of [['REST', 'EMBER'], ['EMBER', 'REST']]) for (const st of ['PSN', 'TOX', 'BRN', null]) { // (PAR: a fully paralyzed card does nothing, as in Gen 3)
+    const { b, lead } = soloWith(slowFoe(['GROWL'], 3), [], 'RK' + st);
+    lead.hp = 3; lead.status = st;
+    b.play(handOf(b, order));
+    assert.equal(b.result?.outcome, 'win', order + st);
+    assert.equal(lead.hp, maxHp(lead), order + st);
+    assert.equal(lead.status, null, `${order} ${st}: no status after the won battle`);
+  }
+});
+
+t("REST still heals when the foe's own move ends the battle before the hand (EXPLOSION first)", () => {
+  const foe = slowFoe(['EXPLOSION'], 50); foe.stats.spe = 999;
+  const { b, lead } = soloWith(foe, [], 'RX');
+  lead.hp = maxHp(lead) - 5; lead.status = 'BRN';
+  b.intent = { move: b.moveData('EXPLOSION'), first: true };
+  const ids = handOf(b, ['REST', 'EMBER']);
+  b.play(ids);
+  assert.equal(b.result?.outcome, 'win');
+  if (lead.hp > 0) { assert.equal(lead.hp, maxHp(lead)); assert.equal(lead.status, null); }
+});
+
+t("KING'S ROCK rolls once per hand (10%), not once per card", () => {
+  let flinches = 0;
+  for (let i = 0; i < 300; i++) {
+    const { b } = soloWith(slowFoe(), ['KINGS_ROCK'], 'KQ' + i);
+    const ev = b.play(handOf(b, ['SCRATCH', 'SCRATCH', 'SCRATCH', 'SCRATCH', 'SCRATCH']));
+    flinches += ev.filter(e => e.t === 'relic' && e.key === 'KINGS_ROCK').length;
+  }
+  const rate = flinches / 300;
+  assert.ok(rate > 0.04 && rate < 0.18, `flinch rate per 5-card hand ${rate} (per card it was ~0.41)`);
+  assert.match(RELICS.KINGS_ROCK.desc, /per hand/i);
+});
+
+t('deck-counting held items: the preview equals the real hand (UP-GRADE, SOOT SACK, HELIX FOSSIL, ENERGY POWDER, DOME FOSSIL)', () => {
+  for (const k of ['UP_GRADE', 'SOOT_SACK', 'HELIX_FOSSIL', 'ENERGY_POWDER', 'DOME_FOSSIL']) {
+    const { b } = soloWith(slowFoe(), [k], 'DK' + k);
+    const lead = b.lead();
+    b.deck.hand = []; b.deck.draw = []; b.deck.discard = [];
+    for (let i = 0; i < 14; i++) b.deck.discard.push({ id: 9300 + i, uid: lead.uid, move: i % 2 ? 'EMBER' : 'GROWL' });
+    const ids = handOf(b, ['EMBER', 'EMBER', 'SCRATCH']);
+    b.deck.hand.push({ id: 9400, uid: lead.uid, move: 'GROWL' }); // one card stays in hand (DOME FOSSIL)
+    const sim = b.simulate(ids).damage;
+    const ev = b.play(ids);
+    assert.equal(ev.find(e => e.t === 'total').damage, sim, k);
+  }
+});
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

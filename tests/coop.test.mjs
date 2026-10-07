@@ -8,6 +8,7 @@ import { RNG } from '../web/src/game/rng.js';
 import { Run } from '../web/src/game/run.js';
 import { CoopGame, duoConfig, pickCoopEvent, sharedEventId } from '../web/src/game/coop/coop.js';
 import { DuoBattle } from '../web/src/game/coop/duo.js';
+import { Battle, makeEnemy } from '../web/src/game/battle.js';
 import { COOP_TUNING } from '../web/src/game/coop/tuning.js';
 import { playCoop, makeBot, botAction } from './coop_bot.mjs';
 import { chooseHand } from './bot.mjs';
@@ -959,6 +960,60 @@ t('v0.1.1 determinism across K-J-H-J: two clients on the same log agree after ev
   const cks2 = [], again = play(cks2);
   assert.deepEqual(again.log.map(a => a.type + (a.p ?? '')), log.map(a => a.type + (a.p ?? '')));
   assert.deepEqual(cks2, cks);
+});
+
+
+// ------------------------------------------------------------------------------------ v0.3.7: damage parity, REST
+const foe37 = (hp = 2000, spe = 1) => { const e = makeEnemy('RATTATA', 12, { rng: new RNG('foe37'), moves: ['GROWL'] }); e.moves = ['GROWL']; e.maxHp = e.hp = hp; e.stats.spe = spe; e.stats.atk = 1; e.stats.spa = 1; return e; };
+const hand37 = (b, moves, base = 9500) => { const lead = b.lead(); b.deck.hand = []; b.deck.discard = []; b.deck.draw = ['EMBER', 'GROWL', 'SCRATCH', 'EMBER', 'SCRATCH', 'GROWL', 'EMBER', 'SCRATCH', 'EMBER', 'SCRATCH', 'GROWL', 'EMBER'].map((m, i) => ({ id: base + 50 + i, uid: lead.uid, move: m })); return moves.map((m, i) => { const c = { id: base + i, uid: lead.uid, move: m }; b.deck.hand.push(c); return c.id; }); };
+const RELICS37 = ['CHARCOAL', 'MACHO_BRACE', 'CHOICE_BAND', 'SECRET_KEY', 'TEACHY_TV', 'WHITE_FLUTE', 'UP_GRADE', 'SOOT_SACK', 'DOME_FOSSIL', 'MENTAL_HERB'];
+const run37 = (seed) => { const r = Run.create({ starter: 'CHARMANDER', seed, coop: true }); for (const k of RELICS37) r.addRelic(k); r.badges.push('BOULDER', 'MARSH', 'VOLCANO'); r.comboLevels.PAIR = 3; return r; };
+const duo37 = (r0, enemies, seed = 'd37') => { const r1 = Run.create({ starter: 'SQUIRTLE', seed: 'P2' + seed, coop: true }); const d = new DuoBattle([r0, r1], { kind: 'wild', coopKind: 'wild', enemies, queues: [[0], [1]], slotQueue: [0, 1], slots: 2, rng: new RNG(seed) }); d.start(); return d; };
+
+t('damage: the same hand with the same held items, badges and vitamins deals the same in co-op as solo (preview = actual)', () => {
+  const moves = ['EMBER', 'EMBER', 'SCRATCH', 'GROWL'];
+  for (let turn = 0; turn < 3; turn++) {
+    const rs = run37('DMG'), b = new Battle(rs, { kind: 'wild', enemies: [foe37()], rng: new RNG('s37') }); b.start();
+    const d = duo37(run37('DMG'), [foe37(), foe37()]), s = d.subs[0];
+    for (let k = 0; k <= turn; k++) {
+      const idsS = hand37(b, moves), idsC = hand37(s, moves);
+      const simS = b.simulate(idsS).damage, simC = d.simulate(0, idsC, 0).damage;
+      assert.equal(simC, simS, `preview, hand ${k + 1}`);
+      const evS = b.play(idsS);
+      d.lock(0, { ids: idsC, target: 0 });
+      const evC = d.lock(1, { pass: true });
+      const totS = evS.find(e => e.t === 'total').damage, totC = evC.find(e => e.t === 'total' && e.p === 0).damage;
+      assert.equal(totS, simS, `solo actual = preview, hand ${k + 1}`);
+      assert.equal(totC, totS, `co-op actual = solo actual, hand ${k + 1}`);
+      for (const src of ['CHARCOAL', 'CHOICE_BAND', 'BOULDER', 'MARSH']) assert.ok(evC.some(e => e.p === 0 && e.srcs?.includes(src) || e.src === src), src + ' counted in co-op');
+    }
+  }
+});
+
+t('REST in the hand that ends a co-op battle: full HP and no status afterwards', () => {
+  for (const order of [['REST', 'EMBER'], ['EMBER', 'REST']]) for (const st of ['PSN', 'TOX', 'BRN', null]) {
+    const r0 = Run.create({ starter: 'CHARMANDER', seed: 'RST', coop: true }), L = r0.party[0];
+    const d = duo37(r0, [foe37(3), foe37(3)], 'rst' + st);
+    L.hp = 3; L.status = st;
+    d.lock(1, { ids: hand37(d.subs[1], ['TACKLE', 'TACKLE'], 9600), target: 1 });
+    d.lock(0, { ids: hand37(d.subs[0], order), target: 0 });
+    assert.equal(d.result?.outcome, 'win', order + st);
+    assert.equal(L.hp, maxHp(L), `${order} ${st}`);
+    assert.equal(L.status, null, `${order} ${st}`);
+  }
+});
+
+t('REST still heals and cures when a faster partner wins the battle before the hand resolves', () => {
+  const r0 = Run.create({ starter: 'CHARMANDER', seed: 'RLATE', coop: true }), L = r0.party[0];
+  const d = duo37(r0, [foe37(3), foe37(500)], 'late');
+  d.enemies[1].hp = 0; d.enemyGone(1, 'faint'); // one foe left
+  L.hp = 2; L.status = 'TOX';
+  d.subs[0].run.party[0].ivs.spe = 0; d.subs[1].sides.player.stages.spe = 6; // the partner moves first
+  d.lock(0, { ids: hand37(d.subs[0], ['REST']), target: 0 });
+  d.lock(1, { ids: hand37(d.subs[1], ['TACKLE', 'TACKLE'], 9600), target: 0 });
+  assert.equal(d.result?.outcome, 'win');
+  assert.equal(L.hp, maxHp(L));
+  assert.equal(L.status, null);
 });
 
 console.log(`${pass} passed, ${fail} failed`);
