@@ -1,6 +1,6 @@
 // Per-starter ascension cap in co-op rooms, against the DEV Convex deployment (never prod).
-// A room can't go above the lower of the two players' unlocks for the starters they picked (ascMax, sent
-// with setStarter); a lower pick pulls the room down, configure clamps, start refuses anything above.
+// A room can go up to the highest of the players' unlocks for the starters they picked (ascMax, sent with
+// setStarter); a pick that lowers that best unlock pulls the room down, configure clamps, start refuses above.
 // Needs dev functions pushed from this branch and COOP_TEST=1 on dev (see tests/coop_auth.cjs).
 // Usage: node tests/coop_asc_cap.test.cjs
 const A = require('./coop_auth.cjs');
@@ -29,16 +29,18 @@ async function refused(p, re, msg) {
     ok((await room()).ascension === 5, 'host picks GASTLY (A5 unlocked): the room drops to A5');
     await c2('mutation', 'coop:setStarter', { roomId, starter: 'SQUIRTLE', ascMax: 2 });
     let r = await c1('query', 'coop:room', { roomId });
-    ok(r.room.ascension === 2, 'partner picks SQUIRTLE (A2 unlocked): the room drops to the lower A2');
+    ok(r.room.ascension === 5, 'partner picks SQUIRTLE (A2 unlocked): the room stays at the higher A5');
     ok(r.members.map(m => m.ascMax).join() === '5,2', `members show their ascMax (${r.members.map(m => m.ascMax).join()})`);
-    const cfg = await c1('mutation', 'coop:configure', { roomId, ascension: 4 });
-    ok(cfg.ascension === 2 && (await room()).ascension === 2, 'host asks for A4: clamped to A2');
+    const cfg = await c1('mutation', 'coop:configure', { roomId, ascension: 7 });
+    ok(cfg.ascension === 5 && (await room()).ascension === 5, 'host asks for A7: clamped to A5');
+    await c1('mutation', 'coop:setStarter', { roomId, starter: 'BULBASAUR', ascMax: 3 });
+    ok((await room()).ascension === 3, 'host switches to BULBASAUR (A3): the room drops to the new best, A3');
     await c1('mutation', 'coop:configure', { roomId, ascension: 1 });
     ok((await room()).ascension === 1, 'going lower is fine (A1)');
     await c2('mutation', 'coop:setStarter', { roomId, starter: 'DRATINI', ascMax: 4 });
     await c1('mutation', 'coop:configure', { roomId, ascension: 4 });
-    ok((await room()).ascension === 4, 'partner switches to DRATINI (A4): the host can raise it to A4');
-    // an older client that sends no ascMax doesn't cap the room
+    ok((await room()).ascension === 4, 'partner switches to DRATINI (A4): the host can raise it to A4, above its own A3');
+    // an older client that sends no ascMax doesn't count
     await c2('mutation', 'coop:setStarter', { roomId, starter: 'PIKACHU' });
     ok((await c1('query', 'coop:room', { roomId })).members.find(m => m.slot === 1).ascMax === 4, 'a pick without ascMax keeps the last known value');
     await refused(c1('mutation', 'coop:setStarter', { roomId, starter: 'GASTLY', ascMax: 'x' }), /./, 'a bad ascMax is rejected by the validator');

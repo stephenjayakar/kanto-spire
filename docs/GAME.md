@@ -85,7 +85,7 @@ The rival always uses SMELL YA LATER and legendary bird nodes always use PRESSUR
 
 ### Ascension in co-op
 
-- The host picks the room's ascension. It is **capped by the lower of the two players' unlocks for the starters they picked**. If a player switches to a starter with fewer unlocked levels, the room's ascension drops to fit, and the run can't start above the cap. (A player whose client doesn't report an unlock doesn't cap the room.)
+- The host picks the room's ascension. It can go **up to the highest unlock any player in the room has for the starter they picked**. If a player switches starters and that lowers the room's best unlock below its ascension, the ascension drops to fit, and the run can't start above the cap. (A player whose client doesn't report an unlock doesn't count.)
 - Every ascension rule applies to both players' runs, **except Nuzlocke (A8), which has no effect in co-op**. Instead, a downed player's lead comes back with 25% HP when the partner wins the battle.
 - Co-op has its own tuning on top of the ascension rules. Wild and trainer fights are 2-vs-2. For example, elites and the rival get ×2.35 HP, Gym Leaders ×3.65 and the Elite Four ×4.35 (Hoenn acts are a little lower), all of it ×1.12. EXP is ×0.45 from wild and trainer fights and ×0.75 from the rest. TEAM UP: the second hand to hit the same foe in a turn deals +20% damage.
 - Co-op act clears do give starter-unlock choices, and co-op wins unlock ascensions and, at A5+, shinies (each player's own starter).

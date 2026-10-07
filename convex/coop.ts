@@ -51,11 +51,11 @@ function cleanAscension(a: number) {
   return Math.floor(a);
 }
 const clampAscension = (n: number) => (Number.isFinite(n) ? Math.max(0, Math.min(MAX_ASC, Math.floor(n))) : 0);
-// Ascension unlocks are per starter: a room can't go above the lower of the players' unlocks for the
-// starters they picked (a member who hasn't sent one, e.g. an older client, doesn't cap it).
+// Ascension unlocks are per starter: a room can go up to the highest of the players' unlocks for the
+// starters they picked (a member who hasn't sent one, e.g. an older client, doesn't count; none known = no cap).
 function ascensionCap(members: Member[]) {
   const known = members.map((m) => m.ascMax).filter((n): n is number => typeof n === "number");
-  return known.length ? Math.min(...known.map(clampAscension)) : MAX_ASC;
+  return known.length ? Math.max(...known.map(clampAscension)) : MAX_ASC;
 }
 
 const byteLength = (s: string) => new TextEncoder().encode(s).length;
@@ -186,7 +186,7 @@ export const setStarter = mutation({
     if (room.status !== "lobby") throw new Error("The run has already started.");
     if (!/^[A-Za-z0-9_-]{1,24}$/.test(starter)) throw new Error("Not a starter.");
     await ctx.db.patch(me._id, { starter, lastSeen: Date.now(), ...(ascMax !== undefined ? { ascMax: clampAscension(ascMax) } : {}) });
-    // a starter with fewer unlocked levels lowers the room's ascension to fit
+    // if this pick lowers the room's best unlock below its ascension, the ascension drops to fit
     const cap = ascensionCap(await membersOf(ctx, roomId));
     if (room.ascension > cap) await ctx.db.patch(room._id, { ascension: cap, updatedAt: Date.now() });
     return null;
@@ -224,7 +224,7 @@ export const start = mutation({
     if (members.length > MAX_MEMBERS) throw new Error("Too many players.");
     if (members.length > roomCap(members)) throw new Error("Every player needs the latest version for 3-4 players: reload the page.");
     if (members.some((m) => !m.starter)) throw new Error("Every player must pick a starter.");
-    if (room.ascension > ascensionCap(members)) throw new Error("That ascension isn't unlocked for every starter.");
+    if (room.ascension > ascensionCap(members)) throw new Error("No player has that ascension unlocked for their starter.");
     const now = Date.now();
     // Seats are renumbered 0..n-1 (someone leaving the lobby can leave a gap): the game's player p is the
     // member in slot p, and the init lists starters/names in that order.
