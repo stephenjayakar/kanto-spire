@@ -91,6 +91,7 @@ async function myMembership(ctx: QueryCtx, roomId: Id<"coopRooms">) {
 function publicMember(m: Member) {
   return {
     slot: m.slot, name: m.name, starter: m.starter ?? null, ascMax: m.ascMax ?? null, sketchV: m.sketchV ?? 0, ready: m.ready, left: !!m.left,
+    saved: !!m.left && !!m.savedAt, // v0.3.6: left with SAVE & QUIT
     lastSeen: m.lastSeen, lastSeq: m.lastSeq, maxPlayers: supports(m),
   };
 }
@@ -101,7 +102,7 @@ function publicRoom(room: Room, members: Member[]) {
     _id: room._id, code: room.code, status: room.status,
     host: host ? host.slot : 0, // host's slot (emails are not shared)
     ascension: room.ascension, world: room.world, seed: room.seed, nextSeq: room.nextSeq,
-    createdAt: room.createdAt, updatedAt: room.updatedAt,
+    createdAt: room.createdAt, updatedAt: room.updatedAt, gameVersion: room.gameVersion ?? null, progress: room.progress ?? null,
     maxPlayers: roomCap(members), // seats in this room (2 while an older 2-player client is in it)
   };
 }
@@ -125,9 +126,12 @@ async function requireLobbyHost(ctx: MutationCtx, roomId: Id<"coopRooms">) {
 
 // ---- lobby ------------------------------------------------------------------------------------
 
+const tagV = v.optional(v.string());
+const cleanTag = (s: string | undefined) => (typeof s === "string" && /^[A-Za-z0-9._-]{1,24}$/.test(s) ? s : undefined);
+
 export const create = mutation({
-  args: { ascension: v.optional(v.number()), world: v.optional(worldV), maxPlayers: maxPlayersV },
-  handler: async (ctx, { ascension, world, maxPlayers }) => {
+  args: { ascension: v.optional(v.number()), world: v.optional(worldV), maxPlayers: maxPlayersV, gameVersion: tagV, engine: tagV },
+  handler: async (ctx, { ascension, world, maxPlayers, gameVersion, engine }) => {
     const user = await requireUser(ctx);
     const email = normEmail(user.email);
     if (!email) throw new Error("Your account has no email.");
@@ -141,6 +145,7 @@ export const create = mutation({
     const roomId = await ctx.db.insert("coopRooms", {
       code, status: "lobby", host: email, ascension: cleanAscension(ascension ?? 0), world: world ?? "spire",
       seed: randomFrom("ABCDEFGHJKLMNPQRSTUVWXYZ23456789", 8), nextSeq: 1, createdAt: now, updatedAt: now,
+      ...(cleanTag(gameVersion) ? { gameVersion: cleanTag(gameVersion) } : {}), ...(cleanTag(engine) ? { engine: cleanTag(engine) } : {}),
     });
     await ctx.db.insert("coopMembers", {
       roomId, userId: user._id, email, slot: 0, name: await displayName(ctx, user), ready: false,
@@ -163,7 +168,7 @@ export const join = mutation({
     const mine = members.find((m) => m.email === email);
     const now = Date.now();
     if (mine) {
-      await ctx.db.patch(mine._id, { left: false, dismissed: false, lastSeen: now, ...(maxPlayers !== undefined ? { maxPlayers: supports({ maxPlayers }) } : {}) });
+      await ctx.db.patch(mine._id, { left: false, dismissed: false, savedAt: undefined, lastSeen: now, ...(maxPlayers !== undefined ? { maxPlayers: supports({ maxPlayers }) } : {}) });
       return { roomId: room._id, slot: mine.slot, code: room.code, status: room.status };
     }
     if (members.length >= roomCap(members, { maxPlayers })) throw new Error("Room is full");
@@ -251,7 +256,7 @@ export const leave = mutation({
       if (room.host === email) await ctx.db.patch(roomId, { status: "closed", updatedAt: now });
       return { closed: room.host === email };
     }
-    if (room.status === "playing") await ctx.db.patch(me._id, { left: true, lastSeen: now });
+    if (room.status === "playing") await ctx.db.patch(me._id, { left: true, savedAt: undefined, lastSeen: now });
     return { closed: room.status === "closed" };
   },
 });
@@ -267,7 +272,7 @@ export const dismiss = mutation({
     if (room.status === "lobby") {
       await ctx.db.delete(me._id);
       if (room.host === email) await ctx.db.patch(roomId, { status: "closed", updatedAt: now });
-    } else await ctx.db.patch(me._id, { dismissed: true, left: true, lastSeen: now });
+    } else await ctx.db.patch(me._id, { dismissed: true, left: true, savedAt: undefined, lastSeen: now });
     const members = await membersOf(ctx, roomId);
     if (members.every((m) => m.dismissed)) { await deleteRoom(ctx, roomId); return { deleted: true }; } // (also: nobody left)
     return { deleted: false };
@@ -276,6 +281,7 @@ export const dismiss = mutation({
 
 async function deleteRoom(ctx: MutationCtx, roomId: Id<"coopRooms">) {
   for (const a of await ctx.db.query("coopActions").withIndex("by_room_seq", (q) => q.eq("roomId", roomId)).collect()) await ctx.db.delete(a._id);
+  for (const c of await ctx.db.query("coopCheckpoints").withIndex("by_room_seq", (q) => q.eq("roomId", roomId)).collect()) await ctx.db.delete(c._id);
   for (const m of await membersOf(ctx, roomId)) await ctx.db.delete(m._id);
   await ctx.db.delete(roomId);
 }
@@ -310,7 +316,7 @@ export const post = mutation({
     const now = Date.now();
     await ctx.db.insert("coopActions", { roomId, seq, p: me.slot, type, nonce, json, createdAt: now });
     await ctx.db.patch(roomId, { nextSeq: seq + 1, updatedAt: now });
-    if (me.left) await ctx.db.patch(me._id, { left: false });
+    if (me.left) await ctx.db.patch(me._id, { left: false, savedAt: undefined });
     return { seq, duplicate: false };
   },
 });
@@ -321,9 +327,77 @@ export const heartbeat = mutation({
     const { room, me } = await myMembership(ctx, roomId);
     const patch: Partial<Member> = { lastSeen: Date.now() };
     if (seq !== undefined && Number.isFinite(seq)) patch.lastSeq = Math.max(0, Math.min(Math.floor(seq), room.nextSeq - 1));
-    if (me.left && room.status === "playing") patch.left = false;
+    if (me.left && room.status === "playing") { patch.left = false; patch.savedAt = undefined; }
     await ctx.db.patch(me._id, patch);
     return { now: patch.lastSeen };
+  },
+});
+
+// ---- checkpoints (v0.3.6): the game at a safe point, so a room resumes without its whole log, across updates ----
+const MAX_CHECKPOINT_BYTES = 900_000;
+const KEEP_CHECKPOINTS = 8;
+const CHECKPOINT_REASONS = new Set(["auto", "save", "resume", "legacy", "fallback"]);
+
+// Every client writes one when the game reaches the map (and on SAVE & QUIT); the same seq written again with the
+// same checksum just adds the writer's slot, a different checksum marks it disputed (a desync: never loaded).
+export const checkpoint = mutation({
+  args: {
+    roomId: v.id("coopRooms"), seq: v.number(), phase: v.string(), state: v.string(), checksum: v.number(),
+    gameVersion: tagV, engine: tagV, reason: v.optional(v.string()), progress: v.optional(v.string()),
+  },
+  handler: async (ctx, { roomId, seq, phase, state, checksum, gameVersion, engine, reason, progress }) => {
+    const { room, me } = await myMembership(ctx, roomId);
+    if (room.status !== "playing") throw new Error("The run is not in progress.");
+    if (!Number.isInteger(seq) || seq < 1 || seq > room.nextSeq - 1) throw new Error("Bad checkpoint seq.");
+    if (phase !== "map") throw new Error("Checkpoints are only taken on the map.");
+    if (byteLength(state) > MAX_CHECKPOINT_BYTES) throw new Error("Checkpoint is too big.");
+    if (!Number.isFinite(checksum)) throw new Error("Bad checksum.");
+    const now = Date.now();
+    const same = await ctx.db.query("coopCheckpoints").withIndex("by_room_seq", (q) => q.eq("roomId", roomId).eq("seq", seq)).first();
+    let disputed = false;
+    if (same) {
+      if (same.checksum !== checksum) { disputed = true; if (!same.disputed) await ctx.db.patch(same._id, { disputed: true }); }
+      else if (!same.slots.includes(me.slot)) await ctx.db.patch(same._id, { slots: [...same.slots, me.slot] });
+    } else {
+      await ctx.db.insert("coopCheckpoints", {
+        roomId, seq, phase, state, checksum, slots: [me.slot], createdAt: now,
+        ...(cleanTag(gameVersion) ? { gameVersion: cleanTag(gameVersion) } : {}), ...(cleanTag(engine) ? { engine: cleanTag(engine) } : {}),
+        ...(reason && CHECKPOINT_REASONS.has(reason) ? { reason } : {}),
+      });
+      // keep the newest few
+      const all = await ctx.db.query("coopCheckpoints").withIndex("by_room_seq", (q) => q.eq("roomId", roomId)).order("desc").collect();
+      for (const c of all.slice(KEEP_CHECKPOINTS)) await ctx.db.delete(c._id);
+    }
+    const label = typeof progress === "string" ? progress.replace(/[^A-Za-z0-9 .:-]/g, "").slice(0, 32) : "";
+    if (!disputed && label && label !== room.progress) await ctx.db.patch(roomId, { progress: label });
+    return { seq, disputed, duplicate: !!same };
+  },
+});
+
+// The newest checkpoint that isn't disputed (null if the room has none, e.g. one from before v0.3.6).
+export const latestCheckpoint = query({
+  args: { roomId: v.id("coopRooms") },
+  handler: async (ctx, { roomId }) => {
+    await myMembership(ctx, roomId);
+    for await (const c of ctx.db.query("coopCheckpoints").withIndex("by_room_seq", (q) => q.eq("roomId", roomId)).order("desc")) {
+      if (c.disputed) continue;
+      return {
+        seq: c.seq, phase: c.phase, state: c.state, checksum: c.checksum, gameVersion: c.gameVersion ?? null, engine: c.engine ?? null,
+        reason: c.reason ?? null, slots: c.slots, createdAt: c.createdAt,
+      };
+    }
+    return null;
+  },
+});
+
+// SAVE & QUIT: the client has written its checkpoint; mark me as away with a save, so the others see it.
+export const saveQuit = mutation({
+  args: { roomId: v.id("coopRooms") },
+  handler: async (ctx, { roomId }) => {
+    const { room, me } = await myMembership(ctx, roomId);
+    const now = Date.now();
+    if (room.status === "playing") await ctx.db.patch(me._id, { left: true, savedAt: now, lastSeen: now });
+    return { saved: room.status === "playing" };
   },
 });
 
@@ -384,24 +458,27 @@ export const since = query({
   },
 });
 
-// Rooms I'm in (for REJOIN): not closed, active in the last 24 h, newest first.
+// Rooms I'm in (for REJOIN): not closed, newest first. Lobbies show for 24 h after their last activity, runs in
+// progress for 30 days (v0.3.6; was 24 h, which hid saved games).
+const KEEP_RUNS = 30 * DAY;
 export const mine = query({
   args: {},
   handler: async (ctx) => {
     const user = await requireUser(ctx);
     const email = normEmail(user.email);
-    const cutoff = Date.now() - DAY;
-    const mems = await ctx.db.query("coopMembers").withIndex("by_email", (q) => q.eq("email", email).gt("joinedAt", cutoff - 6 * DAY)).order("desc").take(50);
+    const now = Date.now();
+    const mems = await ctx.db.query("coopMembers").withIndex("by_email", (q) => q.eq("email", email).gt("joinedAt", now - KEEP_RUNS - 7 * DAY)).order("desc").take(50);
     const out = [];
     for (const me of mems) {
       if (me.dismissed) continue; // deleted from my list
       const room = await ctx.db.get(me.roomId);
-      if (!room || room.status === "closed" || room.updatedAt < cutoff) continue;
+      if (!room || room.status === "closed" || room.updatedAt < now - (room.status === "playing" ? KEEP_RUNS : DAY)) continue;
       const members = await membersOf(ctx, room._id);
       out.push({
         roomId: room._id, code: room.code, status: room.status, ascension: room.ascension, world: room.world,
         slot: me.slot, isHost: room.host === email, nextSeq: room.nextSeq, createdAt: room.createdAt, updatedAt: room.updatedAt,
-        members: members.sort((a, b) => a.slot - b.slot).map((m) => ({ slot: m.slot, name: m.name, starter: m.starter ?? null, left: !!m.left })),
+        progress: room.progress ?? null,
+        members: members.sort((a, b) => a.slot - b.slot).map((m) => ({ slot: m.slot, name: m.name, starter: m.starter ?? null, left: !!m.left, saved: !!m.left && !!m.savedAt })),
       });
     }
     return out.sort((a, b) => b.updatedAt - a.updatedAt);

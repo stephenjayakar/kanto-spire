@@ -50,6 +50,7 @@ export function playerStatus(session, p) {
   if (!session) return { key: 'none', label: '—', color: '#506070', detail: '' };
   const g = session.game;
   if (g?.away?.[p]) return { key: 'away', label: 'SAT OUT', color: '#606878', detail: 'left the game' };
+  if (p !== session.mySlot && session.member(p)?.saved) return { key: 'offline', label: 'SAVED & QUIT', color: '#5870a0', detail: 'saved and quit' };
   if (!session.isOnline(p)) return { key: 'offline', label: 'OFFLINE', color: '#808890', detail: 'not connected' };
   if (!g) return { key: 'choosing', label: 'CONNECTING', color: '#c09030', detail: '' };
   if (g.phase === 'map') return g.votes?.[p] != null ? { key: 'ready', label: 'READY', color: '#38b048', detail: 'voted' } : { key: 'choosing', label: 'CHOOSING', color: '#d09020', detail: 'picking a path' };
@@ -107,7 +108,8 @@ export function drawCoopBanner(ctx, session) {
   let off = null;
   if (!msg && session.game) {
     off = session.others.find(p => !session.isOnline(p) && !session.game.away?.[p]) ?? null;
-    if (off !== null) msg = session.n > 2 ? `${session.nameOf(off)} is OFFLINE · wait, or carry on without them` : `${session.nameOf(off)} is OFFLINE · the game continues when they reconnect`;
+    if (off !== null && session.member(off)?.saved) msg = `${session.nameOf(off)} SAVED & QUIT · wait for them, or SAVE & QUIT too`;
+    else if (off !== null) msg = session.n > 2 ? `${session.nameOf(off)} is OFFLINE · wait, or carry on without them` : `${session.nameOf(off)} is OFFLINE · the game continues when they reconnect`;
   }
   if (!msg) return;
   rect(ctx, 0, y, W, h, '#8a5010');

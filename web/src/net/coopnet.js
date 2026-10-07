@@ -2,6 +2,8 @@
 // Actions go up and come down as JSON strings (no Convex value limits for big Run snapshots); this module
 // hides that: fetchSince / CoopPoller hand out plain action objects { seq, p, type, ...payload, nonce }.
 import { cloudCall } from './cloud.js';
+import { VERSION } from '../game/version.js';
+import { LOGIC_ID } from '../game/coop/engines.js';
 
 const q = (path, args) => cloudCall('query', path, args);
 const m = (path, args) => cloudCall('mutation', path, args);
@@ -35,7 +37,8 @@ function parseAction(a) {
 // This client plays rooms of up to MAX_PLAYERS (the server keeps a room at 2 while an older 2-player client is in it).
 const MAX_PLAYERS = 4;
 // opts: { ascension = 0, world = 'spire' } -> { roomId, code }   (world: 'spire' | 'spire_johto' | 'spire_kanto'; legacy 'kanto' / 'hoenn')
-export const createRoom = (opts = {}) => m('coop:create', { ascension: opts.ascension ?? 0, world: opts.world ?? 'spire', maxPlayers: MAX_PLAYERS });
+// (v0.3.6: the room records the game version and logic id it was created on)
+export const createRoom = (opts = {}) => m('coop:create', { ascension: opts.ascension ?? 0, world: opts.world ?? 'spire', maxPlayers: MAX_PLAYERS, gameVersion: VERSION, engine: LOGIC_ID });
 // -> { roomId, slot, code, status }   (joining a room you are already in returns your slot: REJOIN)
 export const joinRoom = code => m('coop:join', { code: String(code || ''), maxPlayers: MAX_PLAYERS });
 // -> { room:{_id,code,status,host(slot),ascension,world,seed,nextSeq,...}, members:[{slot,name,starter,ready,left,lastSeen,lastSeq}], me, isHost, now }
@@ -58,6 +61,19 @@ export const heartbeat = (roomId, seq) => m('coop:heartbeat', { roomId, seq: seq
 export const setSketch = (roomId, sketch, all = false) => m('coop:setSketch', { roomId, sketch, ...(all ? { all: true } : {}) });
 // -> [{ slot, sketch (JSON or null), sketchV }]
 export const getSketches = roomId => q('coop:sketches', { roomId });
+
+// ---- checkpoints (v0.3.6) --------------------------------------------------------------------
+// cp: { seq, phase: 'map', state (snapshot JSON), checksum, gameVersion, engine, reason, progress } -> { seq, disputed, duplicate }
+export const writeCheckpoint = (roomId, cp) => m('coop:checkpoint', { roomId, ...cp });
+// -> { seq, phase, state, checksum, gameVersion, engine, reason, slots, createdAt } | null. A server without
+// checkpoints (an older deployment) answers null; any other failure throws (the caller retries: resuming without a
+// checkpoint that exists would replay the whole log).
+export async function latestCheckpoint(roomId) {
+  try { return await q('coop:latestCheckpoint', { roomId }); }
+  catch (e) { if (/Could not find public function|No such function|not found.*latestCheckpoint/i.test(e?.message || '')) return null; throw e; }
+}
+// SAVE & QUIT: marks me as away with a save (the others see "saved & quit").
+export const saveQuit = roomId => m('coop:saveQuit', { roomId });
 
 // ---- the run --------------------------------------------------------------------------------
 // Appends an action; the server sets seq and p. A random nonce makes retries safe: the same nonce is

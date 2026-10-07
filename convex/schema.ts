@@ -134,6 +134,9 @@ export default defineSchema({
     world: v.union(v.literal("kanto"), v.literal("hoenn"), v.literal("spire"), v.literal("spire_kanto"), v.literal("spire_johto")),
     seed: v.string(),
     nextSeq: v.number(), // seq the next action gets
+    gameVersion: v.optional(v.string()), // v0.3.6+: the game version that created the room (e.g. "v0.3.6")
+    engine: v.optional(v.string()), // v0.3.6+: the game-logic id it was created on (web/src/game/coop/engines.js LOGIC_ID)
+    progress: v.optional(v.string()), // v0.3.6+: where the latest checkpoint is, for the REJOIN list (e.g. "ACT 3")
     createdAt: v.number(),
     updatedAt: v.number(), // last create/join/start/post
   }).index("by_code", ["code"]),
@@ -153,6 +156,7 @@ export default defineSchema({
     left: v.optional(v.boolean()), // left a playing room (may rejoin)
     dismissed: v.optional(v.boolean()), // deleted the room from their REJOIN list (rejoining by code undoes it)
     maxPlayers: v.optional(v.number()), // the room size this player's client supports (2-4); unset = an older 2-player client
+    savedAt: v.optional(v.number()), // v0.3.6: last SAVE & QUIT (shown to the others while they are away)
     joinedAt: v.number(),
     lastSeen: v.number(),
     lastSeq: v.number(), // last action seq this player's client applied
@@ -173,4 +177,21 @@ export default defineSchema({
   })
     .index("by_room_seq", ["roomId", "seq"])
     .index("by_room_nonce", ["roomId", "nonce"]),
+
+  // v0.3.6 co-op checkpoints: the whole game at a safe point (the map, between nodes), written by the clients
+  // (web/src/game/coop/snapshot.js). A room resumes from its latest one plus the actions after it, also after a
+  // game update (the log alone only replays on the logic it was played on). The latest few per room are kept.
+  coopCheckpoints: defineTable({
+    roomId: v.id("coopRooms"),
+    seq: v.number(), // the log position the state is at (the game's seq)
+    phase: v.string(), // "map"
+    state: v.string(), // snapshot JSON
+    checksum: v.number(), // CoopGame.checksum() of the state, by the writer's code
+    gameVersion: v.optional(v.string()), // e.g. "v0.3.6"
+    engine: v.optional(v.string()), // the writer's game-logic id (LOGIC_ID)
+    reason: v.optional(v.string()), // "auto" | "save" | "resume" | "legacy" | "fallback"
+    slots: v.array(v.number()), // the players whose client wrote this same checkpoint (same checksum)
+    disputed: v.optional(v.boolean()), // two clients wrote different states for this seq: never loaded
+    createdAt: v.number(),
+  }).index("by_room_seq", ["roomId", "seq"]),
 });

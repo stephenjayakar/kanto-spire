@@ -19,6 +19,7 @@ function requireTestMode() {
 async function deleteRoom(ctx: MutationCtx, roomId: Id<"coopRooms">) {
   let n = 0;
   for (const a of await ctx.db.query("coopActions").withIndex("by_room_seq", (q) => q.eq("roomId", roomId)).collect()) { await ctx.db.delete(a._id); n++; }
+  for (const c of await ctx.db.query("coopCheckpoints").withIndex("by_room_seq", (q) => q.eq("roomId", roomId)).collect()) await ctx.db.delete(c._id);
   for (const m of await ctx.db.query("coopMembers").withIndex("by_room", (q) => q.eq("roomId", roomId)).collect()) await ctx.db.delete(m._id);
   if (await ctx.db.get(roomId)) await ctx.db.delete(roomId);
   return n;

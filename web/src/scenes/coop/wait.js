@@ -6,6 +6,7 @@ import { swirlBackground, BG_THEMES, panel, drawTips } from '../../engine/ui.js'
 import { G } from '../../game/state.js';
 import { drawHUD, drawPartyPanel, DeckModal } from '../common.js';
 import { PFONT, PSPRITE, drawCoopOverlay, drawPartnerChip, playerStatus, privateWhat } from './ui.js';
+import { drawSaveQuit } from './map.js';
 
 export class CoopWaitScene {
   constructor(session) { this.s = session; this.drawsCoopOverlay = true; }
@@ -17,7 +18,7 @@ export class CoopWaitScene {
     const dots = '...'.slice(0, 1 + Math.floor(this.t * 2) % 3);
     if (!g || !s.synced) {
       text(ctx, `CO-OP ROOM ${s.code}`, W / 2, 120, { align: 'center', color: 'gold', scale: 2 });
-      text(ctx, (g ? `Replaying the game log (#${s.lastSeq})` : 'Connecting') + dots, W / 2, 160, { align: 'center', color: 'white' });
+      text(ctx, (s.loading === 'save' ? 'Loading the save' : s.loading === 'replay' ? 'Loading the game' : g ? `Replaying the game log (#${s.lastSeq})` : 'Connecting') + dots, W / 2, 160, { align: 'center', color: 'white' });
       draw(ctx, PSPRITE[me], W / 2 - 8, 190, { sx: [0, 3, 0, 4][Math.floor(this.t * 6) % 4] * 16, sy: 0, sw: 16, sh: 32 });
       drawCoopOverlay(ctx, s);
       return;
@@ -25,6 +26,7 @@ export class CoopWaitScene {
     // my run: the private clone I just finished until the log hands it back, then the canonical one
     const mine = (g.phase === 'private' && !g.private?.done?.[me] && G.run) || g.runs[me];
     drawHUD(ctx, mine, { subtitle: s.n > 2 ? 'WAITING FOR THE OTHERS' : 'WAITING FOR PARTNER', onDeck: () => pushOverlay(new DeckModal({})) });
+    drawSaveQuit(ctx, s, 8, H - 26, 90);
     if (s.n > 2) { this.drawMany(ctx, mine, dots); drawTips(ctx); drawCoopOverlay(ctx, s); return; }
     const st = playerStatus(s, pa);
     text(ctx, `Waiting for ${s.nameOf(pa)}${dots}`, W / 2, 46, { align: 'center', color: PFONT[pa], scale: 1 });

@@ -1,6 +1,6 @@
 // Run state: party, money, items, map position, encounter generation, rewards, ascension.
 import { RNG, randomSeedString } from './rng.js';
-import { D, expYield, expForLevel, isSpecial, speciesName, typeEffect } from './data.js';
+import { D, expYield, isSpecial, speciesName, typeEffect } from './data.js';
 import { canUseStone, makeMon, maxHp, healFull, healFrac, isFainted, gainExp, addLevels, teachMove, knowsMove, canLearn, typesOf, setUidCounter, nextUid, itemEvolution, evolve, monName, defaultMoves, defaultCopies, DECK_RULES } from './pokemon.js';
 import { LEGENDS, STARTERS, rivalKey, BIRDS, RIVAL_INTROS, counterStarter, rivalParty , blueParty } from './acts.js';
 import { actsForRun, regionOf, drawSpire, rivalFor, validSpire, spireCode, SPIRE, timeOfDay, areaPool } from './regions.js';
@@ -17,7 +17,7 @@ export const ASCENSIONS = [
   { n: 2, name: 'Fog of War', desc: 'Enemy moves are hidden (no intent, no move list). Foes are 1 level higher; you earn 10% less EXP.' },
   { n: 3, name: 'Gym Prep', desc: 'Bosses and the ELITE FOUR are 2 levels higher with 10% more HP.' },
   { n: 4, name: 'Shoestring', desc: 'Start with less money, fewer POKé BALLS and no POTIONS. Shop prices +25% and battles pay 20% less.' },
-  { n: 5, name: 'Level Cap', desc: "Battle EXP stops at each act's level cap: its boss's top level +2. EXP past the cap is lost." },
+  { n: 5, name: 'Weary', desc: 'Almost no healing after battles. POKéMON CENTERS heal 75%.' },
   { n: 6, name: 'Reinforcements', desc: 'From mid Act 1 on, trainers and elites bring one more POKéMON (worth no EXP).' },
   { n: 7, name: 'Bulky Foes', desc: 'Enemies have 15% more HP.' },
   { n: 8, name: 'Nuzlocke', desc: 'A POKéMON that faints in battle is released for good. Only the first wild POKéMON of each act can be caught.' },
@@ -36,31 +36,10 @@ export const MAX_ASCENSION = ASCENSIONS.length - 1;
 // Nuzlocke rules from this ascension on (v0.0.6: it took the slot of Inflation, which moved into A4).
 // Co-op runs never use them (a downed partner is revived after every win there).
 export const NUZLOCKE_ASC = 8;
-// Level cap from this ascension on (v0.3.2: it replaced Weary): see Run.levelCap.
-export const LEVEL_CAP_ASC = 5;
-
-// Gen 5 scaled EXP: the multiplier on one foe's EXP for a recipient of level monLevel (1 at the same level; a
-// Lv20 POKéMON beating a Lv10 foe gets about 0.49x, a Lv5 one about 1.58x).
-export function expLevelScale(foeLevel, monLevel, curve = TUNING.expCurve) {
-  if (!curve) return 1;
-  return Math.pow((2 * foeLevel + 10) / (foeLevel + monLevel + 10), curve);
-}
-// The multiplier on a battle's whole EXP for one recipient: each defeated foe's EXP scaled by its own level
-// (result.foes = [{level, exp}] from Battle.end; co-op's EXP tuning rescales result.exp, so this is a ratio).
-export function expShareScale(foes, monLevel) {
-  let tot = 0, scaled = 0;
-  for (const f of foes || []) { tot += f.exp; scaled += f.exp * expLevelScale(f.level, monLevel); }
-  return tot > 0 ? scaled / tot : 1;
-}
 
 // Tuning knobs (balanced with tests/sim.mjs)
 export const TUNING = {
-  expMult: 1.3, // (v0.3.2: 1.35 -> 1.3 with scaled EXP, which levels a rotating team faster)
-  // Gen 5 scaled EXP: each recipient's share of a foe's EXP x ((2*Lfoe+10)/(Lfoe+Lmon+10))^expCurve (1 at the
-  // same level, less when over-leveled, more when under-leveled; 0 = off). See expLevelScale.
-  expCurve: 2.5,
-  // A5+ level cap: the act boss's top level (the CHAMPION's in the ELITE FOUR act) + this
-  levelCapOffset: 2,
+  expMult: 1.35,
   postBattleHeal: 0.05,
   // DMG system: enemy HP = the species' real HP at its level x hpScale (per act, start->end of act)
   hpScale: [[3.17, 4.38], [2.77, 3.54], [2.9, 3.7], [2.79, 3.2], [3.25, 4]],
@@ -81,7 +60,7 @@ export const TUNING = {
   // money: flat-ish pay per act (the old level-based pay snowballed into unspendable piles)
   trainerPay: 150, wildPay: 40, shopActScale: 0.3,
   // hpMult scales all enemy HP and dmgMult all enemy damage (discard update: 1.62 / 0.9, was 1.16 / 1: foes take
-  // two hands more often so a bad hand is worth a discard; smart bot ~20% at Kanto and Hoenn A0).
+  // two hands more often so a bad hand is worth a discard; smart bot ~20% at Kanto and Hoenn A0, DISCARD_EXPERIMENT.md).
   // v0.0.6: 1.92 (rival floors pay a held item every act and the hardest elites moved out of the pools into
   // the optional bird nodes): smart bot Kanto A0 18-22%, Hoenn 22-25% on 100-run seeds. Then 2.4: the bots stopped
   // losing items to a full bag (they used to throw ~5 vitamins away per run; players didn't): Kanto 19-25%, Hoenn 16-22%.
@@ -134,7 +113,6 @@ export class Run {
     for (const mv of mon.moves) if (D.moves[mv.move]?.power) mv.copies = defaultCopies(mv.move) + DECK_RULES.starterBonus;
     r.party.push(mon);
     r.addSeen(st.species, true);
-    if (st.item && RELICS[st.item]) r.addRelic(st.item); // the starter's own held item (PIKACHU: LIGHT BALL)
     if (ascension < 4) r.consumables.push('POTION', 'POTION');
     r.startAct(0);
     return r;
@@ -678,42 +656,19 @@ export class Run {
   }
 
   // ---- after battle ---------------------------------------------------------------------
-  // A5+ (LEVEL_CAP_ASC): the act's level cap = its boss's top level + TUNING.levelCapOffset: the GYM LEADER's ace (or
-  // the legendary / post-game boss), in the ELITE FOUR act the CHAMPION's, with the ascension level bonuses (A3, A10).
-  // Battle EXP stops at the cap; RARE CANDY and other direct level-ups can still pass it. null below A5.
-  levelCap() {
-    if (this.ascension < LEVEL_CAP_ASC || !this.act) return null;
-    const act = this.act;
-    const top = act.gauntlet && act.gauntletLevels ? Math.max(...act.gauntletLevels) + (this.ascension >= 3 ? 2 : 0) + (this.ascension >= 10 ? 1 : 0) : this.bossLevel();
-    return Math.min(100, top + TUNING.levelCapOffset);
-  }
-
-  // Distribute EXP: lead/participants full, bench half (Exp. Share: full), each share scaled by the recipient's level
-  // against every defeated foe's (expLevelScale). POKéMON fainted when the battle ended get nothing (Gen 3), even if
-  // revived since (result.fainted). A5+: a POKéMON stops at the level cap and the rest of its share is lost.
-  // Returns [{mon, gained, events, before, scale, capped}] (scale: the level multiplier for the reward screen's
-  // OVERLEVELED / UNDERLEVELED tag; capped: it hit / sits at the cap).
+  // Distribute EXP: lead/participants full, bench half (Exp. Share: full). Returns [{mon, gained, events}].
   distributeExp(result, battleKind) {
     const out = [];
     if (!result.exp) return out;
     const mods = this.mods();
     const total = result.exp * TUNING.expMult * (1 + (mods.expMult || 0)) * (this.ascension >= 2 ? 0.9 : 1);
-    const fainted = result.fainted || [];
-    const cap = this.levelCap();
-    const room = (mon) => (cap === null ? Infinity : Math.max(0, expForLevel(D.species[mon.species].growthRate, cap) - mon.exp));
-    const list = [];
     for (const mon of this.party) {
-      if (isFainted(mon) || fainted.includes(mon.uid)) continue;
+      if (isFainted(mon)) continue;
       const full = result.participants.includes(mon.uid) || mods.expShare;
-      const scale = expShareScale(result.foes, mon.level);
-      const share = Math.max(1, Math.floor(total * (full ? 1 : 0.5) * scale));
-      const take = Math.min(share, room(mon));
-      list.push({ mon, scale, take, over: share - take });
-    }
-    for (const e of list) {
-      const before = e.mon.level, gained = e.take;
-      const events = gained > 0 ? gainExp(e.mon, gained) : [];
-      out.push({ mon: e.mon, gained, events, before, scale: e.scale, capped: e.over > 0 });
+      const gained = Math.max(1, Math.floor(total * (full ? 1 : 0.5)));
+      const before = mon.level;
+      const events = gainExp(mon, gained);
+      out.push({ mon, gained, events, before });
     }
     return out;
   }
@@ -752,7 +707,7 @@ export class Run {
       r.newMon = mon;
     }
     // ambient heal
-    const heal = TUNING.postBattleHeal + (mods.postHeal || 0);
+    const heal = (this.ascension >= 5 ? 0.03 : TUNING.postBattleHeal) + (mods.postHeal || 0);
     if (heal > 0) for (const m of this.party) if (!isFainted(m)) healFrac(m, heal);
     // ROTTEN SHROOM (curse): the party loses HP after every battle (never below 1)
     if (mods.postHurt) for (const m of this.party) if (!isFainted(m)) m.hp = Math.max(1, m.hp - Math.floor(maxHp(m) * mods.postHurt));
@@ -901,9 +856,10 @@ export class Run {
   }
 
   centerHeal() {
+    const frac = this.ascension >= 5 ? 0.75 : 1;
     for (const m of this.party) {
-      if (isFainted(m)) m.hp = Math.max(1, Math.floor(maxHp(m) * 0.5));
-      else m.hp = maxHp(m);
+      if (isFainted(m)) m.hp = Math.max(1, Math.floor(maxHp(m) * 0.5 * frac));
+      else { m.hp = Math.min(maxHp(m), m.hp + Math.ceil(maxHp(m) * frac)); }
       m.status = null;
     }
   }
@@ -911,7 +867,9 @@ export class Run {
   nextActHeal() {
     this.logEvent({ k: 'actClear', hp: this.teamHpFrac() });
     for (const m of this.party) {
-      m.hp = maxHp(m);
+      // After a GYM the team recovers partway (the act's first floors are where it bites).
+      if (this.ascension >= 5) { if (isFainted(m)) m.hp = Math.floor(maxHp(m) * 0.3); else healFrac(m, 0.4); }
+      else m.hp = maxHp(m);
       m.status = null;
     }
   }
@@ -925,52 +883,10 @@ export class Run {
     delete o.pendingEvolution;
     return o;
   }
-  // Saves from older versions (solo saves in localStorage / the cloud, co-op checkpoints): fills in fields that
-  // newer code expects, in place. Only fields every Run.create() sets get a default, and only when missing, so a
-  // save from this version comes out unchanged (same keys, same order: co-op checksums depend on that). Fields a
-  // newer version no longer uses are left alone (nothing reads them). Add a default here with every new Run field.
-  static upgradeJSON(o) {
-    if (!o || typeof o !== 'object') return o;
-    const def = (k, v) => { if (o[k] === undefined || o[k] === null && v !== null && typeof v === 'object') o[k] = v; };
-    def('ascension', 0);
-    def('world', 'kanto');
-    def('actIndex', 0);
-    def('party', []);
-    def('relics', []);
-    def('badges', []);
-    def('consumables', []);
-    def('balls', { POKE_BALL: 0 });
-    def('money', 0);
-    def('comboLevels', {});
-    def('comboPlays', {});
-    def('stats', {});
-    for (const k of ['battles', 'trainers', 'wild', 'caught', 'bestHand', 'faints', 'crits', 'floors', 'moneyEarned', 'elites', 'bosses']) if (o.stats[k] === undefined) o.stats[k] = 0;
-    def('seen', []);
-    def('caughtSpecies', []);
-    def('usedTrainers', []);
-    def('log', []);
-    def('flags', {});
-    def('maxConsumables', 3);
-    def('gauntletIndex', -1);
-    def('finished', false);
-    def('victory', false);
-    for (const x of o.relics) if (x && typeof x === 'object' && x.state === undefined) x.state = {};
-    for (const m of o.party) {
-      if (!m || typeof m !== 'object') continue;
-      if (!Array.isArray(m.moves)) m.moves = [];
-      for (const mv of m.moves) if (mv && mv.copies === undefined) mv.copies = defaultCopies(mv.move);
-      if (m.status === undefined) m.status = null;
-      if (m.item === undefined) m.item = null;
-      if (m.caughtAct === undefined) m.caughtAct = 0;
-      if (m.shiny === undefined) m.shiny = false;
-    }
-    return o;
-  }
   static fromJSON(o) {
-    Run.upgradeJSON(o);
     const r = Object.assign(new Run(), o);
     r.rng = new RNG(1);
-    r.rng.state = Number.isFinite(o.rngState) ? o.rngState : 1;
+    r.rng.state = o.rngState;
     let maxUid = 0;
     for (const m of r.party) maxUid = Math.max(maxUid, m.uid);
     setUidCounter(maxUid + 1000);

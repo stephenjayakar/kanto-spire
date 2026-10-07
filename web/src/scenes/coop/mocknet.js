@@ -64,10 +64,10 @@ function withRoom(roomId, fn, { write = false } = {}) {
   }, { id: roomId, write });
 }
 function view(room, mine) {
-  const members = [...room.members].sort((a, b) => a.slot - b.slot).map(m => ({ slot: m.slot, name: m.name, starter: m.starter ?? null, ascMax: m.ascMax ?? null, sketchV: m.sketchV ?? 0, ready: m.ready, left: !!m.left, lastSeen: m.lastSeen, lastSeq: m.lastSeq, maxPlayers: supports(m) }));
+  const members = [...room.members].sort((a, b) => a.slot - b.slot).map(m => ({ slot: m.slot, name: m.name, starter: m.starter ?? null, ascMax: m.ascMax ?? null, sketchV: m.sketchV ?? 0, ready: m.ready, left: !!m.left, saved: !!m.left && !!m.savedAt, lastSeen: m.lastSeen, lastSeq: m.lastSeq, maxPlayers: supports(m) }));
   const host = room.members.find(m => m.email === room.host);
   return {
-    room: { _id: room._id, code: room.code, status: room.status, host: host ? host.slot : 0, ascension: room.ascension, world: room.world, seed: room.seed, nextSeq: room.nextSeq, createdAt: room.createdAt, updatedAt: room.updatedAt, maxPlayers: roomCap(room.members) },
+    room: { _id: room._id, code: room.code, status: room.status, host: host ? host.slot : 0, ascension: room.ascension, world: room.world, seed: room.seed, nextSeq: room.nextSeq, createdAt: room.createdAt, updatedAt: room.updatedAt, maxPlayers: roomCap(room.members), progress: room.progress ?? null },
     members, me: mine.slot, isHost: mine.email === room.host,
   };
 }
@@ -88,7 +88,7 @@ export function createRoom(opts = {}) {
     const _id = 'dev_' + randomNonce();
     put({
       _id, code, status: 'lobby', host: self.email, ascension: opts.ascension ?? 0, world: opts.world ?? 'kanto',
-      seed: String(Math.floor(Math.random() * 2 ** 31)), nextSeq: 1, createdAt: now, updatedAt: now, actions: [],
+      seed: String(Math.floor(Math.random() * 2 ** 31)), nextSeq: 1, createdAt: now, updatedAt: now, actions: [], checkpoints: [],
       members: [{ email: self.email, name: self.name, slot: 0, ready: false, starter: null, lastSeen: now, lastSeq: 0, joinedAt: now, maxPlayers: opts.maxPlayers ?? CLIENT_MAX }],
     });
     return { roomId: _id, code };
@@ -103,7 +103,7 @@ export function joinRoom(code, maxPlayers = CLIENT_MAX) {
     if (!room) throw new Error('Room not found');
     const mine = room.members.find(m => m.email === self.email);
     if (mine) { // (rejoining by code undoes a delete from the REJOIN list, as on the server)
-      if (mine.dismissed || mine.left) { mine.dismissed = false; mine.left = false; mine.lastSeen = now; put(room); }
+      if (mine.dismissed || mine.left) { mine.dismissed = false; mine.left = false; mine.savedAt = null; mine.lastSeen = now; put(room); }
       return { roomId: room._id, slot: mine.slot, code: room.code, status: room.status };
     }
     if (room.status !== 'lobby') throw new Error('Room not found');
@@ -156,7 +156,7 @@ export const leaveRoom = (roomId) => withRoom(roomId, (room, mine) => {
   if (room.status === 'lobby') {
     room.members = room.members.filter(m => m !== mine);
     if (room.host === mine.email) room.status = 'closed';
-  } else if (room.status === 'playing') mine.left = true;
+  } else if (room.status === 'playing') { mine.left = true; mine.savedAt = null; }
   return { closed: room.status === 'closed' };
 }, { write: true });
 // (same rules as convex/coop.ts dismiss)
@@ -164,7 +164,7 @@ export const dismissRoom = (roomId) => withRoom(roomId, (room, mine) => {
   if (room.status === 'lobby') {
     room.members = room.members.filter(m => m !== mine);
     if (room.host === mine.email) room.status = 'closed';
-  } else { mine.dismissed = true; mine.left = true; }
+  } else { mine.dismissed = true; mine.left = true; mine.savedAt = null; }
   if (room.members.every(m => m.dismissed)) { room.status = 'deleted'; return { deleted: true }; }
   return { deleted: false };
 }, { write: true });
@@ -174,14 +174,14 @@ export function myRooms() {
     for (const r of rooms) if (r.status === 'deleted') del(r);
     const out = rooms.filter(r => r.status !== 'closed' && r.status !== 'deleted' && r.updatedAt > cutoff && r.members.some(m => m.email === self.email && !m.dismissed)).map(r => ({
       roomId: r._id, code: r.code, status: r.status, ascension: r.ascension, world: r.world, slot: r.members.find(m => m.email === self.email).slot,
-      isHost: r.host === self.email, nextSeq: r.nextSeq, createdAt: r.createdAt, updatedAt: r.updatedAt,
-      members: r.members.map(m => ({ slot: m.slot, name: m.name, starter: m.starter ?? null, left: !!m.left })),
+      isHost: r.host === self.email, nextSeq: r.nextSeq, createdAt: r.createdAt, updatedAt: r.updatedAt, progress: r.progress ?? null,
+      members: r.members.map(m => ({ slot: m.slot, name: m.name, starter: m.starter ?? null, left: !!m.left, saved: !!m.left && !!m.savedAt })),
     }));
     return out.sort((a, b) => b.updatedAt - a.updatedAt);
   });
 }
 export const heartbeat = (roomId, seq) => withRoom(roomId, (room, mine) => {
-  mine.lastSeen = Date.now(); if (seq != null) mine.lastSeq = seq; if (mine.left && room.status === 'playing') mine.left = false;
+  mine.lastSeen = Date.now(); if (seq != null) mine.lastSeq = seq; if (mine.left && room.status === 'playing') { mine.left = false; mine.savedAt = null; }
   return { now: mine.lastSeen };
 }, { write: true });
 export const postAction = (roomId, action) => withRoom(roomId, (room, mine) => {
@@ -192,7 +192,7 @@ export const postAction = (roomId, action) => withRoom(roomId, (room, mine) => {
   if (dup) return { seq: dup.seq, nonce, duplicate: true };
   const seq = room.nextSeq++;
   room.actions.push({ seq, p: mine.slot, nonce, json: JSON.stringify({ ...rest, nonce }) });
-  if (mine.left) mine.left = false;
+  if (mine.left) { mine.left = false; mine.savedAt = null; }
   return { seq, nonce, duplicate: false };
 }, { write: true });
 export const fetchSince = (roomId, after = 0) => withRoom(roomId, (room, mine) => {
@@ -200,6 +200,29 @@ export const fetchSince = (roomId, after = 0) => withRoom(roomId, (room, mine) =
   const last = actions.length ? actions[actions.length - 1].seq : after;
   return { actions, more: last < room.nextSeq - 1, status: room.status, ...view(room, mine), now: Date.now() };
 });
+
+// checkpoints + SAVE & QUIT (same rules as convex/coop.ts checkpoint / latestCheckpoint / saveQuit)
+export const writeCheckpoint = (roomId, cp) => withRoom(roomId, (room, mine) => {
+  if (room.status !== 'playing') throw new Error('The run is not in progress.');
+  if (!Number.isInteger(cp.seq) || cp.seq < 1 || cp.seq > room.nextSeq - 1) throw new Error('Bad checkpoint seq.');
+  if (cp.phase !== 'map') throw new Error('Checkpoints are only taken on the map.');
+  room.checkpoints ||= [];
+  const same = room.checkpoints.find(c => c.seq === cp.seq);
+  let disputed = false;
+  if (same) { if (same.checksum !== cp.checksum) { disputed = true; same.disputed = true; } else if (!same.slots.includes(mine.slot)) same.slots.push(mine.slot); }
+  else {
+    room.checkpoints.push({ seq: cp.seq, phase: cp.phase, state: cp.state, checksum: cp.checksum, gameVersion: cp.gameVersion ?? null, engine: cp.engine ?? null, reason: cp.reason ?? null, slots: [mine.slot], createdAt: Date.now() });
+    room.checkpoints.sort((a, b) => b.seq - a.seq);
+    room.checkpoints = room.checkpoints.slice(0, 8);
+  }
+  if (!disputed && cp.progress) room.progress = String(cp.progress).slice(0, 32);
+  return { seq: cp.seq, disputed, duplicate: !!same };
+}, { write: true });
+export const latestCheckpoint = (roomId) => withRoom(roomId, (room) => (room.checkpoints || []).find(c => !c.disputed) || null);
+export const saveQuit = (roomId) => withRoom(roomId, (room, mine) => {
+  if (room.status === 'playing') { mine.left = true; mine.savedAt = Date.now(); mine.lastSeen = mine.savedAt; }
+  return { saved: room.status === 'playing' };
+}, { write: true });
 
 // Same interface as coopnet's CoopPoller.
 export class CoopPoller {

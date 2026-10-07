@@ -925,52 +925,10 @@ export class Run {
     delete o.pendingEvolution;
     return o;
   }
-  // Saves from older versions (solo saves in localStorage / the cloud, co-op checkpoints): fills in fields that
-  // newer code expects, in place. Only fields every Run.create() sets get a default, and only when missing, so a
-  // save from this version comes out unchanged (same keys, same order: co-op checksums depend on that). Fields a
-  // newer version no longer uses are left alone (nothing reads them). Add a default here with every new Run field.
-  static upgradeJSON(o) {
-    if (!o || typeof o !== 'object') return o;
-    const def = (k, v) => { if (o[k] === undefined || o[k] === null && v !== null && typeof v === 'object') o[k] = v; };
-    def('ascension', 0);
-    def('world', 'kanto');
-    def('actIndex', 0);
-    def('party', []);
-    def('relics', []);
-    def('badges', []);
-    def('consumables', []);
-    def('balls', { POKE_BALL: 0 });
-    def('money', 0);
-    def('comboLevels', {});
-    def('comboPlays', {});
-    def('stats', {});
-    for (const k of ['battles', 'trainers', 'wild', 'caught', 'bestHand', 'faints', 'crits', 'floors', 'moneyEarned', 'elites', 'bosses']) if (o.stats[k] === undefined) o.stats[k] = 0;
-    def('seen', []);
-    def('caughtSpecies', []);
-    def('usedTrainers', []);
-    def('log', []);
-    def('flags', {});
-    def('maxConsumables', 3);
-    def('gauntletIndex', -1);
-    def('finished', false);
-    def('victory', false);
-    for (const x of o.relics) if (x && typeof x === 'object' && x.state === undefined) x.state = {};
-    for (const m of o.party) {
-      if (!m || typeof m !== 'object') continue;
-      if (!Array.isArray(m.moves)) m.moves = [];
-      for (const mv of m.moves) if (mv && mv.copies === undefined) mv.copies = defaultCopies(mv.move);
-      if (m.status === undefined) m.status = null;
-      if (m.item === undefined) m.item = null;
-      if (m.caughtAct === undefined) m.caughtAct = 0;
-      if (m.shiny === undefined) m.shiny = false;
-    }
-    return o;
-  }
   static fromJSON(o) {
-    Run.upgradeJSON(o);
     const r = Object.assign(new Run(), o);
     r.rng = new RNG(1);
-    r.rng.state = Number.isFinite(o.rngState) ? o.rngState : 1;
+    r.rng.state = o.rngState;
     let maxUid = 0;
     for (const m of r.party) maxUid = Math.max(maxUid, m.uid);
     setUidCounter(maxUid + 1000);

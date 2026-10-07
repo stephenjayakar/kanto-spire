@@ -18,8 +18,22 @@ import { CoopMapScene } from './map.js';
 import { CoopBattleScene } from './battle.js';
 import { CoopWaitScene } from './wait.js';
 import { CoopEndScene } from './end.js';
+import { VERSION } from '../../game/version.js';
+import { LOGIC_ID } from '../../game/coop/engines.js';
+import { resumeRoom, parseCheckpoint } from '../../game/coop/resume.js';
+import { isSafePoint, snapshotGame } from '../../game/coop/snapshot.js';
+import { loadJSON } from '../../engine/assets.js';
 
 const POLL_MS = 700, HEARTBEAT_MS = 5000, CK_HISTORY = 300;
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+// 'v0.3.7' > 'v0.3.6'
+const newerVersion = (a, b) => {
+  const pa = String(a).replace(/^v/, '').split('.').map(Number), pb = String(b).replace(/^v/, '').split('.').map(Number);
+  for (let i = 0; i < 3; i++) if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) > (pb[i] || 0);
+  return false;
+};
+// (a frozen engine, web/src/legacy/<id>/, loads its own copy of the game data)
+const dataLoader = (f) => loadJSON('data/' + f);
 
 export class CoopSession {
   // net: the coopnet module (or the dev mock). info: { roomId, code, mySlot, members, now }
@@ -34,7 +48,7 @@ export class CoopSession {
     this.game = null;
     this.lastSeq = 0;              // last applied seq
     this.buffer = new Map();       // seq -> action, waiting for a gap to fill
-    this.log = [];                 // every applied action (for RESYNC)
+    this.log = [];                 // actions applied since the resume (debugging)
     this.ck = new Map();           // seq -> checksum after applying it (last CK_HISTORY)
     this.desync = null;            // { seq, atSeq } once a partner checksum disagrees with ours
     this.synced = false;           // caught up with the server log at least once
@@ -48,6 +62,11 @@ export class CoopSession {
     this.applyErrors = 0;
     this.status = 'playing';
     this.stopped = false;
+    this.loading = null;           // 'save' | 'replay' while resuming (CoopWaitScene shows it)
+    this.cpSeq = 0;                // newest checkpoint seq the server has (or we wrote)
+    this.resumed = null;           // resumeRoom()'s summary (mode, engine, dropped...)
+    this.cpBlocked = false;        // the resumed game couldn't be verified: no checkpoints until a partner's checksum agrees
+    this.resumeSeq = 0;
   }
 
   // 2-4 players: n, the other slots, and partnerSlot = the first other player (THE partner with 2 players)
@@ -74,15 +93,126 @@ export class CoopSession {
     if (typeof window !== 'undefined') window.__coop = this;
     this.routeKey = 'connect';
     setScene(new CoopWaitScene(this));
+    this.beat();
+    this.hbTimer = setInterval(() => this.beat(), HEARTBEAT_MS);
+    this.resumeThenPoll();
+    return this;
+  }
+  // v0.3.6: load the latest checkpoint + the log after it (resume.js), then poll for new actions. If that fails
+  // outright, fall back to the old way: stream and apply the whole log from seq 1.
+  resumeThenPoll() {
+    return this.resume().catch(e => {
+      console.error('[coop] resume failed; replaying the whole log', e);
+      this.game = null; this.lastSeq = 0; this.ck.clear();
+      this.cpBlocked = true; // (that replay isn't checked: it must not become everyone's checkpoint)
+    }).finally(() => { this.loading = null; if (!this.stopped) this.startPolling(); });
+  }
+  startPolling() {
+    if (this.stopped) return;
+    this.poller?.stop();
     this.poller = new this.net.CoopPoller(this.roomId, {
-      intervalMs: POLL_MS, after: 0,
+      intervalMs: POLL_MS, after: this.lastSeq,
       onActions: (acts) => this.receive(acts),
       onRoom: (room, members, info) => this.onRoom(room, members, info),
       onError: (e) => { this.netError ||= { since: Date.now(), msg: e?.message }; },
     }).start();
-    this.beat();
-    this.hbTimer = setInterval(() => this.beat(), HEARTBEAT_MS);
-    return this;
+  }
+  async retry(fn, tries = 12) {
+    for (let i = 0; ; i++) {
+      try { const r = await fn(); this.netError = null; return r; } catch (e) {
+        if (this.stopped || i >= tries) throw e;
+        this.netError ||= { since: Date.now(), msg: e?.message };
+        await sleep(Math.min(5000, 400 * 2 ** i));
+      }
+    }
+  }
+  async resume() {
+    if (!this.net.latestCheckpoint) return; // (a backend without checkpoints: stream the log)
+    this.loading = 'save';
+    let cp = await this.retry(() => this.net.latestCheckpoint(this.roomId));
+    if (this.stopped) return;
+    // saved by a newer version than this tab: reload first (this code may not know what that version added)
+    if (cp?.gameVersion && newerVersion(cp.gameVersion, VERSION)) {
+      coopToast(`This game was saved on ${cp.gameVersion}: reload the page to update`, { bad: true, t: 10 });
+      this.stop({ toTitle: true });
+      return;
+    }
+    if (cp && !parseCheckpoint(cp)) { console.warn('[coop] unusable checkpoint, replaying the whole log', cp.seq); cp = null; }
+    const actions = [];
+    let after = cp?.seq ?? 0;
+    for (;;) {
+      const r = await this.retry(() => this.net.fetchSince(this.roomId, after));
+      if (this.stopped) return;
+      if (r.members) this.members = r.members;
+      if (r.now) { this.serverNow = r.now; this.serverNowAt = Date.now(); }
+      if (r.room?.status) this.status = r.room.status;
+      const fresh = r.actions.filter(a => a.seq > after);
+      actions.push(...fresh);
+      if (fresh.length) after = fresh[fresh.length - 1].seq;
+      if (!r.more || !fresh.length) break;
+    }
+    this.loading = 'replay';
+    await sleep(30); // (let the wait screen draw)
+    const res = await resumeRoom({ checkpoint: cp, actions, dataLoader });
+    if (this.stopped || !res.game) return; // (no init yet: the poller brings it)
+    this.game = res.game;
+    this.lastSeq = res.seq;
+    this.ck = new Map(res.cks);
+    this.log = [];
+    this.resumed = { mode: res.mode, engine: res.engine, stamp: res.stamp, base: res.base, seq: res.seq, dropped: res.dropped, tried: res.tried };
+    this.cpSeq = cp?.seq ?? 0;
+    this.cpBlocked = !res.verified;
+    this.resumeSeq = res.seq;
+    if (this.game.phase === 'private') this.privateSince = res.seq;
+    console.info('[coop] resumed', this.resumed);
+    // A new checkpoint: the first one of a room from before v0.3.6, a newer safe point than the server's, or the
+    // hand-over from an older engine / a fallback: every client must continue from that same state, so that one
+    // is stored before playing on.
+    if (res.safe) {
+      const handover = res.mode === 'legacy' || res.mode === 'fallback';
+      if (!handover) this.writeCheckpoint(res.safe, 'resume');
+      else await this.retry(async () => { if ((await this.writeCheckpoint(res.safe, res.mode)) === 'net') throw new Error('offline'); }).catch(() => {});
+    }
+    if (res.mode === 'fallback' || (res.mode === 'legacy' && res.dropped > 0)) coopToast('The game was updated: this stop starts over from the map.', { t: 6 });
+  }
+  // ---- checkpoints (v0.3.6) ---------------------------------------------------------------------
+  // At every safe point (the map) the game state goes to the server, so the room resumes from it, across updates.
+  // -> Promise<boolean> (true: the server has a checkpoint at the game's current seq)
+  // -> Promise<true | false | 'net'> ('net': a network failure, worth retrying)
+  checkpointNow(reason = 'auto') {
+    const g = this.game;
+    if (!g || !isSafePoint(g) || this.desync || this.cpBlocked || (reason !== 'save' && (!this.synced || this.stopped))) return Promise.resolve(false);
+    if (g.seq <= this.cpSeq) return Promise.resolve(g.seq === this.cpSeq);
+    return this.writeCheckpoint({ seq: g.seq, snap: snapshotGame(g), checksum: g.checksum() >>> 0 }, reason);
+  }
+  writeCheckpoint(s, reason) {
+    if (!this.net.writeCheckpoint) return Promise.resolve(false);
+    const prev = this.cpSeq;
+    this.cpSeq = Math.max(this.cpSeq, s.seq);
+    const act = s.snap?.world?.o?.actIndex;
+    const progress = Number.isInteger(act) ? `ACT ${act + 1}` : undefined;
+    return this.net.writeCheckpoint(this.roomId, { seq: s.seq, phase: 'map', state: JSON.stringify(s.snap), checksum: s.checksum, gameVersion: VERSION, engine: LOGIC_ID, reason, ...(progress ? { progress } : {}) })
+      .then(() => { this.lastSaved = { seq: s.seq, at: Date.now() }; return true; })
+      .catch(e => { if (this.cpSeq === s.seq) this.cpSeq = prev; console.warn('[coop] checkpoint failed', e); return this.net.isNetworkError?.(e) ? 'net' : false; });
+  }
+  // SAVE & QUIT: send what's queued, store a checkpoint (on the map), tell the others, back to the title.
+  async saveAndQuit() {
+    if (this.quitting || this.stopped) return;
+    this.quitting = true; // (post() sends nothing new from here on)
+    coopToast('Saving...', { t: 1.2 });
+    const t0 = Date.now();
+    while ((this.outbox.length || this.flushing) && Date.now() - t0 < 5000) await sleep(100);
+    // The room log is the save; the checkpoint (on the map) lets it load fast and across updates. Only being
+    // offline stops the quit (the last actions or the checkpoint didn't reach the server).
+    const cp = this.outbox.length ? 'net' : isSafePoint(this.game) ? await this.checkpointNow('save') : true;
+    if (cp === 'net' || this.outbox.length) { this.quitting = false; coopToast("Couldn't save (offline?). Try again in a moment.", { bad: true, t: 4 }); return; }
+    // (no more heartbeats: one landing after saveQuit would mark us back)
+    clearInterval(this.hbTimer); this.hbTimer = null;
+    await Promise.race([this.hbP, sleep(3000)]).catch(() => {});
+    await this.net.saveQuit?.(this.roomId).catch(() => {});
+    coopToast('Saved! REJOIN from CO-OP to continue.', { good: true, t: 4 });
+    this.savedQuit = true;
+    setTimeout(() => this.stop({ toTitle: true }), 1200);
   }
   stop({ toTitle = false } = {}) {
     if (this.stopped) return;
@@ -94,15 +224,21 @@ export class CoopSession {
     if (typeof window !== 'undefined' && window.__coop === this) window.__coop = null;
     if (toTitle) import('../title.js').then(m => setScene(new m.TitleScene()));
   }
-  beat() { if (!this.stopped) this.net.heartbeat(this.roomId, this.lastSeq).catch(() => {}); }
+  beat() { if (!this.stopped && !this.quitting) this.hbP = this.net.heartbeat(this.roomId, this.lastSeq).catch(() => {}); }
 
   onRoom(room, members, info) {
     this.netError = null;
+    if (members && this.synced) {
+      for (const m of members) {
+        const old = this.members.find(x => x.slot === m.slot);
+        if (m.slot !== this.mySlot && m.saved && !old?.saved) coopToast(`${m.name} saved and quit. Wait for them, or SAVE & QUIT too.`, { t: 6 });
+      }
+    }
     if (members) { this.members = members; this.syncSketches(members); }
     if (info?.now) { this.serverNow = info.now; this.serverNowAt = Date.now(); }
     if (room?.status) this.status = room.status;
     // The poller got a full page and found nothing missing: we're caught up with the log.
-    if (!this.synced && this.game && !this.buffer.size && room && this.lastSeq >= room.nextSeq - 1) { this.synced = true; this.route(); }
+    if (!this.synced && this.game && !this.buffer.size && room && this.lastSeq >= room.nextSeq - 1) { this.synced = true; this.route(); this.checkpointNow('resume'); }
     if (this.synced) this.checkAway(); // (a player sat out while away is back in as soon as they're caught up)
   }
 
@@ -146,14 +282,23 @@ export class CoopSession {
     // (test hook, unset in the game: tests/coop4_play.cjs re-applies its setup shortcuts when a reloaded client
     // replays the log, so a REJOIN can be tested after them)
     if (typeof window !== 'undefined' && window.__coopTestHook) { try { window.__coopTestHook(this, a); } catch (e) { console.error('[coop] test hook', e); } }
+    // an unverified resume: a partner's checksum that agrees with ours (at or after the resume) clears it for checkpoints
+    if (this.cpBlocked && a.p !== this.mySlot && a.ck != null && a.atSeq >= this.resumeSeq && this.ck.get(a.atSeq) === (a.ck >>> 0)) this.cpBlocked = false;
     if (top - a.seq < CK_HISTORY) {
       this.ck.set(a.seq, g.checksum() >>> 0);
       if (this.ck.size > CK_HISTORY) this.ck.delete(this.ck.keys().next().value);
     }
     if (g.phase === 'private' && (!before || before.phase !== 'private' || before.kind !== g.private?.kind || before.node !== g.private?.node)) this.privateSince = a.seq;
+    // back on the map (a node done, an act cleared): checkpoint
+    if (!replay && this.synced && isSafePoint(g) && (!before || before.phase !== 'map')) this.checkpointNow('auto');
     if (a.type === 'vote' && a.p === this.mySlot && this.pendingVote === a.node) this.pendingVote = null;
     if (g.phase !== 'map') this.pendingVote = null;
     if (!replay && this.synced && before) {
+      // a partner on a newer version: this tab is out of date (its replay of their actions may drift)
+      if (a.p !== this.mySlot && typeof a.v === 'string' && !this.versionWarned && newerVersion(a.v, VERSION)) {
+        this.versionWarned = true;
+        coopToast(`${this.nameOf(a.p)} is on ${a.v}: reload the page to update`, { bad: true, t: 8 });
+      }
       // The duo battle animates every applied battle action's events (game.lastEvents) in order. They are
       // queued here, not handed to the scene directly: the action that starts a battle (a vote) is applied
       // while the map is still on screen, and a poll can bring several actions before the scene switches.
@@ -205,15 +350,16 @@ export class CoopSession {
     coopToast('You were sat out while away: you are back in!', { good: true, t: 4 });
   }
 
-  // RESYNC: rebuild the game from the whole log (seq 1..lastSeq) and land on the right scene.
+  // RESYNC: rebuild the game from the server (latest checkpoint + the log after it) and land on the right scene.
   resync() {
-    const log = this.log.slice();
-    this.game = null; this.log = []; this.ck.clear(); this.desync = null; this.lastSeq = 0;
-    this.privatePosted = null; this.pendingVote = null;
-    const top = log.length ? log[log.length - 1].seq : 0;
-    for (const a of log) this.applyOne(a, top, true);
-    coopToast(`Resynced from the log (${log.length} actions)`, { good: true });
-    this.route(true);
+    if (this.resyncing || this.stopped) return;
+    this.resyncing = true;
+    this.poller?.stop(); this.poller = null;
+    this.game = null; this.log = []; this.ck.clear(); this.desync = null; this.lastSeq = 0; this.buffer.clear();
+    this.synced = false; this.privatePosted = null; this.pendingVote = null; this.battleFeed = [];
+    this.routeKey = 'connect';
+    setScene(this.wrap(new CoopWaitScene(this)));
+    this.resumeThenPoll().then(() => { this.resyncing = false; coopToast('Resynced from the save', { good: true }); });
   }
 
   // ---- posting ----------------------------------------------------------------------------------
@@ -263,8 +409,9 @@ export class CoopSession {
     }).catch(() => {}).finally(() => { this.sketchFetching = false; });
   }
   post(action) {
-    if (!this.game || this.stopped) return;
-    const a = { ...action, ck: this.game.checksum() >>> 0, atSeq: this.game.seq ?? this.lastSeq, nonce: this.net.randomNonce() };
+    if (!this.game || this.stopped || this.quitting) return;
+    // (v0.3.6: every action carries the game version and logic id that played it, see game/coop/engines.js)
+    const a = { ...action, ck: this.game.checksum() >>> 0, atSeq: this.game.seq ?? this.lastSeq, v: VERSION, eng: LOGIC_ID, nonce: this.net.randomNonce() };
     this.outbox.push(a);
     this.flush();
   }

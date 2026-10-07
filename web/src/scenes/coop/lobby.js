@@ -164,10 +164,9 @@ export class CoopLobbyScene {
     panel(ctx, rx, 62, rw, 250);
     text(ctx, 'REJOIN', rx + rw / 2, 70, { align: 'center', color: 'white' });
     if (!this.rooms) text(ctx, 'Loading...', rx + rw / 2, 100, { align: 'center', color: 'gray', font: 'small' });
-    else if (!this.rooms.length) text(ctx, 'No open rooms from the last 24 h.', rx + rw / 2, 100, { align: 'center', color: 'gray', font: 'small' });
+    else if (!this.rooms.length) text(ctx, 'No open rooms.', rx + rw / 2, 100, { align: 'center', color: 'gray', font: 'small' });
     (this.rooms || []).slice(0, 6).forEach((r, i) => {
       const y = 90 + i * 36;
-      const names = (r.members || []).map(m => `P${m.slot + 1} ${m.name}`).join(' · ');
       // the X (delete) sits on the row's right edge; the rest of the row rejoins
       const dx = rx + rw - 30, overX = hover(dx, y + 6, 18, 18);
       const hot = !overX && hover(rx + 8, y, rw - 16, 32);
@@ -175,8 +174,8 @@ export class CoopLobbyScene {
       if (button(ctx, 'X', dx, y + 6, 18, 18, { color: '#904848', font: 'small', disabled: this.busy })) this.askDelete(r);
       if (overX) tip('DELETE ROOM', r.status === 'playing' ? 'Remove it from your list and leave the run for good. Your partner can keep playing; once you have both deleted it, it is gone.' : r.isHost ? 'Close the room and remove it.' : 'Leave the room and remove it from your list.');
       text(ctx, r.code, rx + 16, y + 3, { color: 'gold' });
-      text(ctx, `${r.status === 'playing' ? 'IN PROGRESS' : 'LOBBY'} · ${coopWorldLabel(r.world)} A${r.ascension}`, rx + 70, y + 5, { color: r.status === 'playing' ? 'lime' : 'whiteSoft', font: 'small' });
-      text(ctx, names, rx + 16, y + 18, { color: 'gray', font: 'small' });
+      text(ctx, `${r.status === 'playing' ? 'IN PROGRESS' : 'LOBBY'} · ${coopWorldLabel(r.world)} A${r.ascension}${r.progress ? ' · ' + r.progress : ''}`, rx + 70, y + 5, { color: r.status === 'playing' ? 'lime' : 'whiteSoft', font: 'small' });
+      text(ctx, (r.members || []).map(m => `P${m.slot + 1} ${m.name}${m.saved ? ' (saved)' : ''}`).join(' · '), rx + 16, y + 18, { color: 'gray', font: 'small' });
       if (hot && clicked(rx + 8, y, rw - 16, 32) && !this.busy) { Sound.playSE('se_select'); this.openRoom(r.roomId); }
     });
     if (button(ctx, 'REFRESH', rx + rw - 84, 286, 76, 20, { color: '#506080', font: 'small' })) { this.rooms = null; this.refreshRooms(); }

@@ -2,8 +2,8 @@
 import { pushOverlay } from '../../engine/core.js';
 import { draw } from '../../engine/assets.js';
 import { text } from '../../engine/font.js';
-import { swirlBackground, BG_THEMES, panel, pixBox, drawTips, tip, THEME } from '../../engine/ui.js';
-import { hover } from '../../engine/core.js';
+import { swirlBackground, BG_THEMES, panel, pixBox, drawTips, tip, THEME, button } from '../../engine/ui.js';
+import { hover, H } from '../../engine/core.js';
 import { G } from '../../game/state.js';
 import { NODE_INFO } from '../../game/map.js';
 import { CONSUMABLES } from '../../game/items.js';
@@ -92,6 +92,7 @@ export class CoopMapScene extends MapScene {
     this.drawBossPanel(ctx);
     this.drawPartnerPanel(ctx, 482, 186, 154, 132);
     this.drawVoteStatus(ctx);
+    drawSaveQuit(ctx, s, 8, H - 62, 146);
     this.drawNodeTip(hovered);
     drawTips(ctx);
     drawCoopOverlay(ctx, s);
@@ -177,13 +178,20 @@ CoopMapScene.prototype.drawPartnersPanel = function (ctx, x, y, w, h) {
   });
 };
 
+// SAVE & QUIT (v0.3.6): saves the game (a checkpoint on the map) and goes back to the title; REJOIN resumes it.
+export function drawSaveQuit(ctx, session, x, y, w = 90) {
+  const busy = !!session.quitting;
+  if (button(ctx, busy ? 'SAVING...' : 'SAVE & QUIT', x, y, w, 18, { color: '#506080', font: 'small', disabled: busy || session.stopped })) session.saveAndQuit();
+  if (hover(x, y, w, 18)) tip('SAVE & QUIT', 'Save this co-op game and go back to the title. REJOIN it from the CO-OP lobby to continue; your partners see that you saved.');
+}
+
 export function coopMenu(session) {
   pushOverlay(new ChoiceModal({
-    title: 'CO-OP MENU', body: `Room ${session.code || '?'} · you are P${session.mySlot + 1}. Quitting keeps your seat: REJOIN from the CO-OP lobby.`,
-    options: [{ label: 'Resume', value: 0, color: THEME.green }, { label: 'Settings', value: 1, color: '#506080' }, { label: 'Quit to title (rejoin later)', value: 2, color: THEME.discard }],
+    title: 'CO-OP MENU', body: `Room ${session.code || '?'} · you are P${session.mySlot + 1}. SAVE & QUIT keeps the game: REJOIN it from the CO-OP lobby.`,
+    options: [{ label: 'Resume', value: 0, color: THEME.green }, { label: 'Settings', value: 1, color: '#506080' }, { label: 'SAVE & QUIT', value: 2, color: THEME.discard }],
     onClose: async (v) => {
       if (v === 1) { const { SettingsModal } = await import('../title.js'); pushOverlay(new SettingsModal({})); }
-      if (v === 2) session.stop({ toTitle: true });
+      if (v === 2) session.saveAndQuit();
     },
   }));
 }
