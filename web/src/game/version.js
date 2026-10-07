@@ -2,9 +2,26 @@
 // Game version and patch notes (shown from the title screen). Versions are major.minor.patch: every production
 // deploy that changes the game bumps the patch (v0.2.0 -> v0.2.1); the owner calls minor bumps (v0.1.x -> v0.2.0);
 // no major bumps yet. Each one gets a new top PATCH_NOTES entry; see AGENTS.md.
-export const VERSION = 'v0.3.6';
+export const VERSION = 'v0.3.7';
 
 export const PATCH_NOTES = [
+  {
+    v: 'v0.3.7',
+    sections: [
+      ['CHANGES', [
+        'Co-op room ascension is now the highest unlock among the players’ chosen starters',
+        'Co-op wins unlock the next ascension even above your own unlock',
+        'Moves already offered to a POKéMON show up less often',
+        'POKéMON with small move pools learn more moves (evolution line and type moves)',
+        'KING’S ROCK rolls once per hand (was per card)',
+        'Resized JOHTO trainer portraits to match FireRed’s',
+      ]],
+      ['FIXES', [
+        'Fixed UP-GRADE, SOOT SACK, HELIX FOSSIL, ENERGY POWDER and DOME FOSSIL dealing less damage than previewed',
+        'Fixed REST not healing when the battle ended first',
+      ]],
+    ],
+  },
   {
     v: 'v0.3.6',
     sections: [
