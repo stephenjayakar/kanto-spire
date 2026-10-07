@@ -6,7 +6,7 @@ import { GEN4_MOVES } from '../web/src/game/gen4_moves.js';
 import { SPECIAL_MOVES, PHYSICAL_MOVES } from '../web/src/game/move_categories.js';
 import { EFFECTS } from '../web/src/game/effects.js';
 import { detectCombo, comboBonus } from '../web/src/game/hands.js';
-import { Run } from '../web/src/game/run.js';
+import { Run, movePool, MOVE_POOL, FALLBACK_MOVES } from '../web/src/game/run.js';
 import { Battle } from '../web/src/game/battle.js';
 import { makeMon, maxHp, gainExp, defaultMoves, canLearn, defaultCopies, replacedCopies, DECK_RULES } from '../web/src/game/pokemon.js';
 import { generateMap, reachable } from '../web/src/game/map.js';
@@ -207,6 +207,81 @@ t('gen 4 moves: offered as rewards', () => {
   const seen = new Set();
   for (let i = 0; i < 200; i++) for (const c of run.moveRewardChoices(new RNG('r' + i))) seen.add(c.move);
   assert.ok(seen.has('FIRE_FANG') && seen.has('SHADOW_CLAW'), [...seen].join());
+});
+t('move rewards: offers are recorded per mon and survive a save', () => {
+  const run = Run.create({ starter: 'CHARMANDER', seed: 'mo1' });
+  assert.ok(!('moveOffers' in run.toJSON()), 'no field before the first move reward');
+  const uid = run.party[0].uid;
+  const a = run.moveRewardChoices(new RNG('mo1a'));
+  assert.ok(a.length);
+  for (const c of a) assert.equal(run.moveOfferCount(c.uid, c.move), 1);
+  const r2 = Run.fromJSON(JSON.parse(JSON.stringify(run)));
+  for (const c of a) assert.equal(r2.moveOfferCount(c.uid, c.move), 1);
+  r2.moveRewardChoices(new RNG('mo1b'));
+  const total = Object.values(r2.moveOffers[uid]).reduce((x, y) => x + y, 0);
+  assert.equal(total, a.length * 2);
+});
+t('move rewards: an old save without moveOffers (or with junk) loads and works', () => {
+  const run = Run.create({ starter: 'BULBASAUR', seed: 'mo2' });
+  const o = JSON.parse(JSON.stringify(run));
+  delete o.moveOffers;
+  const r = Run.fromJSON(o);
+  assert.equal(r.moveOffers, undefined);
+  assert.ok(r.moveRewardChoices(new RNG('mo2a')).length);
+  assert.ok(r.moveOffers && typeof r.moveOffers === 'object');
+  for (const junk of [[1, 2], 'x', 5, null]) {
+    const j = Run.fromJSON({ ...JSON.parse(JSON.stringify(run)), moveOffers: junk });
+    assert.ok(!('moveOffers' in j) || (j.moveOffers && !Array.isArray(j.moveOffers)), 'sanitized ' + JSON.stringify(junk));
+    assert.ok(j.moveRewardChoices(new RNG('mo2b')).length);
+  }
+  const k = Run.fromJSON({ ...JSON.parse(JSON.stringify(run)), moveOffers: { [run.party[0].uid]: 'bad' } });
+  assert.ok(k.moveRewardChoices(new RNG('mo2c')).length);
+});
+t('move rewards: a seen move recurs less for the same mon', () => {
+  // over 40 reward screens for one mon: how often the most-offered move came up, and repeats in the first 10
+  const stats = (track, sp, seed) => {
+    const run = Run.create({ starter: 'CHARMANDER', seed });
+    run.party = [makeMon(sp, 25, { rng: new RNG(seed + 'm') })];
+    const seen = new Set(), cnt = {};
+    let early = 0;
+    for (let i = 0; i < 40; i++) {
+      if (!track) delete run.moveOffers;
+      for (const c of run.moveRewardChoices(new RNG(seed + 'r' + i))) { if (i < 10 && seen.has(c.move)) early++; seen.add(c.move); cnt[c.move] = (cnt[c.move] || 0) + 1; }
+    }
+    return { top: Math.max(...Object.values(cnt)), early };
+  };
+  let off = { top: 0, early: 0 }, on = { top: 0, early: 0 };
+  for (const [sp, seed] of [['CHARMELEON', 'mo3a'], ['PIKACHU', 'mo3b'], ['GEODUDE', 'mo3c'], ['MAGIKARP', 'mo3d']]) {
+    const a = stats(false, sp, seed), b = stats(true, sp, seed);
+    off.top += a.top; off.early += a.early; on.top += b.top; on.early += b.early;
+  }
+  assert.ok(on.top < off.top * 0.75, `most-offered move: ${on.top} with tracking vs ${off.top} without`);
+  assert.ok(on.early < off.early, `early repeats: ${on.early} with tracking vs ${off.early} without`);
+});
+t('move rewards: thin species get a decent pool; caps and gates hold', () => {
+  for (const k of ['MAGIKARP', 'DITTO', 'UNOWN', 'SMEARGLE', 'METAPOD', 'KAKUNA', 'WOBBUFFET', 'BELDUM']) {
+    assert.ok(movePool(makeMon(k, 10, { rng: new RNG(k) }), 0).length >= 6, 'act 1 pool ' + k);
+    assert.ok(movePool(makeMon(k, 30, { rng: new RNG(k) }), 1).length >= 8, 'act 2 pool ' + k);
+  }
+  for (const [t, list] of Object.entries(FALLBACK_MOVES)) for (const m of list) {
+    assert.ok(D.moves[m], 'fallback move exists ' + m);
+    assert.ok(EFFECTS[D.moves[m].effect], 'fallback effect ' + m);
+    assert.ok(D.moves[m].power === 0 || D.moves[m].power >= 10, 'fixed power ' + m);
+  }
+  for (const k of Object.keys(D.species)) for (const [lv, act] of [[8, 0], [25, 1], [45, 2], [60, 3]]) {
+    const mon = makeMon(k, lv, { rng: new RNG(k + lv) });
+    const pool = movePool(mon, act);
+    for (const { move } of pool) {
+      assert.ok(!(D.moves[move].power > MOVE_POOL.maxPower[act]), `${k} ${move} over the act ${act + 1} cap`);
+      assert.ok(act >= 2 || !MOVE_POOL.lateMoves.includes(move), `${k} ${move} too early`);
+      assert.ok(!mon.moves.some(x => x.move === move), `${k} offered known ${move}`);
+    }
+    assert.equal(new Set(pool.map(x => x.move)).size, pool.length, 'no duplicates ' + k);
+  }
+  // the reward choices respect the cap too
+  const run = Run.create({ starter: 'SQUIRTLE', seed: 'mo4' });
+  run.party = [makeMon('MAGIKARP', 12, { rng: run.rng }), makeMon('DITTO', 12, { rng: run.rng })];
+  for (let i = 0; i < 50; i++) for (const c of run.moveRewardChoices(new RNG('mo4' + i))) assert.ok(!(D.moves[c.move].power > 70), c.move);
 });
 t('gen 4 moves: every move works as a card and as an enemy move', () => {
   for (const m of Object.values(D.moves).filter(x => x.gen === 4)) {
