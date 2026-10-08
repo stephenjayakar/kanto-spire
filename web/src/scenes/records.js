@@ -139,7 +139,7 @@ export class RecordsScene {
         text(ctx, r.version, 572, y + 11, { color: r.version === VERSION ? 'dmg' : 'purple', font: 'small' });
       } else text(ctx, ago(r.finishedAt), 572, y + 6, { color: 'gray', font: 'small' });
       return y + 25;
-    }, top));
+    }, top), 10); // slower wheel than the default: a third of a row per tick
   }
   drawTrainers(ctx) {
     const y0 = 70;
@@ -156,7 +156,7 @@ export class RecordsScene {
       text(ctx, String(p.wins), 400, y + 6, { color: 'whiteSoft', font: 'small' });
       text(ctx, p.runs ? Math.round((100 * p.wins) / p.runs) + '%' : '-', 470, y + 6, { color: 'whiteSoft', font: 'small' });
       return y + 25;
-    }, top));
+    }, top), 10); // slower wheel than the default: a third of a row per tick
   }
 }
 
