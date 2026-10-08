@@ -407,13 +407,15 @@ export class BattleScene {
   }
 
   // ---- input ----------------------------------------------------------------------------
-  // FireRed's low-HP beep is a looping SE: run it only while the lead is in the red during this battle.
+  // FireRed's low-HP beep is a looping SE: start it when the lead drops into the red during this battle.
   syncLowHpAlarm() {
     const lead = this.b.lead();
     const hp = lead ? (this.partyHp[lead.uid] ?? lead.hp) : 0;
     const want = !this.b.result && lead && hp > 0 && hp / maxHp(lead) < 0.25;
-    if (want && !this.lowHpOn) { Sound.playSE('se_low_health'); this.lowHpOn = true; }
+    if (want && !this.lowHpOn) { Sound.playSE('se_low_health'); this.lowHpOn = true; this.lowHpAt = Engine.time; }
     else if (!want && this.lowHpOn) { Sound.stopSE('se_low_health'); this.lowHpOn = false; }
+    // the SE loops every 0.6s: let it beep three times, then go quiet until the lead leaves the red
+    else if (this.lowHpOn && this.lowHpAt != null && Engine.time - this.lowHpAt > 1.75) { Sound.stopSE('se_low_health'); this.lowHpAt = null; }
   }
 
   exit() { if (this.lowHpOn) Sound.stopSE('se_low_health'); this.lowHpOn = false; }

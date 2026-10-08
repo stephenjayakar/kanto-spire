@@ -855,8 +855,10 @@ export class CoopBattleScene {
     const lead = d && !d.down[this.me] ? this.sub.lead() : null;
     const hp = lead ? (this.partyHp[this.me][lead.uid] ?? lead.hp) : 0;
     const want = !d?.result && lead && hp > 0 && hp / maxHp(lead) < 0.25 && !this.finishing;
-    if (want && !this.lowHpOn) { Sound.playSE('se_low_health'); this.lowHpOn = true; }
+    if (want && !this.lowHpOn) { Sound.playSE('se_low_health'); this.lowHpOn = true; this.lowHpAt = Engine.time; }
     else if (!want && this.lowHpOn) { Sound.stopSE('se_low_health'); this.lowHpOn = false; }
+    // the SE loops every 0.6s: let it beep three times, then go quiet until the lead leaves the red
+    else if (this.lowHpOn && this.lowHpAt != null && Engine.time - this.lowHpAt > 1.75) { Sound.stopSE('se_low_health'); this.lowHpAt = null; }
   }
 
   update(dt) {
