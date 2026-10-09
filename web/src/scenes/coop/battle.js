@@ -16,7 +16,7 @@ import { CONSUMABLES, BADGES } from '../../game/items.js';
 import { maxHp, monName, typesOf, isFainted, DECK_RULES } from '../../game/pokemon.js';
 import { G, saveMeta } from '../../game/state.js';
 import { Sound } from '../../audio/sound.js';
-import { drawTrainer, drawHUD, drawCard, drawCardBack, cardTooltip, drawPartyPanel, drawMon, drawIcon, CARD_W, CARD_H, MessageBox, ChoiceModal, PartyPicker, DeckModal, monTooltip, Modal } from '../common.js';
+import { drawTrainer, drawHUD, drawCard, drawCardBack, cardTooltip, drawPartyPanel, drawMon, drawIcon, CARD_W, CARD_H, MessageBox, ChoiceModal, PartyPicker, DeckModal, monTooltip, Modal, drawNoComboTag, STATUS_SEL } from '../common.js';
 import { terrainImage, playedRowPos, TRAINER_LINGER, skippableWait, pollSkip, pileInput, drawPileTip, PILE_X, PILE_Y } from '../battle.js';
 import { COOP_TUNING } from '../../game/coop/tuning.js';
 import { PCOL, PFONT, drawCoopOverlay, drawPartnerChip, playerStatus, coopToast } from './ui.js';
@@ -1337,9 +1337,12 @@ export class CoopBattleScene {
     if (!sc && prev && !this.busy) {
       const tn = tgt ? speciesName(tgt.species) : 'foe';
       text(ctx, dmg ? `${tn} HP ${fmt(foeHp)}${kills ? '  KO!' : ''}` : 'no damage', x + w / 2, 106, { align: 'center', color: kills ? 'gold' : 'gray', font: 'small' });
+      // selected STATUS cards: say they don't combo. The bottom slot is the TEAM UP pill's when there is one; then the
+      // note is tooltip-only (the cards' NO COMBO stamps still say it).
+      const sts = this.sel.map(id => sub.deck.hand.find(c => c.id === id)).filter(c => c && !c.faceDown).map(c => sub.cardInfo(c)).filter(i => i.status).map(i => i.move.name);
       if (prev.teamUp) { pixBox(ctx, x + 18, 114, w - 36, 11, '#806010', null, 2); text(ctx, `TEAM UP +${teamUpPct()}% incl.`, x + w / 2, 113, { align: 'center', color: 'white', font: 'small' }); }
-      else text(ctx, 'before crits & misses', x + w / 2, 116, { align: 'center', color: 'gray', font: 'small' });
-      if (hover(x, 31, w, 96)) tip(prev.name, COMBOS[prev.key].desc + `\nCombo lvl ${prev.level}: +${prev.bonus}% damage.\nAgainst ${tn} (your TARGET). ${fmt(base)} x ${(1 + bonus / 100).toFixed(2)}${times !== 1 ? ` x ${+(+times).toFixed(2)}` : ''} = ${fmt(dmg || 0)}.${prev.teamUp ? `\nTEAM UP: ${this.many ? 'another' : 'your partner\'s'} locked hand hits it first, so yours deals +${teamUpPct()}%.` : `\nTEAM UP: the second hand to hit the same foe in a turn deals +${teamUpPct()}%.`} (Assumes no crits or misses.)`, { width: 210 });
+      else if (sts.length) text(ctx, 'STATUS cards: no combo', x + w / 2, 116, { align: 'center', color: 'purple', font: 'small', maxW: w - 8 });
+      else text(ctx, 'before crits & misses', x + w / 2, 116, { align: 'center', color: 'gray', font: 'small' });      if (hover(x, 31, w, 96)) tip(prev.name, COMBOS[prev.key].desc + `\nCombo lvl ${prev.level}: +${prev.bonus}% damage.\nAgainst ${tn} (your TARGET). ${fmt(base)} x ${(1 + bonus / 100).toFixed(2)}${times !== 1 ? ` x ${+(+times).toFixed(2)}` : ''} = ${fmt(dmg || 0)}.${prev.teamUp ? `\nTEAM UP: ${this.many ? 'another' : 'your partner\'s'} locked hand hits it first, so yours deals +${teamUpPct()}%.` : `\nTEAM UP: the second hand to hit the same foe in a turn deals +${teamUpPct()}%.`} (Assumes no crits or misses.)${sts.length ? `\nSTATUS cards (${sts.join(', ')}) take effect but never count toward a combo.` : ''}`, { width: 210 });
     } else if (!name) {
       const o = this.s.others.find(q => d.locks[q]?.ids);
       const PL = o !== undefined ? d.locks[o] : null;
@@ -1429,7 +1432,10 @@ DECK: cards left in the draw pile / cards in your lead's deck.`, { width: 200 })
       if (!v || !card) continue;
       const info = this.canSimulate() ? this.info(card, locked?.target ?? target) : sub.cardInfo(card);
       const isLocked = lockedIds.includes(id);
-      drawCard(ctx, info, v.x, v.y, { selected: this.sel.includes(id) || isLocked, animate: this.hoverId === id });
+      // a selected (or locked-in) STATUS card: lavender outline + NO COMBO stamp
+      const stsSel = info.status && !info.faceDown && (isLocked || (prev && this.sel.includes(id)));
+      drawCard(ctx, info, v.x, v.y, { selected: this.sel.includes(id) || isLocked, selColor: stsSel ? STATUS_SEL : null, animate: this.hoverId === id });
+      if (stsSel) drawNoComboTag(ctx, v.x, v.y);
       if (locked && !isLocked) { ctx.save(); ctx.globalAlpha = 0.45; rect(ctx, v.x, v.y, CARD_W, CARD_H, '#000'); ctx.restore(); }
       if (isLocked) { pixBox(ctx, v.x + 6, v.y - 9, CARD_W - 12, 11, '#2a8a40', '#103010', 2); text(ctx, 'LOCKED', v.x + CARD_W / 2, v.y - 10, { align: 'center', color: 'white', font: 'small' }); }
       if (prev && this.sel.includes(id) && !info.status && !prev.scoring.includes(id)) { ctx.save(); ctx.globalAlpha = 0.45; rect(ctx, v.x, v.y, CARD_W, CARD_H, '#000'); ctx.restore(); text(ctx, "won't score", v.x + CARD_W / 2, v.y + 40, { align: 'center', color: 'white', font: 'small' }); }

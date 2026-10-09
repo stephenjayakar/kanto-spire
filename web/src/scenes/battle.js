@@ -848,7 +848,7 @@ export class BattleScene {
     if (!sc && prev && !this.busy) {
       text(ctx, dmg ? `foe HP ${fmt(foeHp)}${kills ? '  KO!' : ''}` : 'no damage', x + w / 2, 106, { align: 'center', color: kills ? 'gold' : 'gray', font: 'small' });
       // selected STATUS cards: say they don't combo (in place of the crits note, which the tooltip keeps)
-      const sts = this.sel.map(id => b.deck.hand.find(c => c.id === id)).filter(Boolean).map(c => b.cardInfo(c)).filter(i => i.status).map(i => i.move.name);
+      const sts = this.sel.map(id => b.deck.hand.find(c => c.id === id)).filter(c => c && !c.faceDown).map(c => b.cardInfo(c)).filter(i => i.status).map(i => i.move.name);
       if (sts.length) text(ctx, 'STATUS cards: no combo', x + w / 2, 116, { align: 'center', color: 'purple', font: 'small', maxW: w - 8 });
       else text(ctx, 'before crits & misses', x + w / 2, 116, { align: 'center', color: 'gray', font: 'small' });
       if (hover(x, 31, w, 96)) tip(prev.name, COMBOS[prev.key].desc + `\nCombo lvl ${prev.level}: +${prev.bonus}% damage.\nEach scoring card deals POKéMON damage (level, move power, ATK vs the foe's DEF, x1.5 STAB, type matchup). Held items and badges add the rest: ${fmt(base)} x ${(1 + bonus / 100).toFixed(2)}${times !== 1 ? ` x ${+(+times).toFixed(2)}` : ''} = ${fmt(dmg || 0)}. (Assumes no crits or misses.)${sts.length ? `\nSTATUS cards (${sts.join(', ')}) take effect but never count toward a combo.` : ''}`, { width: 210 });
@@ -917,7 +917,7 @@ DECK: cards left in the draw pile / cards in your lead's deck.`, { width: 200 })
       const v = this.vis.get(id); const card = b.deck.hand.find(c => c.id === id);
       if (!v || !card) continue;
       const info = b.cardInfo(card);
-      const stsSel = prev && info.status && this.sel.includes(id);
+      const stsSel = prev && info.status && !info.faceDown && this.sel.includes(id);
       drawCard(ctx, info, v.x, v.y, { selected: this.sel.includes(id), selColor: stsSel ? STATUS_SEL : null, animate: this.hoverId === id });
       if (stsSel) drawNoComboTag(ctx, v.x, v.y);
       if (prev && this.sel.includes(id) && !info.status && !prev.scoring.includes(id)) { ctx.save(); ctx.globalAlpha = 0.45; rect(ctx, v.x, v.y, CARD_W, CARD_H, '#000'); ctx.restore(); text(ctx, "won't score", v.x + CARD_W / 2, v.y + 40, { align: 'center', color: 'white', font: 'small' }); }
