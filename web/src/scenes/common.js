@@ -302,7 +302,10 @@ export function drawHUD(ctx, run, opts = {}) {
       if (hover(cx - 2, 0, cw + 4, 13)) tip(`LEVEL CAP: Lv${cap}`, `A${LEVEL_CAP_ASC}+: battle EXP stops at Lv${cap} in this act (its boss's top level +${TUNING.levelCapOffset}). EXP past the cap is lost. RARE CANDY can still go past it.`, { width: 200 });
     }
   }
-  text(ctx, opts.subtitle || (run.floor >= 0 ? (run.floor >= act.floors ? 'BOSS' : `FLOOR ${run.floor + 1}/${act.floors}`) : act.name), 6, 13, { color: 'gray', font: 'small' });
+  // (fit before the money; a long subtitle, e.g. a co-op DUO trainer pair, shows in full on hover)
+  const sub = opts.subtitle || (run.floor >= 0 ? (run.floor >= act.floors ? 'BOSS' : `FLOOR ${run.floor + 1}/${act.floors}`) : act.name);
+  textFit(ctx, sub, 6, 13, 102, { color: 'gray', font: 'small' });
+  if (measure(sub, 'small') > 102 && hover(0, 12, 110, 14)) tip(null, sub, { width: 200 });
   // money
   let x = 112;
   text(ctx, '$' + run.money.toLocaleString(), x, 6, { color: 'gold' });

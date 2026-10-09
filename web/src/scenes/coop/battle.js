@@ -1332,18 +1332,19 @@ export class CoopBattleScene {
     else if (sc) dmg = Math.floor(base * (1 + bonus / 100) * times);
     else if (prev && !this.busy) dmg = prev.sim ? prev.sim.damage : 0;
     const kills = dmg !== null && dmg > 0 && dmg >= (sc ? sc.foeHp : foeHp);
+    const tu = !sc && prev?.teamUp && !this.busy; // the TEAM UP pill takes the bottom line: the two lines above move up
     pixBox(ctx, x + 10, 60, w - 20, 30, dmg ? THEME.dmg : '#3a4052', shade(dmg ? THEME.dmg : '#3a4052', -0.45), 3);
     text(ctx, 'DMG', x + 16, 62, { color: dmg ? 'white' : 'gray', font: 'small' });
     const pulse = (sc?.pulseT || sc?.pulse || 1) > 1.3;
     text(ctx, dmg === null ? '-' : fmt(dmg), x + w / 2 + 8, 66 - (pulse ? 5 : 0), { align: 'center', color: kills ? 'gold' : 'white', scale: pulse || final ? 2 : 1 });
-    if (name && dmg !== null) text(ctx, `${fmt(base)} from cards${bonus ? ` +${Math.round(bonus)}%` : ''}${times !== 1 ? ` x${+(+times).toFixed(2)}` : ''}`, x + w / 2, 94, { align: 'center', color: 'whiteSoft', font: 'small' });
+    if (name && dmg !== null) text(ctx, `${fmt(base)} from cards${bonus ? ` +${Math.round(bonus)}%` : ''}${times !== 1 ? ` x${+(+times).toFixed(2)}` : ''}`, x + w / 2, tu ? 92 : 94, { align: 'center', color: 'whiteSoft', font: 'small' });
     if (!sc && prev && !this.busy) {
       const tn = tgt ? speciesName(tgt.species) : 'foe';
-      text(ctx, dmg ? `${tn} HP ${fmt(foeHp)}${kills ? '  KO!' : ''}` : 'no damage', x + w / 2, 106, { align: 'center', color: kills ? 'gold' : 'gray', font: 'small' });
+      text(ctx, dmg ? `${tn} HP ${fmt(foeHp)}${kills ? '  KO!' : ''}` : 'no damage', x + w / 2, tu ? 102 : 106, { align: 'center', color: kills ? 'gold' : 'gray', font: 'small' });
       // selected STATUS cards: say they don't combo. The bottom slot is the TEAM UP pill's when there is one; then the
       // note is tooltip-only (the cards' NO COMBO stamps still say it).
       const sts = this.sel.map(id => sub.deck.hand.find(c => c.id === id)).filter(c => c && !c.faceDown).map(c => sub.cardInfo(c)).filter(i => i.status).map(i => i.move.name);
-      if (prev.teamUp) { pixBox(ctx, x + 18, 114, w - 36, 11, '#806010', null, 2); text(ctx, `TEAM UP +${teamUpPct()}% incl.`, x + w / 2, 113, { align: 'center', color: 'white', font: 'small' }); }
+      if (prev.teamUp) { pixBox(ctx, x + 18, 114, w - 36, 10, '#806010', null, 2); text(ctx, `TEAM UP +${teamUpPct()}% incl.`, x + w / 2, 113, { align: 'center', color: 'white', font: 'small' }); }
       else if (sts.length) text(ctx, 'STATUS cards: no combo', x + w / 2, 116, { align: 'center', color: 'purple', font: 'small', maxW: w - 8 });
       else text(ctx, 'before crits & misses', x + w / 2, 116, { align: 'center', color: 'gray', font: 'small' });      if (hover(x, 31, w, 96)) tip(prev.name, COMBOS[prev.key].desc + `\nCombo lvl ${prev.level}: +${prev.bonus}% damage.\nAgainst ${tn} (your TARGET). ${fmt(base)} x ${(1 + bonus / 100).toFixed(2)}${times !== 1 ? ` x ${+(+times).toFixed(2)}` : ''} = ${fmt(dmg || 0)}.${prev.teamUp ? `\nTEAM UP: ${this.many ? 'another' : 'your partner\'s'} locked hand hits it first, so yours deals +${teamUpPct()}%.` : `\nTEAM UP: the second hand to hit the same foe in a turn deals +${teamUpPct()}%.`} (Assumes no crits or misses.)${sts.length ? `\nSTATUS cards (${sts.join(', ')}) take effect but never count toward a combo.` : ''}`, { width: 210 });
     } else if (!name) {
