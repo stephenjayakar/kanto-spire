@@ -48,12 +48,14 @@ const root = path.resolve(__dirname, '..');
   await tap(196, 300, 600); // CLICK TO START -> patch notes pop up once
   await expect('tap starts the title, patch notes open', s => s.top === 'PatchNotesModal');
   await tap(564, 341); await expect('patch notes CLOSE', s => s.n === 0);
-  await tap(50, 15); await expect('HOW TO PLAY opens', s => s.top === 'AboutModal');
-  await tap(564, 341); await expect('HOW TO PLAY CLOSE', s => s.n === 0);
+  await tap(50, 15); await expect('HOW TO PLAY opens the picture guide', s => s.top === 'BasicsModal');
+  await tap(147, 341); await expect('FULL GUIDE opens the text guide', s => s.top === 'AboutModal');
+  await tap(564, 341); await expect('FULL GUIDE CLOSE', s => s.top === 'BasicsModal');
+  await tap(61, 341); await expect('HOW TO PLAY CLOSE', s => s.n === 0);
   await tap(250, 301); await expect('SETTINGS opens', s => s.top === 'SettingsModal');
   await shot('settings');
   await tap(20, 20); await expect('SETTINGS closes on tap outside', s => s.n === 0);
-  await tap(250, 301); await tap(320, 271); await expect('SETTINGS CLOSE', s => s.n === 0);
+  await tap(250, 301); await tap(320, 295); await expect('SETTINGS CLOSE', s => s.n === 0);
   await tap(142, 301); await expect('POKéDEX opens', s => s.scene === 'DexScene');
   await tap(595, 17); await expect('POKéDEX BACK', s => s.scene === 'TitleScene');
   await tap(500, 330); await tap(196, 301); await expect('RECORDS opens', s => s.scene === 'RecordsScene');
@@ -97,6 +99,8 @@ const root = path.resolve(__dirname, '..');
   await tap(547, 13); await expect('COMBOS opens', s => s.top === 'ComboModal');
   await shot('combos');
   await tap(30, 200); await expect('COMBOS closes on tap outside', s => s.n === 0);
+  await tap(506, 13); await expect('battle ? opens HOW TO PLAY', s => s.top === 'BasicsModal');
+  await tap(61, 341); await expect('HOW TO PLAY CLOSE (battle)', s => s.n === 0);
 
   // ---- map: run menu, settings, bag item -----------------------------------------------------
   await ev(async () => { window.G.run.consumables = ['POTION']; window.G.run.addRelic('LEFTOVERS'); window.__flow.goToMap(); });

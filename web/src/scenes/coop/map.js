@@ -188,9 +188,10 @@ export function drawSaveQuit(ctx, session, x, y, w = 90) {
 export function coopMenu(session) {
   pushOverlay(new ChoiceModal({
     title: 'CO-OP MENU', body: `Room ${session.code || '?'} · you are P${session.mySlot + 1}. SAVE & QUIT keeps the game: REJOIN it from the CO-OP lobby.`,
-    options: [{ label: 'Resume', value: 0, color: THEME.green }, { label: 'Settings', value: 1, color: '#506080' }, { label: 'SAVE & QUIT', value: 2, color: THEME.discard }],
+    options: [{ label: 'Resume', value: 0, color: THEME.green }, { label: 'Settings', value: 1, color: '#506080' }, { label: 'How to play', value: 3, color: '#3a7a58' }, { label: 'SAVE & QUIT', value: 2, color: THEME.discard }],
     onClose: async (v) => {
       if (v === 1) { const { SettingsModal } = await import('../title.js'); pushOverlay(new SettingsModal({})); }
+      if (v === 3) { const { openHowToPlay } = await import('../tutorial.js'); openHowToPlay(); } // (a local overlay: the lockstep goes on)
       if (v === 2) session.saveAndQuit();
     },
   }));

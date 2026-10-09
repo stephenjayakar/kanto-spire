@@ -509,9 +509,10 @@ export function sellRelicPrompt(key) {
 export function openRunMenu() {
   pushOverlay(new ChoiceModal({
     title: 'MENU', body: `Seed ${G.run.seed} · ${regionOf(G.run.region).name} · A${G.run.ascension}`,
-    options: [{ label: 'Resume', value: 0, color: THEME.green }, { label: 'Settings', value: 1, color: '#506080' }, { label: 'Save & quit to title', value: 2, color: THEME.play }, { label: 'Abandon run', value: 3, color: THEME.discard }],
+    options: [{ label: 'Resume', value: 0, color: THEME.green }, { label: 'Settings', value: 1, color: '#506080' }, { label: 'How to play', value: 4, color: '#3a7a58' }, { label: 'Save & quit to title', value: 2, color: THEME.play }, { label: 'Abandon run', value: 3, color: THEME.discard }],
     onClose: async (v) => {
       if (v === 1) { const { SettingsModal } = await import('./title.js'); pushOverlay(new SettingsModal({})); }
+      if (v === 4) { const { openHowToPlay } = await import('./tutorial.js'); openHowToPlay(); }
       if (v === 2) { saveRun(); const { TitleScene } = await import('./title.js'); setScene(new TitleScene()); }
       if (v === 3) pushOverlay(new ChoiceModal({ title: 'Really abandon this run?', options: [{ label: 'Yes, abandon', value: 1, color: THEME.discard }, { label: 'No', value: 0 }], onClose: async (c) => {
         if (c === 1) { const st = await import('../game/state.js'); st.endRun(G.run, 'lose'); const { TitleScene } = await import('./title.js'); setScene(new TitleScene()); }
