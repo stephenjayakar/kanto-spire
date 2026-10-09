@@ -1,7 +1,8 @@
 import { internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
-import { LEGACY_VERSION, normEmail } from "./lib";
+import { LEGACY_VERSION, normEmail, cleanVersion, scoreRun } from "./lib";
+import { resultValidator } from "./schema";
 import { applyClears, type HistoryRun } from "./ascension";
 
 // One-off: stamp the owner's email onto saves and trainers created before email keying.
@@ -151,5 +152,35 @@ export const ascensionFromClears = internalMutation({
     }
     console.log(`ascensionFromClears: ${rows.length} saves, ${rows.filter((r) => r.changed).length} ${apply ? "updated" : "would change"}`);
     return { applied: !!apply, rows };
+  },
+});
+
+// Closes a finished co-op room and records each player's run in the runs table (for rooms that ended before the
+// game did this itself). runs: one per slot, in the runs:submit shape. Idempotent per clientRunId.
+// Run with: npx convex run migrations:finishCoopRoom '{"code":"ABCDE","result":"win","runs":[...]}' [--prod]
+export const finishCoopRoom = internalMutation({
+  args: { code: v.string(), result: resultValidator, runs: v.array(v.object({ slot: v.number(), run: v.any() })) },
+  handler: async (ctx, { code, result, runs }) => {
+    const room = await ctx.db.query("coopRooms").withIndex("by_code", (q) => q.eq("code", code)).first();
+    if (!room) throw new Error("No room " + code);
+    const members = await ctx.db.query("coopMembers").withIndex("by_room", (q) => q.eq("roomId", room._id)).collect();
+    const recorded = [];
+    for (const { slot, run } of runs) {
+      const m = members.find((x) => x.slot === slot);
+      if (!m) throw new Error("No member in slot " + slot);
+      const player = await ctx.db.query("players").withIndex("by_email", (q) => q.eq("email", m.email)).first();
+      if (!player) throw new Error("No trainer for slot " + slot);
+      const dup = await ctx.db.query("runs").withIndex("by_player_clientRunId", (q) => q.eq("playerId", player._id).eq("clientRunId", run.clientRunId)).unique();
+      if (dup) { recorded.push({ slot, id: dup._id, score: dup.score, duplicate: true }); continue; }
+      const score = scoreRun({ result: run.result, ascension: run.ascension, stats: run.stats });
+      const id = await ctx.db.insert("runs", {
+        ...run, score, playerId: player._id, playerName: player.name, version: cleanVersion(run.version),
+        coop: { room: code, with: members.filter((x) => x.slot !== slot).sort((a, b) => a.slot - b.slot).map((x) => x.name) },
+      });
+      await ctx.db.patch(player._id, { runs: player.runs + 1, wins: player.wins + (run.result !== "lose" ? 1 : 0), bestScore: Math.max(player.bestScore, score) });
+      recorded.push({ slot, id, score, duplicate: false });
+    }
+    await ctx.db.patch(room._id, { status: "closed", result, updatedAt: Date.now() });
+    return { room: room._id, recorded };
   },
 });
