@@ -20,6 +20,7 @@ export const Engine = {
 //           effect-free pass ("sharp bilinear": crisp, evenly sized pixels with a soft 1px seam where needed)
 const DISPLAY_MODES = ['auto', 'pixel', 'fill'];
 let displayMode = 'fill';
+let wheelAcc = 0, lastWheelAt = 0; // wheel ticks not yet handed out, and when the last wheel event came (see the wheel listener)
 export function setDisplayMode(mode) {
   displayMode = DISPLAY_MODES.includes(mode) ? mode : 'fill';
   if (Engine.canvas) resizeCanvas();
@@ -78,7 +79,19 @@ export function initEngine(canvas) {
   });
   window.addEventListener('blur', () => { Engine.mouse.down = false; Engine.mouse.rdown = false; });
   canvas.addEventListener('contextmenu', e => { e.preventDefault(); toLocal(e); Engine.mouse.rclicked = true; });
-  canvas.addEventListener('wheel', e => { Engine.mouse.wheel += Math.sign(e.deltaY); e.preventDefault(); }, { passive: false });
+  // Wheel input becomes whole ticks (Engine.mouse.wheel, read each frame). A mouse wheel notch is one tick; a trackpad
+  // (Mac: a stream of small pixel deltas plus momentum) adds up to one tick per ~100px instead of one per event, which
+  // made every scroll on a Mac far too fast.
+  canvas.addEventListener('wheel', e => {
+    e.preventDefault();
+    // (an event on its own, not part of a stream, is a wheel notch too: some Mac mice report only a few pixels each)
+    const notch = e.wheelDeltaY && Math.abs(e.wheelDeltaY) % 120 === 0, now = performance.now(), alone = now - lastWheelAt > 120;
+    lastWheelAt = now;
+    const px = e.deltaMode === 1 ? e.deltaY * 40 : e.deltaMode === 2 ? e.deltaY * 800 : e.deltaY;
+    const ticks = notch ? -e.wheelDeltaY / 120 : alone ? Math.sign(px) * Math.max(1, Math.abs(px) / 100) : px / 100;
+    if (Math.sign(ticks) !== Math.sign(wheelAcc)) wheelAcc = 0; // (a change of direction drops the leftover)
+    wheelAcc += ticks;
+  }, { passive: false });
   // Touch: one finger taps and drags like the mouse; two fingers belong to the browser (pinch to zoom,
   // pan around), so a gesture that ever had 2+ fingers never turns into a click.
   let gesture = false;
@@ -117,6 +130,8 @@ export function initEngine(canvas) {
 
 function tick(dt) {
   const ctx = Engine.ctx;
+  const wt = Math.trunc(wheelAcc); // (whole ticks this frame, at most 3; the rest carries over)
+  Engine.mouse.wheel = Math.max(-3, Math.min(3, wt)); wheelAcc -= wt;
   Engine.hoverAny = false;
   updateTweens(dt);
   updateTimers(dt);
