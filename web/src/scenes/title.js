@@ -167,12 +167,12 @@ export class SettingsModal extends Modal {
     if (button(ctx, curve ? 'ON' : 'OFF', x + 170, y + 180, 60, 20, { color: curve ? THEME.green : '#806060' })) { s.crtCurve = !curve; CRT.setCurve(s.crtCurve); saveMeta(); }
     if (hover(x + 10, y + 178, w - 20, 24)) tip('CRT CURVE', 'The curved glass and rounded corners of the CRT look.\nOFF gives a flat screen that keeps the scanlines and glow. Only matters with CRT on.');
     // SCREEN: how the picture is scaled to the window (engine/core.js setDisplayMode)
-    const disp = DISPLAY_MODES.includes(s.display) ? s.display : 'auto';
+    const disp = DISPLAY_MODES.includes(s.display) ? s.display : 'fill';
     text(ctx, 'SCREEN', x + 14, y + 208, { color: 'white' });
-    if (button(ctx, disp.toUpperCase(), x + 170, y + 204, 60, 20, { color: disp === 'auto' ? '#506080' : THEME.green })) {
+    if (button(ctx, disp.toUpperCase(), x + 170, y + 204, 60, 20, { color: disp === 'fill' ? '#506080' : THEME.green })) {
       s.display = setDisplayMode(DISPLAY_MODES[(DISPLAY_MODES.indexOf(disp) + 1) % DISPLAY_MODES.length]); saveMeta();
     }
-    if (hover(x + 10, y + 202, w - 20, 24)) tip('SCREEN', 'How the game is scaled to your window.\nAUTO (default): whole-number scale, stretched when that would leave big borders.\nPIXEL: always a whole-number scale, every pixel the same size (borders around it).\nFILL: always as big as fits, smoothly scaled so the pixels stay even.', { width: 230 });
+    if (hover(x + 10, y + 202, w - 20, 24)) tip('SCREEN', 'How the game is scaled to your window.\nFILL (default): always as big as fits, smoothly scaled so the pixels stay even.\nPIXEL: always a whole-number scale, every pixel the same size (borders around it).\nAUTO: whole-number scale, stretched when that would leave big borders.', { width: 230 });
     if (button(ctx, 'CLOSE', W / 2 - 40, y + h - 30, 80, 22, { color: '#506080' })) this.close();
     this.closeOnTapOutside(x, y, w, h);
     drawTips(ctx);

@@ -313,6 +313,7 @@ export class BattleScene {
         await this.wait(0.12);
         break;
       case 'enemyMove': {
+        this.idleIntent = null; // (its move is happening: don't show it, or the next one, until the turn is over)
         this.animLog?.push('foe:' + e.move);
         if (await this.playMoveAnim(e.move, 1)) break;
         this.enemyDisp.lunge = 1;
@@ -425,6 +426,9 @@ export class BattleScene {
     pollSkip(this);
     MoveAnims.tick(dt);
     this.syncLowHpAlarm();
+    // the intent on screen: while a turn animates, the one the foe had going in (the logic already rolled the next), gone
+    // once the foe has moved; the live one again when idle
+    if (!this.busy) this.idleIntent = this.b.intent;
     this.t += dt;
     this.msg.update(dt, this.fast);
     if (this.score) { this.score.pulse = approach(this.score.pulse || 1, 1, 8, dt); this.score.pulseB = approach(this.score.pulseB || 1, 1, 8, dt); this.score.pulseT = approach(this.score.pulseT || 1, 1, 6, dt); }
@@ -615,7 +619,7 @@ export class BattleScene {
     this.drawLeftPanel(ctx);
     this.drawHand(ctx);
     this.drawPlayed(ctx);
-    drawHUD(ctx, run, { bounce: this.relicBounce, help: true, onDeck: () => this.showDeck(), onConsumableClick: (k) => this.useConsumable(k), noToss: true, subtitle: this.cfg.trainer ? this.cfg.trainer.title : (this.cfg.legend || this.cfg.areaName || 'WILD BATTLE') });
+    drawHUD(ctx, run, { bounce: this.relicBounce, help: true, battle: this.b, onDeck: () => this.showDeck(), onConsumableClick: (k) => this.useConsumable(k), noToss: true, subtitle: this.cfg.trainer ? this.cfg.trainer.title : (this.cfg.legend || this.cfg.areaName || 'WILD BATTLE') });
     drawFx(ctx, Engine.dt);
     drawFlash(ctx, Engine.dt, W, H);
     if (this.toast) {
@@ -682,7 +686,8 @@ export class BattleScene {
       this.drawPlayerBox(ctx, SCENE_X + SCENE_W - 170, SCENE_Y + 118);
     }
     // intent
-    if (!b.result && b.intent && e && ed.faint < 1 && !this.playedIds.length) this.drawIntent(ctx);
+    const intent = this.busy ? this.idleIntent : b.intent;
+    if (!b.result && intent && e && ed.faint < 1 && !this.playedIds.length) this.drawIntent(ctx, intent);
     // boss banner
     if (this.bossBanner && this.bossBanner.a > 0.05 && b.bossRule) {
       ctx.save(); ctx.globalAlpha = Math.min(1, this.bossBanner.a * 2);
@@ -763,8 +768,7 @@ export class BattleScene {
     if (flags.length) text(ctx, flags.join(' '), x + 4, y + 36, { color: 'gold', font: 'small' });
   }
 
-  drawIntent(ctx) {
-    const it = this.b.intent;
+  drawIntent(ctx, it) {
     const x = SCENE_X + 18, y = SCENE_Y + 66;
     const mv = it.move;
     const w = 172;

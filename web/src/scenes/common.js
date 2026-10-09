@@ -351,11 +351,21 @@ export function drawHUD(ctx, run, opts = {}) {
     if (tint) ctx.drawImage(tint, rx, ry + bounce - (i === hot ? 2 : 0));
     else draw(ctx, itemPath(r.key), rx, ry + bounce - (i === hot ? 2 : 0));
   }
+  // in battle (opts.battle): a held item that fires on a cycle (METEORITE: every 4th hand) shows where it is, in gold
+  // when the next hand sets it off (drawn after every icon so a packed row doesn't hide it)
+  const counterOf = r => (opts.battle && RELICS[r.key]?.counter ? RELICS[r.key].counter(opts.battle) : null);
+  run.relics.forEach((r, i) => {
+    const c = counterOf(r);
+    if (!c) return;
+    const rx = relicX + i * step, cw = measure(c.text, 'small') + 4;
+    pixBox(ctx, rx + 25 - cw, 15, cw, 10, c.ready ? (Math.sin(Engine.time * 6) > 0 ? '#f8d038' : '#c09020') : '#101018', null, 2);
+    text(ctx, c.text, rx + 25 - cw / 2, 14, { align: 'center', color: c.ready ? 'black' : 'white', font: 'small' });
+  });
   if (hot >= 0) {
     const r = run.relics[hot];
     const def = RELICS[r.key];
     if (def.curse) tip(D.items[r.key]?.name || r.key, def.desc + "\n\nCURSE  ·  can't be sold\nCLEANSE it at a POKéMON CENTER", { accent: '#c050f0' });
-    else tip(D.items[r.key]?.name || r.key, def.desc + (r.state?.n ? `\n(Currently: ${r.state.n})` : '') + `\n\n${def.rarity.toUpperCase()} HELD ITEM  ·  ${n} held${opts.sellable ? '  ·  click to sell' : ''}`, { accent: def.rarity === 'rare' ? '#f8d038' : def.rarity === 'uncommon' ? '#58a8f8' : '#a0a0a0' });
+    else tip(D.items[r.key]?.name || r.key, def.desc + (r.state?.n ? `\n(Currently: ${r.state.n})` : '') + (counterOf(r) ? (counterOf(r).ready ? '\nYOUR NEXT HAND SETS IT OFF!' : `\n(Hand ${counterOf(r).text})`) : '') + `\n\n${def.rarity.toUpperCase()} HELD ITEM  ·  ${n} held${opts.sellable ? '  ·  click to sell' : ''}`, { accent: def.rarity === 'rare' ? '#f8d038' : def.rarity === 'uncommon' ? '#58a8f8' : '#a0a0a0' });
     if (opts.onRelicClick && (Engine.mouse.rclicked || Engine.mouse.clicked)) opts.onRelicClick(r.key);
   }
   // badges sit next to the act title so they never collide with the right-side buttons

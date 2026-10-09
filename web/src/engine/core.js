@@ -12,16 +12,16 @@ export const Engine = {
 };
 
 // Settings > SCREEN: how the 640x360 picture is scaled to the window.
-//   auto  - (default) whole-number scale, unless that would waste a lot of the window (more than 0.6x short of
+//   auto  - whole-number scale, unless that would waste a lot of the window (more than 0.6x short of
 //           filling it): then stretch to fit, nearest-neighbour (some pixel rows/columns end up a pixel wider)
 //   pixel - always the largest whole-number scale in real device pixels (also on 125% / 150% Windows scaling),
 //           so every game pixel is the same size; black borders take up the rest
-//   fill  - always as big as fits; between whole numbers the picture goes through the CRT shader's clean,
+//   fill  - (default since v0.3.17) always as big as fits; between whole numbers the picture goes through the CRT shader's clean,
 //           effect-free pass ("sharp bilinear": crisp, evenly sized pixels with a soft 1px seam where needed)
 const DISPLAY_MODES = ['auto', 'pixel', 'fill'];
-let displayMode = 'auto';
+let displayMode = 'fill';
 export function setDisplayMode(mode) {
-  displayMode = DISPLAY_MODES.includes(mode) ? mode : 'auto';
+  displayMode = DISPLAY_MODES.includes(mode) ? mode : 'fill';
   if (Engine.canvas) resizeCanvas();
   return displayMode;
 }

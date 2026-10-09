@@ -45,7 +45,8 @@ export function tmChoices(run, rng, n, exclude = []) {
   const ok = tms.filter(it => run.party.some(m => canLearn(m.species, it.move) && !knowsMove(m, it.move)));
   const maxPower = [80, 95, 150, 150, 150][run.actIndex] ?? 150;
   const pool = ok.filter(it => (D.moves[it.move].power || 0) <= maxPower);
-  return rng.sample(pool.length ? pool : ok, n).map(it => ({ item: it.key, move: it.move, price: Math.min(4000, Math.max(1500, it.price || 3000)) }));
+  // half FireRed's price (most TMs: 3000 -> 1500), 800-2000, before the act / ascension markup
+  return rng.sample(pool.length ? pool : ok, n).map(it => ({ item: it.key, move: it.move, price: Math.min(2000, Math.max(800, Math.round((it.price || 3000) / 2 / 100) * 100)) }));
 }
 
 export function rerollShop(run, shop, rng) {

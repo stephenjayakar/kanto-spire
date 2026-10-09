@@ -571,6 +571,7 @@ export class CoopBattleScene {
       case 'stage': Sound.playSE(e.delta > 0 ? 'se_m_stat_increase' : 'se_m_stat_decrease'); await this.wait(0.1); break;
       case 'enemyMove': {
         this.clearPlayed();
+        if (this.idleIntents) this.idleIntents = this.idleIntents.map(it => it && it.ri === e.ei && (!Number.isInteger(e.p) || it.target === e.p) ? null : it); // (that action is happening)
         const slot = this.slotOfRi(e.ei, e.slot);
         const f = slot === null ? null : this.foes[slot];
         const tp = Number.isInteger(e.p) && e.p >= 0 && e.p < this.n ? e.p : null;
@@ -871,6 +872,9 @@ export class CoopBattleScene {
     MoveAnims.tick(dt);
     this.t += dt;
     if (!this.duo) { if (!this.finishing) { this.finishing = true; this.s.route(); } return; }
+    // the intents on screen: while a turn animates, the ones the foes had going in (the logic already rolled the next
+    // turn's), each gone once that foe has moved; the live ones again when idle
+    if (!this.busy) this.idleIntents = this.duo.intents.slice();
     pileInput(this);
     pollSkip(this);
     this.drainFeed();
@@ -984,7 +988,7 @@ export class CoopBattleScene {
     this.drawHand(ctx);
     this.drawPlayed(ctx);
     const title = cfg.trainers ? cfg.trainers.map(t => t.title).join(' & ') : cfg.trainer ? cfg.trainer.title : (cfg.legend || cfg.areaName || 'WILD BATTLE');
-    drawHUD(ctx, run, { bounce: this.relicBounce, help: true, onDeck: () => pushOverlay(new DeckModal({ title: 'YOUR DECKS', battle: this.sub })), onConsumableClick: (k) => this.useConsumable(k), noToss: true, subtitle: (this.many ? 'TEAM · ' : 'DUO · ') + title });
+    drawHUD(ctx, run, { bounce: this.relicBounce, help: true, battle: this.sub, onDeck: () => pushOverlay(new DeckModal({ title: 'YOUR DECKS', battle: this.sub })), onConsumableClick: (k) => this.useConsumable(k), noToss: true, subtitle: (this.many ? 'TEAM · ' : 'DUO · ') + title });
     drawFx(ctx, Engine.dt);
     drawFlash(ctx, Engine.dt, W, H);
     if (this.toast) {
@@ -1164,10 +1168,12 @@ export class CoopBattleScene {
     if (hover(x, y, w, h)) tip('FOE TEAM', groups.map(g => { const left = g.q.filter(ri => d.enemies[ri].hp > 0).length; return `${g.who}: ${left} of ${g.q.length} POKéMON left`; }).join('\n'), { width: 190 });
   }
 
+  shownIntents() { return (this.busy ? this.idleIntents : null) || this.duo.intents; }
+
   drawIntent(ctx, slot) {
     const d = this.duo, f = this.foes[slot];
     if (!f || f.faint >= 1 || f.captured || d.result) return;
-    const it = d.intents[slot];
+    const it = this.shownIntents()[slot];
     if (!it || it.ri !== f.ri) return;
     const x = INTENT_X, [, y] = FOE_BOX[slot], w = INTENT_W, h = FOE_BOX_H;
     const en = d.enemies[it.ri];
@@ -1209,7 +1215,7 @@ export class CoopBattleScene {
   drawIntentsN(ctx, slot) {
     const d = this.duo, f = this.foes[slot];
     if (!f || f.faint >= 1 || f.captured || d.result) return;
-    const its = d.intentsOf(slot).filter(it => it.ri === f.ri);
+    const its = this.shownIntents().filter((it, i) => it && i % 2 === slot && it.ri === f.ri);
     if (!its.length) return;
     const x = INTENT_X, [, y] = FOE_BOX[slot], w = INTENT_W_N, rh = 19;
     const en = d.enemies[f.ri];

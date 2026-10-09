@@ -29,6 +29,13 @@ const BOSS_SPRITE = {
 const MAP_X0 = 172, MAP_W = 296, FLOOR_H = 40;
 const NODE_COLORS = { wild: '#58b858', trainer: '#5878d8', elite: '#d84848', rival: '#38a0f8', legend: '#f8f8f8', center: '#e868a8', mart: '#f08830', event: '#a868d8', treasure: '#e8b838', boss: '#f8d038' };
 
+// The nodes walked this act. run.visited keeps "act:node" keys: node ids repeat in every act, so plain ids (saves
+// before v0.3.17) can't be told apart and are ignored.
+function visitedThisAct(run) {
+  const pre = run.actIndex + ':';
+  return new Set((run.visited || []).filter(k => typeof k === 'string' && k.startsWith(pre)).map(k => k.slice(pre.length)));
+}
+
 export class MapScene {
   constructor(opts = {}) { this.opts = opts; }
   enter() {
@@ -183,6 +190,7 @@ export class MapScene {
     const nodes = run.map.nodes;
     const reach = new Set(this.busy ? [] : reachable(run.map, run.nodeId));
     const ahead = this.aheadOf(run); // every node still on a route from where the party stands
+    const beenHere = visitedThisAct(run);
     this.drawEdges(ctx, run, ahead, this.nodeUnderMouse(nodes));
     // nodes
     let hovered = null;
@@ -190,7 +198,7 @@ export class MapScene {
       const [x, y] = this.nodePos(n);
       if (y < 10 || y > H + 20) continue;
       const isReach = reach.has(n.id);
-      const visited = (run.visited || []).includes(n.id);
+      const visited = beenHere.has(n.id);
       // any visible node shows its tooltip on hover; only reachable ones light up and can be picked
       const over = !topOverlay() && hover(x - 14, y - 22, 28, 30) && inMap() && y > 32; // (not through an open dialog)
       const hot = isReach && over;
@@ -245,7 +253,7 @@ export class MapScene {
   //   route  - every path from here to the hovered node: white on red, marching
   //   links  - a hovered node you can't reach any more: just its own links, light blue
   drawEdges(ctx, run, ahead, hov) {
-    const nodes = run.map.nodes, cur = run.nodeId, visited = new Set(run.visited || []);
+    const nodes = run.map.nodes, cur = run.nodeId, visited = visitedThisAct(run);
     if (hov && hov.id === cur) hov = null; // (hovering where you stand highlights nothing extra)
     const from = new Set(ahead); if (cur) from.add(cur);
     // the hovered node and everything that leads to it: the edges u->v with u in `from` and v in `to` make up its routes
@@ -449,7 +457,7 @@ export class MapScene {
     await tween(o, { k: 1 }, dur, Ease.inOutQuad);
     this.scroll = this.walk.scroll1;
     this.walk = null;
-    run.visited = [...(run.visited || []), n.id];
+    run.visited = [...(run.visited || []), `${run.actIndex}:${n.id}`];
     if (['wild', 'trainer', 'elite', 'boss', 'rival', 'legend'].includes(n.type)) {
       if (n.type !== 'wild') Sound.playSE('se_pin');
       await wait(0.25);

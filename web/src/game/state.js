@@ -28,7 +28,7 @@ const DEFAULT_META = {
   dexSeen: [], dexCaught: [],
   runs: [], // {date, starter, ascension, result, act, floor, party:[species], seed}
   totalWins: 0, totalRuns: 0,
-  settings: { music: 0.35, sfx: 0.45, fast: false, stereo: true, vol2: true, audioQuality: 'hq', crt: 'off', crtCurve: true, display: 'auto' },
+  settings: { music: 0.35, sfx: 0.45, fast: false, stereo: true, vol2: true, audioQuality: 'hq', crt: 'off', crtCurve: true, display: 'fill' },
 };
 
 export function loadMeta() {
@@ -36,6 +36,8 @@ export function loadMeta() {
   catch { G.meta = structuredClone(DEFAULT_META); }
   const old = G.meta.settings || {};
   G.meta.settings = { ...DEFAULT_META.settings, ...old };
+  // v0.3.17: FILL became the default SCREEN mode; anyone still on the old default (AUTO) moves to it once
+  if (!old.display2) { if (!old.display || old.display === 'auto') G.meta.settings.display = 'fill'; G.meta.settings.display2 = true; }
   if (old.music !== undefined && !old.vol2) { G.meta.settings.music = Math.min(old.music, 0.35); G.meta.settings.sfx = Math.min(old.sfx ?? 1, 0.45); }
   // Starter unlock reset (v0.0.5): an old local save or cloud row (the cloud pull lands in localStorage
   // before this runs) starts over with the Kanto three; the rest of the progress is kept.
