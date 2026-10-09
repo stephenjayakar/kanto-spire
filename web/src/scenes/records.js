@@ -1,7 +1,7 @@
 // Cloud records: global leaderboards, the player's own runs, and the trainer-name prompt.
 import { regionByLetter } from '../game/regions.js';
 import { Engine, W, H, setScene, pushOverlay, hover } from '../engine/core.js';
-import { text } from '../engine/font.js';
+import { text, textFit } from '../engine/font.js';
 import { swirlBackground, button, panel, pixBox, drawTips, tip, THEME, scrollArea } from '../engine/ui.js';
 import { Cloud, rename, signOut, createInviteLink, leaderboard, topTrainers, myRuns, pendingRuns, flushQueue } from '../net/cloud.js';
 import { drawIcon, Modal, ChoiceModal } from './common.js';
@@ -119,13 +119,20 @@ export class RecordsScene {
     }
     scrollArea(ctx, this, 12, y0 + 14, W - 24, H - 26, (top) => this.rows.reduce((_, r, i) => {
       const y = top + 2 + i * 27;
-      const me = Cloud.me && r.playerName === Cloud.me.name;
+      const me = Cloud.me && (r.playerName === Cloud.me.name || r.coop?.with.includes(Cloud.me.name));
       pixBox(ctx, 14, y - 2, W - 28, 25, me ? '#34406a' : i % 2 ? '#262c3c' : '#2e3548', null, 2);
       const [label, color] = RESULT[r.result] || RESULT.lose;
       text(ctx, String(i + 1), 20, y + 6, { color: i < 3 ? 'gold' : 'white', font: 'small' });
       // the trainer, and under it the starter they climbed with
-      text(ctx, r.playerName, 44, y, { color: me ? 'gold' : 'white', font: 'small' });
-      if (r.starter) text(ctx, D.species[r.starter]?.name || r.starter, 44, y + 11, { color: 'whiteSoft', font: 'small' });
+      // a co-op run is one row for the whole team: every trainer, and CO-OP where the starter goes
+      if (r.coop) {
+        textFit(ctx, [r.playerName, ...r.coop.with].join(' + '), 44, y, 92, { color: me ? 'gold' : 'white', font: 'small' });
+        text(ctx, 'CO-OP', 44, y + 11, { color: 'pink', font: 'small' });
+        if (hover(40, y - 2, 96, 25)) tip(`CO-OP · ROOM ${r.coop.room}`, [r.playerName, ...r.coop.with].map((n, k) => `${n}: ${D.species[r.coop.starters?.[k]]?.name || r.coop.starters?.[k] || '?'}`).join('\n'));
+      } else {
+        text(ctx, r.playerName, 44, y, { color: me ? 'gold' : 'white', font: 'small' });
+        if (r.starter) text(ctx, D.species[r.starter]?.name || r.starter, 44, y + 11, { color: 'whiteSoft', font: 'small' });
+      }
       text(ctx, r.score.toLocaleString(), 140, y + 6, { color: 'white', font: 'small' });
       text(ctx, label, 200, y + 6, { color, font: 'small' });
       text(ctx, 'A' + r.ascension, 252, y + 6, { color: 'whiteSoft', font: 'small' });
