@@ -2,9 +2,22 @@
 // Game version and patch notes (shown from the title screen). Versions are major.minor.patch: every production
 // deploy that changes the game bumps the patch (v0.2.0 -> v0.2.1); the owner calls minor bumps (v0.1.x -> v0.2.0);
 // no major bumps yet. Each one gets a new top PATCH_NOTES entry; see AGENTS.md.
-export const VERSION = 'v0.3.13';
+export const VERSION = 'v0.3.14';
 
 export const PATCH_NOTES = [
+  {
+    v: 'v0.3.14',
+    sections: [
+      ['NEW', [
+        'Co-op legendary nodes have two legendaries; each player can catch one',
+      ]],
+      ['CHANGES', [
+        'Bosses, elites and legendaries no longer use SELF-DESTRUCT or EXPLOSION; other foes only at low HP',
+        'CURSE and other status moves list their exact effects',
+        'Removed TORMENT, MEAN LOOK, SPIDER WEB and BLOCK from the moves you can get',
+      ]],
+    ],
+  },
   {
     v: 'v0.3.13',
     sections: [
