@@ -1,8 +1,8 @@
 // Slay-the-Spire style act map.
-import { Engine, W, H, hover, clicked, pushOverlay, topOverlay, tween, Ease, wait, keyPressed, setScene } from '../engine/core.js';
+import { Engine, W, H, hover, inRect, clicked, pushOverlay, topOverlay, tween, Ease, wait, keyPressed, setScene } from '../engine/core.js';
 import { draw, img, ready, itemPath, trainerPath } from '../engine/assets.js';
 import { text, textBlock, measure } from '../engine/font.js';
-import { swirlBackground, BG_THEMES, button, panel, pixBox, rect, drawTips, tip, THEME } from '../engine/ui.js';
+import { swirlBackground, BG_THEMES, button, panel, pixBox, rect, drawTips, tip, tip as showTip, THEME } from '../engine/ui.js';
 import { D, TYPE_COLORS } from '../game/data.js';
 import { G, saveRun } from '../game/state.js';
 import { reachable, NODE_INFO } from '../game/map.js';
@@ -182,17 +182,8 @@ export class MapScene {
 
     const nodes = run.map.nodes;
     const reach = new Set(this.busy ? [] : reachable(run.map, run.nodeId));
-    // edges
-    for (const n of Object.values(nodes)) {
-      const [x1, y1] = this.nodePos(n);
-      for (const id of n.next) {
-        const m = nodes[id];
-        const [x2, y2] = this.nodePos(m);
-        const active = n.id === run.nodeId && reach.has(id);
-        const visited = (run.visited || []).includes(n.id) && ((run.visited || []).includes(id) || id === run.nodeId);
-        dotted(ctx, x1, y1 - 4, x2, y2 + 4, active ? '#f8d038' : visited ? '#a0c0e0' : '#6a7a94', 2);
-      }
-    }
+    const ahead = this.aheadOf(run); // every node still on a route from where the party stands
+    this.drawEdges(ctx, run, ahead, this.nodeUnderMouse(nodes));
     // nodes
     let hovered = null;
     for (const n of Object.values(nodes)) {
@@ -204,7 +195,7 @@ export class MapScene {
       const over = !topOverlay() && hover(x - 14, y - 22, 28, 30) && inMap() && y > 32; // (not through an open dialog)
       const hot = isReach && over;
       if (over) hovered = n;
-      this.drawNode(ctx, n, x, y, { reach: isReach, visited, hot, peek: over && !isReach, current: n.id === run.nodeId });
+      this.drawNode(ctx, n, x, y, { reach: isReach, visited, hot, peek: over && !isReach, current: n.id === run.nodeId, off: !ahead.has(n.id) && !visited && !over });
       this.drawNodeExtras?.(ctx, n, x, y);
       if (hot && Engine.mouse.clicked && this.canPick() && !this.pen) this.pickNode(n);
     }
@@ -228,10 +219,74 @@ export class MapScene {
     ctx.restore();
     return hovered;
   }
+  // Nodes the party can still get to: everything after the current node (the whole map before the first step).
+  aheadOf(run) {
+    const nodes = run.map.nodes, out = new Set();
+    const stack = run.nodeId ? [...(nodes[run.nodeId]?.next || [])] : [...run.map.start];
+    while (stack.length) { const id = stack.pop(); if (out.has(id) || !nodes[id]) continue; out.add(id); stack.push(...nodes[id].next); }
+    return out;
+  }
+  // The node under the pointer (same hit box as drawMapColumn's), without marking the cursor.
+  nodeUnderMouse(nodes) {
+    if (topOverlay() || !inMap()) return null;
+    let found = null;
+    for (const n of Object.values(nodes)) {
+      const [x, y] = this.nodePos(n);
+      if (y < 10 || y > H + 20 || y <= 32) continue;
+      if (inRect(x - 14, y - 22, 28, 30)) found = n;
+    }
+    return found;
+  }
+  // Paths as FireRed-style trails of outlined square dots, drawn in layers so the ones that matter sit on top:
+  //   dead   - can't be reached any more: faint, no outline
+  //   past   - the trail already walked: dim blue
+  //   ahead  - still on a route from here: bright
+  //   next   - from the current node to the nodes you can pick now: gold, marching
+  //   route  - every path from here to the hovered node: white on red, marching
+  //   links  - a hovered node you can't reach any more: just its own links, light blue
+  drawEdges(ctx, run, ahead, hov) {
+    const nodes = run.map.nodes, cur = run.nodeId, visited = new Set(run.visited || []);
+    if (hov && hov.id === cur) hov = null; // (hovering where you stand highlights nothing extra)
+    const from = new Set(ahead); if (cur) from.add(cur);
+    // the hovered node and everything that leads to it: the edges u->v with u in `from` and v in `to` make up its routes
+    let to = null;
+    if (hov && ahead.has(hov.id)) {
+      to = new Set([hov.id]);
+      const stack = [...hov.prev];
+      while (stack.length) { const id = stack.pop(); if (to.has(id) || !nodes[id]) continue; to.add(id); stack.push(...nodes[id].prev); }
+    }
+    const layers = { dead: [], past: [], ahead: [], next: [], route: [], links: [] };
+    for (const n of Object.values(nodes)) {
+      const [x1, y1] = this.nodePos(n);
+      for (const id of n.next) {
+        const m = nodes[id];
+        if (!m) continue;
+        const [x2, y2] = this.nodePos(m);
+        if ((y1 < 0 && y2 < 0) || (y1 > H + 40 && y2 > H + 40)) continue;
+        const e = [x1, y1 - 6, x2, y2 + 6];
+        if (to && from.has(n.id) && to.has(id)) layers.route.push(e);
+        else if (hov && !to && (n.id === hov.id || id === hov.id)) layers.links.push(e);
+        else if (n.id === cur && ahead.has(id)) layers.next.push(e);
+        else if (from.has(n.id)) layers.ahead.push(e);
+        else if (visited.has(n.id) && visited.has(id)) layers.past.push(e);
+        else layers.dead.push(e);
+      }
+    }
+    const march = (this.t * 12) % 7; // dots crawl toward the top of the map
+    trail(ctx, layers.dead, '#34425a', null, 2, 7, 0);
+    trail(ctx, layers.past, '#6f8fb8', '#0a0e16', 2, 5, 0);
+    trail(ctx, layers.ahead, to ? '#6a7c9a' : '#a8b8d4', '#0a0e16', 3, 7, 0); // (dimmer while a route is shown)
+    trail(ctx, layers.next, '#f8d038', '#3a2a00', 3, 7, march);
+    trail(ctx, layers.links, '#98c0f0', '#0a0e16', 3, 6, 0);
+    trail(ctx, layers.route, '#ffffff', '#c03028', 3, 6, (this.t * 12) % 6);
+  }
   drawPlayer(ctx, px, py, frame, flip) { draw(ctx, 'gfx/overworld/people/red_normal.png', px - 8, py - 30, { sx: frame * 16, sy: 0, sw: 16, sh: 32, flip }); }
   drawNodeTip(hovered) {
     if (!hovered) return;
     const info = NODE_INFO[hovered.type];
+    // above and right of the node, so the highlighted routes below it (toward you) stay visible
+    const [nx, ny] = this.nodePos(hovered);
+    const tip = (title, body, opts = {}) => showTip(title, body, { x: nx + 16, y: ny - (hovered.type === 'boss' ? 58 : 30), above: true, yBelow: ny + 8, ...opts });
     if (hovered.type === 'legend') {
       const run = this.mapRun(), L = LEGENDS[hovered.legend || run.act.bird];
       const caught = (run.legendsCaught || []).includes(L?.species);
@@ -324,6 +379,7 @@ export class MapScene {
     const pulse = st.reach ? (Math.sin(this.t * 6) * 0.5 + 0.5) : 0;
     ctx.save();
     if (st.visited && !st.current) ctx.globalAlpha = 0.45;
+    else if (st.off) ctx.globalAlpha = 0.6; // no longer on any route from here
     // platform
     ctx.fillStyle = '#00000060'; ctx.beginPath(); ctx.ellipse(x, y + 2, 13, 5, 0, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = st.hot ? '#ffffff' : col; ctx.beginPath(); ctx.ellipse(x, y, 12, 5, 0, 0, Math.PI * 2); ctx.fill();
@@ -407,15 +463,26 @@ export class MapScene {
 
 export function inMap() { const m = Engine.mouse; return m.x > MAP_X0 - 14 && m.x < MAP_X0 + MAP_W + 14 && m.y > 30; }
 
-export function dotted(ctx, x1, y1, x2, y2, color, w) {
-  const len = Math.hypot(x2 - x1, y2 - y1);
-  const n = Math.max(1, Math.floor(len / 5));
-  ctx.fillStyle = color;
-  for (let i = 0; i <= n; i += 1) {
-    if (i % 2) continue;
-    const t = i / n;
-    ctx.fillRect(Math.round(x1 + (x2 - x1) * t), Math.round(y1 + (y2 - y1) * t), w, w);
+// One layer of map trails: square dots (size px, every `gap` px along each edge, shifted by `phase` toward its
+// upper end), each with a 1px outline. All outlines go down before any dot so neighbouring trails don't cut
+// into each other. edges: [[x1, y1, x2, y2], ...], (x1, y1) the lower end.
+export function trail(ctx, edges, color, outline, size, gap, phase) {
+  if (!edges.length) return;
+  const dots = [];
+  for (const [x1, y1, x2, y2] of edges) {
+    const len = Math.hypot(x2 - x1, y2 - y1);
+    if (len < 1) continue;
+    for (let d = phase % gap; d <= len; d += gap) {
+      const t = d / len;
+      dots.push(Math.round(x1 + (x2 - x1) * t - size / 2), Math.round(y1 + (y2 - y1) * t - size / 2));
+    }
   }
+  if (outline) {
+    ctx.fillStyle = outline;
+    for (let i = 0; i < dots.length; i += 2) ctx.fillRect(dots[i] - 1, dots[i + 1] - 1, size + 2, size + 2);
+  }
+  ctx.fillStyle = color;
+  for (let i = 0; i < dots.length; i += 2) ctx.fillRect(dots[i], dots[i + 1], size, size);
 }
 
 export function sellRelicPrompt(key) {

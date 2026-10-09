@@ -12,6 +12,7 @@ import { loadPacks } from './net/assetpack.js';
 import * as flow from './scenes/flow.js';
 import * as engine from './engine/core.js';
 import { CRT } from './engine/crt.js';
+import { startPresence } from './net/presence.js';
 
 async function boot() {
   // /privacy (the host serves this page for every path): the privacy policy, no game.
@@ -51,6 +52,7 @@ async function boot() {
     }
   }
   loadMeta();
+  engine.setDisplayMode(G.meta.settings.display);
   CRT.setCurve(G.meta.settings.crtCurve);
   CRT.set(G.meta.settings.crt);
   const soundP = Sound.init('assets/sound/', { quality: G.meta.settings.audioQuality === 'gba' ? 'gba' : 'hq', stereo: G.meta.settings.stereo !== false }).then(() => {
@@ -69,6 +71,7 @@ async function boot() {
   window.__sound = Sound;
   window.__flow = flow; window.__engine = engine;
   setScene(new TitleScene());
+  startPresence(); // NOW PLAYING heartbeat (does nothing offline / signed out)
   await soundP;
   window.__ready = true;
 }

@@ -70,3 +70,6 @@ export class CoopEndScene {
     drawCoopOverlay(ctx, s);
   }
 }
+
+// Not part of a run: NOW PLAYING (net/presence.js) does not list you here.
+CoopEndScene.prototype.idle = true;

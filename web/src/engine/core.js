@@ -11,6 +11,45 @@ export const Engine = {
   timeScale: 1,
 };
 
+// Settings > SCREEN: how the 640x360 picture is scaled to the window.
+//   auto  - (default) whole-number scale, unless that would waste a lot of the window (more than 0.6x short of
+//           filling it): then stretch to fit, nearest-neighbour (some pixel rows/columns end up a pixel wider)
+//   pixel - always the largest whole-number scale in real device pixels (also on 125% / 150% Windows scaling),
+//           so every game pixel is the same size; black borders take up the rest
+//   fill  - always as big as fits; between whole numbers the picture goes through the CRT shader's clean,
+//           effect-free pass ("sharp bilinear": crisp, evenly sized pixels with a soft 1px seam where needed)
+const DISPLAY_MODES = ['auto', 'pixel', 'fill'];
+let displayMode = 'auto';
+export function setDisplayMode(mode) {
+  displayMode = DISPLAY_MODES.includes(mode) ? mode : 'auto';
+  if (Engine.canvas) resizeCanvas();
+  return displayMode;
+}
+
+function resizeCanvas() {
+  const canvas = Engine.canvas, iw = window.innerWidth, ih = window.innerHeight;
+  const dpr = window.devicePixelRatio || 1;
+  const fs = Math.min(iw / W, ih / H);
+  const s = Math.max(1, Math.floor(fs));
+  let scale, exact = false;
+  // Screens smaller than 640x360 (phones in portrait) shrink below 1x so no edge (and its buttons) is cut off.
+  if (fs < 1) scale = fs;
+  else if (displayMode === 'pixel') {
+    const k = Math.floor(fs * dpr + 1e-6);
+    if (k >= 1) { scale = k / dpr; exact = true; } else scale = fs;
+  } else if (displayMode === 'fill') scale = fs;
+  // auto: use integer scale when it fits well; otherwise fractional to fill (crisp-edges keeps pixels sharp)
+  else scale = fs - s > 0.6 ? fs : s;
+  Engine.scale = scale;
+  // (pixel: the exact size, even a fractional CSS width, so it lands on whole device pixels)
+  canvas.style.width = (exact ? W * scale : Math.floor(W * scale)) + 'px';
+  canvas.style.height = (exact ? H * scale : Math.floor(H * scale)) + 'px';
+  // fill at an in-between scale: the smooth pass (it does nothing while the CRT look is on, which scales the same way)
+  const k = scale * dpr;
+  CRT.setSmooth(displayMode === 'fill' && Math.abs(k - Math.round(k)) > 0.01);
+  CRT.resize();
+}
+
 export function initEngine(canvas) {
   Engine.canvas = canvas;
   canvas.width = W; canvas.height = H;
@@ -18,19 +57,8 @@ export function initEngine(canvas) {
   ctx.imageSmoothingEnabled = false;
   Engine.ctx = ctx;
   CRT.init(canvas);
-  const resize = () => {
-    const s = Math.max(1, Math.floor(Math.min(window.innerWidth / W, window.innerHeight / H)));
-    const fs = Math.min(window.innerWidth / W, window.innerHeight / H);
-    // Use integer scale when it fits well; otherwise fractional to fill (crisp-edges keeps pixels sharp)
-    // Screens smaller than 640x360 (phones in portrait) shrink below 1x so no edge (and its buttons) is cut off.
-    const scale = fs < 1 ? fs : fs - s > 0.6 ? fs : s;
-    Engine.scale = scale;
-    canvas.style.width = Math.floor(W * scale) + 'px';
-    canvas.style.height = Math.floor(H * scale) + 'px';
-    CRT.resize();
-  };
-  window.addEventListener('resize', resize);
-  resize();
+  window.addEventListener('resize', resizeCanvas);
+  resizeCanvas();
   const toLocal = (e) => {
     const r = canvas.getBoundingClientRect();
     Engine.mouse.x = (e.clientX - r.left) / r.width * W;

@@ -45,11 +45,16 @@ export default defineSchema({
     runs: v.number(),
     wins: v.number(),
     bestScore: v.number(),
+    // NOW PLAYING (players:presence / players:nowPlaying): a heartbeat about once a minute while in a run
+    lastSeen: v.optional(v.number()), // unset when they leave the run (or never played on a client that sends it)
+    activity: v.optional(v.string()), // short label, e.g. "ACT 2 TORCHIC" or "CO-OP ACT 3"
+    activityRoom: v.optional(v.string()), // co-op room code (checked membership): groups partners, never sent out
   })
     .index("by_userId", ["userId"])
     .index("by_email", ["email"])
     .index("by_nameLower", ["nameLower"])
-    .index("by_bestScore", ["bestScore"]),
+    .index("by_bestScore", ["bestScore"])
+    .index("by_lastSeen", ["lastSeen"]),
 
   // Save data per account: meta-progression (unlocks, ascension, Pokédex, history) and the run in progress.
   progress: defineTable({

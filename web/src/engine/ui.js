@@ -112,7 +112,7 @@ export function drawTips(ctx) {
   const w = Math.max(t.minW || 0, Math.min(maxW + 10, tw));
   const h = (t.title ? 18 : 4) + lines.length * 11 + 8 + (t.extraH || 0);
   let x = (t.x ?? Engine.mouse.x + 10), y = (t.y ?? Engine.mouse.y + 10);
-  if (t.above) y = t.y - h;
+  if (t.above) { y = t.y - h; if (y < 2) y = t.yBelow ?? 2; } // (yBelow: where to go when there's no room above)
   if (x + w > W - 2) x = W - 2 - w;
   if (y + h > H - 2) y = Math.max(2, (t.y ?? Engine.mouse.y) - h - 6);
   pixBox(ctx, x, y, w, h, '#f8f8f0', '#283040', 3);

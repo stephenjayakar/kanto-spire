@@ -234,3 +234,6 @@ export class VictoryScene {
     drawTips(ctx);
   }
 }
+
+// Not part of a run: NOW PLAYING (net/presence.js) does not list you here.
+GameOverScene.prototype.idle = true; VictoryScene.prototype.idle = true;

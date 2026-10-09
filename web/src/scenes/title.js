@@ -1,5 +1,5 @@
 // Title screen.
-import { Engine, W, H, setScene, pushOverlay, keyPressed, hover } from '../engine/core.js';
+import { Engine, W, H, setScene, pushOverlay, keyPressed, hover, setDisplayMode } from '../engine/core.js';
 import { draw, img, ready } from '../engine/assets.js';
 import { text } from '../engine/font.js';
 import { swirlBackground, BG_THEMES, button, panel, rect, drawTips, tip, THEME, scrollArea } from '../engine/ui.js';
@@ -14,8 +14,10 @@ import { VERSION, PATCH_NOTES } from '../game/version.js';
 import { textBlock, measure } from '../engine/font.js';
 import { coopAvailable } from './coop/net.js';
 import { CRT } from '../engine/crt.js';
+import { nowPlaying } from '../net/presence.js';
 
 const CRT_MODES = ['off', 'subtle', 'strong'];
+const DISPLAY_MODES = ['auto', 'pixel', 'fill'];
 
 export class TitleScene {
   enter() {
@@ -83,15 +85,41 @@ export class TitleScene {
     if (G.meta.seenVersion !== PATCH_NOTES[0].v) { G.meta.seenVersion = PATCH_NOTES[0].v; saveMeta(); pushOverlay(new PatchNotesModal()); }
     const m = G.meta;
     text(ctx, `Runs ${m.totalRuns}  ·  Wins ${m.totalWins}  ·  Best ascension ${m.bestAscensionWon >= 0 ? 'A' + m.bestAscensionWon : '—'}`, W / 2, H - 12, { align: 'center', color: 'gray', font: 'small' });
+    this.drawNowPlaying(ctx);
     drawTips(ctx);
   }
 }
+
+// NOW PLAYING (net/presence.js): who else is in a run right now, in a small FireRed text window in the bottom-right
+// corner. Nothing at all when nobody is (or offline / signed out / an older server).
+TitleScene.prototype.drawNowPlaying = function (ctx) {
+  const list = nowPlaying();
+  if (!list?.length) return;
+  const MAX = 4, rows = list.slice(0, list.length > MAX ? MAX - 1 : MAX), more = list.length - rows.length;
+  const w = 200, lh = 11, h = 26 + (rows.length + (more ? 1 : 0)) * lh, x = W - w - 4, y = H - 24 - h;
+  panel(ctx, x, y, w, h, 'paper');
+  if (Math.floor(this.t * 1.5) % 2 === 0) rect(ctx, x + 10, y + 10, 4, 4, '#38b048'); // the "live" light
+  text(ctx, 'NOW PLAYING', x + 18, y + 6, { color: 'red', font: 'small' });
+  rows.forEach((g, i) => {
+    const names = (g.names || []).join(' + '), what = g.what ? ' · ' + g.what : '';
+    let line = names + what;
+    // keep the activity, shorten the names if the line is too long
+    if (measure(line, 'small') > w - 22) {
+      let n = names;
+      while (n.length > 3 && measure(n + '…' + what, 'small') > w - 22) n = n.slice(0, -1);
+      line = n + '…' + what;
+    }
+    text(ctx, line, x + 10, y + 18 + i * lh, { color: 'dark', font: 'small' });
+  });
+  if (more) text(ctx, `and ${more} more`, x + 10, y + 18 + rows.length * lh, { color: 'gray', font: 'small' });
+  if (hover(x, y, w, h)) tip('NOW PLAYING', 'Trainers in a run right now (solo or co-op), as of the last minute or so.');
+};
 
 export class SettingsModal extends Modal {
   draw(ctx) {
     this.dim(ctx);
     const s = G.meta.settings;
-    const w = 280, h = 244, x = (W - w) / 2, y = (H - h) / 2;
+    const w = 280, h = 268, x = (W - w) / 2, y = (H - h) / 2;
     panel(ctx, x, y, w, h);
     text(ctx, 'SETTINGS', W / 2, y + 8, { align: 'center', color: 'white' });
     const row = (label, val, cy, set) => {
@@ -123,6 +151,13 @@ export class SettingsModal extends Modal {
     text(ctx, 'CRT CURVE', x + 14, y + 184, { color: crt === 'off' ? 'gray' : 'white' });
     if (button(ctx, curve ? 'ON' : 'OFF', x + 170, y + 180, 60, 20, { color: curve ? THEME.green : '#806060' })) { s.crtCurve = !curve; CRT.setCurve(s.crtCurve); saveMeta(); }
     if (hover(x + 10, y + 178, w - 20, 24)) tip('CRT CURVE', 'The curved glass and rounded corners of the CRT look.\nOFF gives a flat screen that keeps the scanlines and glow. Only matters with CRT on.');
+    // SCREEN: how the picture is scaled to the window (engine/core.js setDisplayMode)
+    const disp = DISPLAY_MODES.includes(s.display) ? s.display : 'auto';
+    text(ctx, 'SCREEN', x + 14, y + 208, { color: 'white' });
+    if (button(ctx, disp.toUpperCase(), x + 170, y + 204, 60, 20, { color: disp === 'auto' ? '#506080' : THEME.green })) {
+      s.display = setDisplayMode(DISPLAY_MODES[(DISPLAY_MODES.indexOf(disp) + 1) % DISPLAY_MODES.length]); saveMeta();
+    }
+    if (hover(x + 10, y + 202, w - 20, 24)) tip('SCREEN', 'How the game is scaled to your window.\nAUTO (default): whole-number scale, stretched when that would leave big borders.\nPIXEL: always a whole-number scale, every pixel the same size (borders around it).\nFILL: always as big as fits, smoothly scaled so the pixels stay even.', { width: 230 });
     if (button(ctx, 'CLOSE', W / 2 - 40, y + h - 30, 80, 22, { color: '#506080' })) this.close();
     this.closeOnTapOutside(x, y, w, h);
     drawTips(ctx);
@@ -207,3 +242,6 @@ export class AboutModal extends Modal {
     drawTips(ctx);
   }
 }
+
+// Not part of a run: NOW PLAYING (net/presence.js) does not list you here.
+TitleScene.prototype.idle = true;

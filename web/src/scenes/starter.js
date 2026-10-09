@@ -145,3 +145,6 @@ export class StarterScene {
     goToMap({ intro: true });
   }
 }
+
+// Not part of a run: NOW PLAYING (net/presence.js) does not list you here.
+StarterScene.prototype.idle = true;
