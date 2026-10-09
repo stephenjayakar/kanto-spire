@@ -984,7 +984,7 @@ export class CoopBattleScene {
     this.drawHand(ctx);
     this.drawPlayed(ctx);
     const title = cfg.trainers ? cfg.trainers.map(t => t.title).join(' & ') : cfg.trainer ? cfg.trainer.title : (cfg.legend || cfg.areaName || 'WILD BATTLE');
-    drawHUD(ctx, run, { bounce: this.relicBounce, onDeck: () => pushOverlay(new DeckModal({ title: 'YOUR DECKS', battle: this.sub })), onConsumableClick: (k) => this.useConsumable(k), noToss: true, subtitle: (this.many ? 'TEAM · ' : 'DUO · ') + title });
+    drawHUD(ctx, run, { bounce: this.relicBounce, help: true, onDeck: () => pushOverlay(new DeckModal({ title: 'YOUR DECKS', battle: this.sub })), onConsumableClick: (k) => this.useConsumable(k), noToss: true, subtitle: (this.many ? 'TEAM · ' : 'DUO · ') + title });
     drawFx(ctx, Engine.dt);
     drawFlash(ctx, Engine.dt, W, H);
     if (this.toast) {

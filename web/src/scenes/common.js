@@ -370,6 +370,12 @@ export function drawHUD(ctx, run, opts = {}) {
   }
   if (button(ctx, 'COMBOS', W - (opts.onDeck ? 120 : 60), 3, 56, 21, { color: '#806040', font: 'small' })) pushOverlay(new ComboModal({}));
   if (opts.onMenu && button(ctx, 'MENU', W - (opts.onDeck ? 168 : 108), 3, 44, 21, { color: '#604080', font: 'small' })) opts.onMenu();
+  // opts.help: a "?" in MENU's slot (battles have no MENU) opening HOW TO PLAY as a local overlay (scenes/tutorial.js)
+  if (opts.help && !opts.onMenu) {
+    const hx = W - (opts.onDeck ? 144 : 84);
+    if (button(ctx, '?', hx, 3, 20, 21, { color: '#3a7a58', font: 'small' })) import('./tutorial.js').then(m => m.openHowToPlay());
+    if (hover(hx, 3, 20, 21)) tip('HOW TO PLAY', 'The picture guide: your turn, types, scoring, switching and catching.');
+  }
 }
 
 export function consumableDesc(k) {
@@ -682,6 +688,24 @@ function chartBattleTypes() {
   if (!b?.typesOfSide) return { mine: [], foe: [] };
   return { mine: b.lead?.() ? b.typesOfSide('player') || [] : [], foe: b.enemy?.() ? b.typesOfSide('enemy') || [] : [] };
 }
+
+// A few rows/columns of the chart in the same art (HOW TO PLAY > BASICS); (gx, gy) = the first cell.
+export const TYPE_GRID = { CW: 20, CH: 16, LW: 36 };
+export function drawTypeGrid(ctx, types, gx, gy) {
+  const { CW, CH, LW } = TYPE_GRID, n = types.length;
+  types.forEach((t, i) => {
+    pixBox(ctx, gx + i * CW, gy - 16, CW - 1, 14, TYPE_COLORS[t], null, 2);
+    text(ctx, t.slice(0, 3), gx + i * CW + CW / 2, gy - 16, { align: 'center', font: 'small', color: 'white' });
+    draw(ctx, typePath(t), gx - LW + 1, gy + i * CH + 2);
+  });
+  rect(ctx, gx - 1, gy - 1, n * CW + 1, n * CH + 1, '#141820');
+  types.forEach((atk, r) => types.forEach((def, c) => {
+    const cx = gx + c * CW, cy = gy + r * CH, m = typeEffect(atk, [def]);
+    rect(ctx, cx, cy, CW - 1, CH - 1, EFF_CELL[m]?.fill || ((r + c) % 2 ? '#262c3c' : '#2a3142'));
+    drawEffMark(ctx, m, cx + Math.floor(CW / 2) - 1, cy + Math.floor(CH / 2) - 1);
+  }));
+}
+export const effFill = m => EFF_CELL[m > 1 ? 2 : m > 0 && m < 1 ? 0.5 : m]?.fill || '#3a4052';
 
 export function drawTypeChart(ctx, x, y, w, h) {
   const types = D.types.list, n = types.length, CW = 20, CH = 16, LW = 36;

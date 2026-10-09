@@ -15,6 +15,7 @@ import { textBlock, measure } from '../engine/font.js';
 import { coopAvailable } from './coop/net.js';
 import { CRT } from '../engine/crt.js';
 import { nowPlaying } from '../net/presence.js';
+import { BasicsModal } from './tutorial.js';
 
 const CRT_MODES = ['off', 'subtle', 'strong'];
 const DISPLAY_MODES = ['auto', 'pixel', 'fill'];
@@ -70,14 +71,14 @@ export class TitleScene {
       y += 28;
     }
     // NEW RUN only opens the starter menu: the saved run is replaced only when you BEGIN a new one (it asks first)
-    if (button(ctx, 'NEW RUN', bx, y, bw, 24, { color: THEME.play })) setScene(new StarterScene());
+    if (button(ctx, 'NEW RUN', bx, y, bw, 24, { color: THEME.play })) newRun();
     // Online co-op (hosted builds with a Convex backend; ?coopdev on the local build). Loaded on demand so solo never depends on it.
     if (coopAvailable() && button(ctx, 'CO-OP (beta)', bx + bw + 6, y, 96, 24, { color: '#b04890', font: 'small' })) import('./coop/lobby.js').then(m => setScene(new m.CoopLobbyScene())).catch(e => pushOverlay(new ChoiceModal({ title: 'CO-OP failed to load', body: e.message, options: [{ label: 'OK', value: 0 }] })));
     y += 28;
     if (button(ctx, 'POKéDEX', bx, y, 52, 22, { color: '#c03030', font: 'small' })) setScene(new DexScene());
     if (button(ctx, 'RECORDS', bx + 54, y, 52, 22, { color: '#c09020', font: 'small' })) setScene(new RecordsScene());
     if (button(ctx, 'SETTINGS', bx + 108, y, 52, 22, { color: '#506080', font: 'small' })) pushOverlay(new SettingsModal());
-    if (button(ctx, 'HOW TO PLAY', 8, 6, 84, 18, { color: '#3a7a58', font: 'small' })) pushOverlay(new AboutModal());
+    if (button(ctx, 'HOW TO PLAY', 8, 6, 84, 18, { color: '#3a7a58', font: 'small' })) pushOverlay(new BasicsModal({ onGuide: () => pushOverlay(new AboutModal()) }));
     // version + patch notes (opens once by itself after an update)
     const vl = `${VERSION} · PATCH NOTES`, vw = measure(vl, 'small');
     if (button(ctx, vl, W - vw - 18, 6, vw + 12, 18, { color: '#405070', font: 'small' })) pushOverlay(new PatchNotesModal());
@@ -114,6 +115,20 @@ TitleScene.prototype.drawNowPlaying = function (ctx) {
   if (more) text(ctx, `and ${more} more`, x + 10, y + 18 + rows.length * lh, { color: 'gray', font: 'small' });
   if (hover(x, y, w, h)) tip('NOW PLAYING', 'Trainers in a run right now (solo or co-op), as of the last minute or so.');
 };
+
+// NEW RUN: a brand-new player (no runs yet) is offered the illustrated basics once, on the way to the starters.
+function newRun() {
+  if (G.meta.totalRuns || G.meta.basicsSeen) return setScene(new StarterScene());
+  G.meta.basicsSeen = true; saveMeta();
+  pushOverlay(new ChoiceModal({
+    title: 'New to KANTO SPIRE?', body: 'A one-minute picture guide: your turn, types, scoring, switching and catching.',
+    options: [{ label: 'SHOW ME THE BASICS', value: 1, color: THEME.green }, { label: 'Skip, pick a starter', value: 2, color: '#506080' }],
+    onClose: (v) => {
+      if (v === 1) pushOverlay(new BasicsModal({ firstRun: true, onClose: () => setScene(new StarterScene()) }));
+      else if (v === 2) setScene(new StarterScene());
+    },
+  }));
+}
 
 export class SettingsModal extends Modal {
   draw(ctx) {
