@@ -29,9 +29,10 @@ export class RewardScene {
     if (this.result.moneyFinal) this.rewards.push({ kind: 'money', amount: this.result.moneyFinal + (this.result.interest || 0), auto: true, claimed: true, label: `$${this.result.moneyFinal}${this.result.interest ? ` (+$${this.result.interest} interest)` : ''}` });
     for (const m of this.result.released || []) this.rewards.push({ kind: 'lost', mon: m, auto: true, claimed: true, label: `NUZLOCKE: ${monName(m)} was released.` });
     if (this.result.newMon) this.rewards.push({ kind: 'mon', mon: this.result.newMon, label: `${speciesName(this.result.newMon.species)} joins your team!` });
-    // Legendary bird node: a one-time chance to catch it.
-    const legendMon = b.result.outcome === 'win' && cfg.catchOffer ? run.legendCatch(cfg) : null;
-    if (legendMon) this.rewards.push({ kind: 'legend', mon: legendMon, label: `${speciesName(legendMon.species)} is watching you. Catch it? (Lv${legendMon.level})` });
+    // Legendary bird node: a one-time chance to catch it (co-op: two legendaries, catch one of them).
+    const legendMons = b.result.outcome === 'win' && (cfg.catchOffer || cfg.catchOffers) ? run.legendCatches(cfg) : [];
+    if (legendMons.length === 1) this.rewards.push({ kind: 'legend', mon: legendMons[0], label: `${speciesName(legendMons[0].species)} is watching you. Catch it? (Lv${legendMons[0].level})` });
+    else if (legendMons.length > 1) this.rewards.push({ kind: 'legend', mon: legendMons[0], mons: legendMons, label: `${legendMons.map(m => speciesName(m.species)).join(' and ')} are watching you. Catch one? (Lv${legendMons[0].level})` });
     if (cfg.kind === 'boss' && !cfg.gauntlet && !cfg.legendBoss) {
       const badge = badgeForBoss(run.boss);
       if (badge && !run.badges.includes(badge)) this.rewards.push({ kind: 'badge', badge, label: BADGES[badge].name });
@@ -105,8 +106,21 @@ export class RewardScene {
         break;
       }
       case 'legend': {
+        if (r.mons?.length > 1) {
+          // co-op: two legendaries, one catch (letting them go uses up the act's own legendary, like solo)
+          const names = r.mons.map(m => speciesName(m.species));
+          const v = await pick(new ChoiceModal({
+            title: 'Catch which one?',
+            body: `One time only: catch ${names.join(' or ')} (Lv${r.mon.level}, with its own deck). The other one flies away. Every player gets their own pick.`,
+            options: [...r.mons.map((m, i) => ({ label: `Catch ${names[i]}!`, value: i + 1, color: THEME.green, tip: `${(D.species[m.species]?.types || []).join('/')}  ·  Lv${m.level}\nDeck: ${m.moves.map(x => D.moves[x.move]?.name || x.move).join(', ')}` })), { label: 'Let them go', value: 0, color: THEME.discard }],
+            cancelable: false,
+          }));
+          if (!v) { run.takeLegend(r.mon, false); r.claimed = true; r.label = `${names.join(' and ')} flew away.`; break; }
+          r.mon = r.mons[v - 1];
+          r.mons = null;
+        }
         const name = speciesName(r.mon.species);
-        const v = await pick(new ChoiceModal({
+        const v = r.mons === null ? 1 : await pick(new ChoiceModal({
           title: `Catch ${name}?`,
           body: `One time only: ${name} joins your party at Lv${r.mon.level} with its own deck. If you let it go, it flies away for good.`,
           options: [{ label: `Catch ${name}!`, value: 1, color: THEME.green }, { label: 'Let it go', value: 0, color: THEME.discard }],

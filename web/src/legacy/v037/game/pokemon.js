@@ -26,26 +26,10 @@ export function defaultMoves(speciesKey, level) {
   return res;
 }
 
-// Moves a player's POKéMON never gets (v0.3.11): they do nothing when the player uses them (TORMENT has no effect here;
-// MEAN LOOK / SPIDER WEB / BLOCK only trap the player). Foes keep them. Every way a player's POKéMON gets a move
-// checks this: makeMon (starters, gifts, eggs, catches), level-ups and evolutions (movesLearnedAt), canLearn (TMs,
-// tutors), move rewards (run.js movePool), the relearner (run.js relearnable) and card transforms (events.js).
-export const NO_PLAYER_MOVES = new Set(['TORMENT', 'MEAN_LOOK', 'SPIDER_WEB', 'BLOCK']);
-// `moves` without the ones `bad` rejects; the species' next most recent level-up moves (up to `level`) take their
-// places, so the set keeps its size where the learnset allows.
-export function replaceMoves(speciesKey, level, moves, bad) {
-  if (!moves.some(bad)) return moves;
-  const keep = moves.filter(m => !bad(m));
-  const learned = (D.species[speciesKey]?.learnset || []).filter(([lvl, mv]) => lvl <= level && D.moves[mv] && !bad(mv)).map(([, mv]) => mv);
-  for (let i = learned.length - 1; i >= 0 && keep.length < moves.length; i--) if (!keep.includes(learned[i])) keep.unshift(learned[i]);
-  return keep.length ? keep : ['TACKLE'];
-}
-const noPlayerMove = (m) => NO_PLAYER_MOVES.has(m);
-
 export function makeMon(speciesKey, level, opts = {}) {
   const rng = opts.rng;
   const ivs = opts.ivs || randomIVs(rng, opts.minIV || 0);
-  const moves = replaceMoves(speciesKey, level, (opts.moves || defaultMoves(speciesKey, level)).filter(m => m && m !== 'NONE' && D.moves[m]), noPlayerMove);
+  const moves = (opts.moves || defaultMoves(speciesKey, level)).filter(m => m && m !== 'NONE' && D.moves[m]);
   const mon = {
     uid: nextUid(),
     species: speciesKey,
@@ -113,7 +97,7 @@ export function expProgress(mon) {
 }
 
 export function movesLearnedAt(speciesKey, level) {
-  return (D.species[speciesKey]?.learnset || []).filter(([l, m]) => l === level && D.moves[m] && !NO_PLAYER_MOVES.has(m)).map(([, m]) => m);
+  return (D.species[speciesKey]?.learnset || []).filter(([l, m]) => l === level && D.moves[m]).map(([, m]) => m);
 }
 
 // Level-based evolution. Friendship evolutions happen at level 22, and trade evolutions (no trading in a
@@ -221,7 +205,7 @@ export function teachMove(mon, move, replaceIndex = -1, copies = defaultCopies(m
 // Can this mon learn `move` via TM/HM, tutor, egg or level-up list (any level)?
 export function canLearn(speciesKey, move) {
   const s = D.species[speciesKey];
-  if (!s || NO_PLAYER_MOVES.has(move)) return false;
+  if (!s) return false;
   const tm = (s.tmhm || []).some(x => x === move || x.endsWith('_' + move));
   return tm || (s.tutor || []).includes(move) || (s.learnset || []).some(([, m]) => m === move);
 }

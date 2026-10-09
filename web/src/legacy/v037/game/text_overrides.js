@@ -131,21 +131,6 @@ export const MOVE_DESC = {
   ODOR_SLEUTH: "Negates the foe's evasion boosts and lets NORMAL and FIGHTING moves hit GHOST types.",
   SECRET_POWER: 'An attack that may paralyze the foe.',
 
-  // ---- status damage and other vague FireRed text (numbers from battle.js enemyResiduals / leadResiduals) ----
-  // ("tough" foes: bosses, elites and legendaries, whose big HP pools take smaller fractions)
-  CURSE: 'Not a GHOST: ATTACK and DEFENSE +1, SPEED -1. A GHOST user instead pays half its max HP (it can faint) to curse the foe: the foe loses 1/6 of its max HP every turn until it leaves (1/12 for bosses, elites and legendaries).',
-  TOXIC: 'Badly poisons the foe: it loses 1/16 of its max HP, then 2/16, 3/16... more each turn. Bosses, elites and legendaries lose 1/24, then 1/12 every turn.',
-  POISON_POWDER: 'Poisons the foe: it loses 1/10 of its max HP every turn (1/20 for bosses, elites and legendaries; 1/8 for your POKéMON).',
-  POISON_GAS: 'Poisons the foe: it loses 1/10 of its max HP every turn (1/20 for bosses, elites and legendaries; 1/8 for your POKéMON).',
-  WILL_O_WISP: 'Burns the foe: it loses 1/10 of its max HP every turn (1/20 for bosses, elites and legendaries) and its physical attacks deal half damage.',
-  LEECH_SEED: 'Seeds the foe: every turn it loses 1/10 of its max HP (1/20 for bosses, elites and legendaries) and your lead heals 1/8 of its own. GRASS types are immune.',
-  NIGHTMARE: 'Only works on a sleeping foe: while it sleeps it loses 1/6 of its max HP every turn (1/12 for bosses, elites and legendaries).',
-  SPIKES: 'Scatters spikes on the foe’s side (up to 3 layers): every foe sent out after this loses 1/8 of its max HP per layer.',
-  STOCKPILE: 'Stores up power, up to 3 times. SPIT UP then hits with 100 power per stockpile; SWALLOW heals 25%, 50% or 100% of max HP.',
-  SWALLOW: 'Uses up the STOCKPILE to heal 25%, 50% or 100% of max HP (1, 2 or 3 stockpiles). Fails with none.',
-  SANDSTORM: 'A five-turn sandstorm: every turn, each POKéMON that is not ROCK, GROUND or STEEL loses 1/16 of its max HP.',
-  HAIL: 'A five-turn hailstorm: every turn, each POKéMON that is not ICE loses 1/16 of its max HP.',
-
   // ---- friendship (already overridden in data.js; repeated so this file is the single source) ----
   RETURN: 'A full-power attack: always 102 power.',
   FRUSTRATION: 'A weak, bitter attack: always 40 power.',

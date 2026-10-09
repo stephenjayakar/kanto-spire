@@ -7,10 +7,10 @@ import { SPECIAL_MOVES, PHYSICAL_MOVES } from '../web/src/game/move_categories.j
 import { EFFECTS } from '../web/src/game/effects.js';
 import { detectCombo, comboBonus } from '../web/src/game/hands.js';
 import { Run, movePool, MOVE_POOL, FALLBACK_MOVES } from '../web/src/game/run.js';
-import { Battle } from '../web/src/game/battle.js';
-import { makeMon, maxHp, gainExp, defaultMoves, canLearn, defaultCopies, replacedCopies, DECK_RULES } from '../web/src/game/pokemon.js';
+import { Battle, makeEnemy, isSelfKO, SELF_KO_HP, withoutSelfKO } from '../web/src/game/battle.js';
+import { makeMon, maxHp, gainExp, defaultMoves, canLearn, defaultCopies, replacedCopies, DECK_RULES, NO_PLAYER_MOVES, movesLearnedAt } from '../web/src/game/pokemon.js';
 import { generateMap, reachable } from '../web/src/game/map.js';
-import { ACTS, STARTERS, GEN3_TYPES, BIRDS, LEGENDS, counterStarter } from '../web/src/game/acts.js';
+import { ACTS, STARTERS, GEN3_TYPES, BIRDS, LEGENDS, BIRD_PARTNER, counterStarter } from '../web/src/game/acts.js';
 import { NUZLOCKE_ASC, ASCENSIONS, MAX_ASCENSION, TUNING } from '../web/src/game/run.js';
 import { unlockShiny, shinyUnlocked } from '../web/src/game/state.js';
 import { HOENN_ACTS } from '../web/src/game/hoenn.js';
@@ -370,6 +370,75 @@ t('birds: one-time catch at a sensible level with its own deck', () => {
   const r2 = actMap('kanto', 2); const m2 = r2.legendCatch(r2.battleConfig(Object.values(r2.map.nodes).find(n => n.type === 'legend')));
   r2.takeLegend(m2, false);
   assert.ok(r2.legendsCaught.includes('ARTICUNO'), 'turning it down uses the offer up');
+});
+t('v0.3.11: legendaries, bosses and elites never self-KO; other foes only when nearly beaten', () => {
+  // the legendary node's REGIROCK (it learns EXPLOSION at Lv1) gets its next-latest move instead
+  const r = actMap('hoenn', 1);
+  const cfg = r.battleConfig(Object.values(r.map.nodes).find(n => n.type === 'legend'));
+  const rock = cfg.enemies[0];
+  assert.equal(rock.species, 'REGIROCK');
+  assert.ok(defaultMoves('REGIROCK', rock.level).includes('EXPLOSION'), 'its level-up moves have EXPLOSION');
+  // (below Lv33 it knows only three other moves: ROCK THROW, CURSE, SUPERPOWER)
+  assert.ok(!rock.moves.some(isSelfKO) && rock.moves.length >= 3 && new Set(rock.moves).size === rock.moves.length, rock.moves.join());
+  assert.ok(withoutSelfKO('REGIROCK', 50, defaultMoves('REGIROCK', 50)).length === 4, 'a fuller learnset fills all four');
+  for (const k of [...Object.keys(BIRDS), ...Object.keys(LEGENDS)]) for (const lvl of [20, 40, 70]) {
+    const e = makeEnemy(LEGENDS[k].species, lvl, { rng: new RNG('k'), legendary: true, isElite: true });
+    assert.ok(!e.moves.some(isSelfKO), `${k} Lv${lvl}: ${e.moves}`);
+  }
+  // a boss / elite / legendary with EXPLOSION in an authored moveset never picks it, even nearly beaten
+  const b = new Battle(r, { ...cfg, rng: new RNG('sk') });
+  b.start();
+  const lead = b.lead();
+  const pick = (e, n = 200) => { const seen = new Set(); for (let i = 0; i < n; i++) seen.add(b.pickEnemyMove(e, lead).key); return seen; };
+  for (const flags of [{ isBoss: true }, { isElite: true }, { legendary: true }]) {
+    const e = { ...makeEnemy('GOLEM', 40, { rng: new RNG('g'), moves: ['EXPLOSION', 'HARDEN'], ...flags }), ...flags };
+    e.hp = 1;
+    assert.ok(!pick(e).has('EXPLOSION'), JSON.stringify(flags));
+  }
+  // a plain foe: not at full HP, but as a last resort when nearly beaten
+  const w = makeEnemy('ELECTRODE', 30, { rng: new RNG('v'), moves: ['SELF_DESTRUCT', 'SCREECH'] });
+  assert.ok(!pick(w).has('SELF_DESTRUCT'), 'healthy: no self-KO');
+  w.hp = Math.floor(w.maxHp * SELF_KO_HP);
+  assert.ok(pick(w).has('SELF_DESTRUCT'), 'nearly beaten: may blow up');
+  // only self-KO moves and not allowed: it struggles instead
+  const only = makeEnemy('VOLTORB', 20, { rng: new RNG('v2'), moves: ['SELF_DESTRUCT'] });
+  assert.deepEqual([...pick(only, 20)], ['STRUGGLE']);
+});
+t('v0.3.11: players never get TORMENT / MEAN LOOK / SPIDER WEB / BLOCK (no effect for them); foes keep them', () => {
+  const bad = ['TORMENT', 'MEAN_LOOK', 'SPIDER_WEB', 'BLOCK'];
+  assert.deepEqual([...NO_PLAYER_MOVES].sort(), [...bad].sort());
+  for (const m of bad) assert.match(D.moves[m].desc, /^Has no effect/, m);
+  // starting / gift / caught movesets: replaced by the next most recent level-up move
+  assert.ok(defaultMoves('NUZLEAF', 30).includes('TORMENT') && defaultMoves('MISDREAVUS', 30).includes('MEAN_LOOK'));
+  for (const g of [makeMon('NUZLEAF', 30), makeMon('MISDREAVUS', 30), makeMon('SPINARAK', 40), makeMon('NOSEPASS', 20)])
+    assert.ok(!g.moves.some(x => bad.includes(x.move)) && g.moves.length >= 3, g.species + ': ' + g.moves.map(x => x.move).join());
+  const caught = makeMon('SHIFTRY', 48, { moves: ['TORMENT', 'DOUBLE_TEAM', 'SWAGGER', 'EXTRASENSORY'] });
+  assert.ok(!caught.moves.some(x => bad.includes(x.move)) && caught.moves.length === 4, caught.moves.map(x => x.move).join());
+  // level-ups / evolutions, TMs and tutors, move rewards, the relearner: never offered
+  const learners = Object.keys(D.species).filter(sp => (D.species[sp].learnset || []).some(([, m]) => bad.includes(m)));
+  assert.ok(learners.length >= 5, 'some species learn them: ' + learners.length);
+  for (const sp of learners) {
+    for (const [l, m] of D.species[sp].learnset) if (bad.includes(m)) assert.ok(!movesLearnedAt(sp, l).includes(m), `${sp} Lv${l} ${m}`);
+    for (const m of bad) assert.equal(canLearn(sp, m), false, `${sp} ${m}`);
+    const mon = makeMon(sp, 60);
+    for (const a of [0, 4]) assert.ok(!movePool(mon, a).some(x => bad.includes(x.move)), `${sp} reward pool`);
+    const r = Run.create({ seed: 'NPM' }); assert.ok(!r.relearnable(mon).some(m => bad.includes(m)), `${sp} relearnable`);
+  }
+  assert.ok(!canLearn('SHIFTRY', 'TORMENT'), 'TM41 TORMENT is never offered (shop TMs filter on canLearn)');
+  // foes: SIDNEY's SHIFTRY keeps TORMENT and can use it (it does nothing, nothing breaks)
+  const foe = makeEnemy('SHIFTRY', 48, { rng: new RNG('sh'), moves: ['TORMENT'], isBoss: true });
+  assert.deepEqual(foe.moves.filter(m => m === 'TORMENT'), ['TORMENT']);
+  // an old save whose POKéMON already knows TORMENT keeps loading (and keeps the move)
+  const r = Run.create({ seed: 'OLDT' });
+  r.party[0].moves[0] = { move: 'TORMENT', copies: 1 };
+  const back = Run.fromJSON(JSON.parse(JSON.stringify(r)));
+  assert.equal(back.party[0].moves[0].move, 'TORMENT');
+});
+t('v0.3.11: every legendary node has a co-op partner from the same trio', () => {
+  assert.deepEqual(Object.keys(BIRD_PARTNER).sort(), Object.keys(BIRDS).sort());
+  for (const [k, p] of Object.entries(BIRD_PARTNER)) { assert.ok(BIRDS[p] && LEGENDS[p] && p !== k, k); }
+  // each trio is one cycle (every legendary is someone's partner once)
+  assert.deepEqual(Object.values(BIRD_PARTNER).sort(), Object.keys(BIRD_PARTNER).sort());
 });
 t('rival: fixed floor every path crosses, counters the starter, grows each act', () => {
   for (const world of ['kanto', 'hoenn']) for (let a = 0; a < 3; a++) {

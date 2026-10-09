@@ -1,6 +1,6 @@
 // Battle engine: pure logic, no rendering. The battle scene calls actions and animates the event list.
 import { D, typeEffect, isSpecialMove, stageMult, accStageMult, gen3Damage, expYield, monStats, speciesName } from './data.js';
-import { stats, maxHp, typesOf, monName, isFainted, nextUid, defaultMoves, randomIVs, speciesOf, DECK_RULES, replaceMoves } from './pokemon.js';
+import { stats, maxHp, typesOf, monName, isFainted, nextUid, defaultMoves, randomIVs, speciesOf, DECK_RULES } from './pokemon.js';
 import { detectCombo, comboBonus, COMBOS } from './hands.js';
 import { EFFECTS, POWER_FN, FIXED_DAMAGE, hitCount, critStageOf, resolveCallMove, hiddenPower, STAT_NAMES } from './effects.js';
 import { RELICS, BADGES, CONSUMABLES, BALLS, ballRate } from './items.js';
@@ -76,21 +76,12 @@ export function withAttacks(speciesKey, level, moves) {
   return [...moves.filter(m => m !== atk).slice(-3), atk];
 }
 
-// Moves whose user faints (SELF-DESTRUCT, EXPLOSION). Foes only use them as a last resort: never a boss, elite or
-// legendary (v0.3.11: a REGIROCK used to blow itself up), and anyone else only when nearly beaten (pickEnemyMove).
-export const isSelfKO = (k) => D.moves[k]?.effect === 'EXPLOSION';
-export const SELF_KO_HP = 1 / 3;
-// A tough foe's level-up moveset without its self-KO moves: the next most recent moves it learned take their place.
-export const withoutSelfKO = (speciesKey, level, moves) => replaceMoves(speciesKey, level, moves, isSelfKO);
-
 export function makeEnemy(speciesKey, level, opts = {}) {
   const s = D.species[speciesKey];
   const ivs = opts.ivs || randomIVs(opts.rng, 0);
   const st = monStats(speciesKey, level, ivs);
   const maxHp = Math.max(10, Math.round(st.hp * (opts.hpScale || 1)));
-  const given = opts.moves && opts.moves.filter(m => m && D.moves[m]).length ? opts.moves.filter(m => m && D.moves[m]) : null;
-  const tough = opts.isBoss || opts.isElite || opts.legendary;
-  const moves = withAttacks(speciesKey, level, given || (tough ? withoutSelfKO(speciesKey, level, defaultMoves(speciesKey, level)) : defaultMoves(speciesKey, level)));
+  const moves = withAttacks(speciesKey, level, opts.moves && opts.moves.filter(m => m && D.moves[m]).length ? opts.moves.filter(m => m && D.moves[m]) : defaultMoves(speciesKey, level));
   return {
     uid: nextUid(), species: speciesKey, level, ivs, stats: st, realMaxHp: st.hp, maxHp, hp: maxHp,
     moves, status: null, sleepTurns: 0, toxic: 0, types: s.types.slice(), isBoss: !!opts.isBoss,
@@ -489,11 +480,7 @@ export class Battle {
       }
       return this.statusMoveValue(m, e, lead);
     });
-    // self-KO moves (SELF-DESTRUCT, EXPLOSION): never for a boss / elite / legendary; others only as a last resort
-    // when nearly beaten (v0.3.11)
-    const barred = (m) => isSelfKO(m.key) && (e.isBoss || e.isElite || e.legendary || e.hp > e.maxHp * SELF_KO_HP);
-    const usable = options.map((m, i) => i).filter(i => !barred(options[i]));
-    let move = usable.length ? this.rng.weighted(usable, i => weights[i] + 0.0001) : -1;
+    let move = options.length ? this.rng.weighted(options.map((m, i) => i), i => weights[i] + 0.0001) : 0;
     move = options[move] || this.moveData('STRUGGLE') || this.moveData('TACKLE');
     if (this.ms(e.uid).recharge > 0) move = { ...this.moveData('TACKLE'), key: 'RECHARGE', name: 'RECHARGE', power: 0, effect: 'RECHARGE_TURN' };
     return move;

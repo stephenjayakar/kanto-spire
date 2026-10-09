@@ -7,7 +7,7 @@ import { setUidCounter, isFainted, maxHp } from '../pokemon.js';
 import { reachable } from '../map.js';
 import { BADGES, CONSUMABLES } from '../items.js';
 import { pickEvent, coopProbe } from '../events.js';
-import { STARTERS, LEGENDS, BIRD_PARTNER } from '../acts.js';
+import { STARTERS } from '../acts.js';
 import { REGIONS, SPIRE, COOP_POOLS } from '../regions.js';
 import { DuoBattle, padEnemies } from './duo.js';
 import { COOP_TUNING } from './tuning.js';
@@ -44,9 +44,6 @@ export const MIN_PLAYERS = 2, MAX_PLAYERS = 4;
 //            single legendary on one slot with extra HP
 //   boss     the leader sends its party two at a time from one queue (boss rule kept); a legendary boss
 //            is single; the Elite Four / Champion gauntlet works like a boss
-//   legend   (the optional legendary node, v0.3.11) two legendaries, one per slot: the act's own and its trio
-//            partner (BIRD_PARTNER), each with less HP and damage than the old single one (COOP_TUNING 'bird2').
-//            Each player may catch one of the two in their own reward screen.
 function scaleEnemies(cfg, coopKind, world, n = 2) {
   const act = world.actIndex || 0;
   const at = (a) => (Array.isArray(a) ? a[Math.min(act, a.length - 1)] : 1);
@@ -119,11 +116,10 @@ export function duoConfig(world, node, n = 2) {
     return shared({ ...c, rng }, rng, world, 'elite', n);
   }
   // The rival (the shared world's starter, i.e. P1's, picks the counter) sends its team two at a time like
-  // an elite; a legendary bird node fields two legendaries (v0.3.11, legendPairConfig; one before). Rewards (the
-  // held item, the one-time catch) are handed out in each player's own reward screen, so each player may catch
-  // one of them in their own run.
+  // an elite; a legendary bird node is a single legendary. Rewards (its held item, the one-time catch) are
+  // handed out in each player's own reward screen, so each player may catch it once in their own run.
   if (kind === 'rival') return shared({ ...world.rivalConfig(rng, floor), rng }, rng, world, 'rival', n);
-  if (kind === 'legend') return legendPairConfig(world, rng, floor, node.legend || world.act.bird, n);
+  if (kind === 'legend') return single({ ...world.legendConfig(rng, floor, node.legend || world.act.bird), rng }, 'bird', world, n);
   if (kind === 'boss') {
     if (world.act.gauntlet) return gauntletDuoConfig(world, 0, n);
     const c = world.bossConfig(rng);
@@ -131,18 +127,6 @@ export function duoConfig(world, node, n = 2) {
     return shared({ ...c, rng }, rng, world, 'boss', n);
   }
   return null;
-}
-
-// The co-op legendary node: the act's legendary (the same foe a solo run meets, from the same RNG) and its trio
-// partner (its own RNG fork) side by side. Rewards: the act's legendary's held item; catch offers for both
-// (catchOffers, each player picks one; catchOffer stays the act's own for older readers).
-export function legendPairConfig(world, rng, floor, key, n = 2) {
-  const a = world.legendConfig(rng, floor, key);
-  const key2 = BIRD_PARTNER[key];
-  if (!a.legendNode || !key2 || !LEGENDS[key2]) return single({ ...a, rng }, 'bird', world, n);
-  const b = world.legendConfig(rng.fork('partner'), floor, key2);
-  const offers = [a.catchOffer && { ...a.catchOffer, ei: 0 }, b.catchOffer && { ...b.catchOffer, ei: 1 }].filter(Boolean);
-  return scaleEnemies({ ...a, enemies: [a.enemies[0], b.enemies[0]], legend: `${a.legend} & ${b.legend}`, catchOffers: offers, queues: [[0], [1]], slotQueue: [0, 1], slots: 2, rng }, 'bird2', world, n);
 }
 
 export function gauntletDuoConfig(world, i, n = 2) {

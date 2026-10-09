@@ -145,7 +145,14 @@ const EFFECT_SHORT = {
   CONVERSION_2: '+1 NEXT TURN', CAMOUFLAGE: '+1 NEXT TURN', SKETCH: 'COPY FOE MOVE',
   SPITE: 'FOE ATK -1', IMPRISON: 'FOE SPA -1', GRUDGE: 'DESTINY BOND',
 };
-export function effectShort(move) { return EFFECT_SHORT[move.effect] || ''; }
+// info (optional): the card, for effects that depend on its owner (CURSE: a GHOST curses the foe, others buff).
+export function effectShort(move, info) {
+  if (move.effect === 'CURSE') {
+    const types = info?.owner ? typesOf(info.owner) : info?.species ? D.species[info.species]?.types || [] : [];
+    return types.includes('GHOST') ? '-1/2 HP\nFOE -HP/TURN' : 'ATK/DEF +1\nSPE -1';
+  }
+  return EFFECT_SHORT[move.effect] || '';
+}
 
 export function drawCardBack(ctx, x, y, opts = {}) {
   x = Math.round(x); y = Math.round(y);
@@ -210,8 +217,8 @@ export function drawCard(ctx, info, x, y, opts = {}) {
       : info.stab ? ['STAB x1.5', CARD_INK.stab] : [info.physical ? 'PHYSICAL' : 'SPECIAL', CARD_INK.kind];
     text(ctx, label, x + CARD_W / 2, y + CARD_H - 12, { align: 'center', color: col, font: 'small', maxW: CARD_W - 4 });
   } else {
-    const eff = effectShort(info.move) || 'STATUS';
-    const lines = wrap(eff, CARD_W - 6, 'small');
+    const eff = effectShort(info.move, info) || 'STATUS';
+    const lines = eff.includes('\n') ? eff.split('\n') : wrap(eff, CARD_W - 6, 'small'); // (explicit lines are condensed to fit, not re-wrapped)
     lines.slice(0, 2).forEach((l, i) => text(ctx, l, x + CARD_W / 2, y + CARD_H - 25 + i * 10, { align: 'center', color: CARD_INK.status, font: 'small', maxW: CARD_W - 4 }));
   }
   if (!info.playable && !opts.ignorePlayable) {

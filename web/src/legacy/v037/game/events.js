@@ -21,7 +21,7 @@
 //   gauntlet (the RADIO TOWER: started right after a win, no heal; null after the last).
 // Labels and texts must be pure functions of the run (no rng): a reload shows the same event the same way.
 import { D, bst, speciesName, itemName, moveName } from './data.js';
-import { makeMon, addLevels, maxHp, isFainted, healFrac, monName, canLearn, knowsMove, defaultCopies, typesOf, defaultMoves, NO_PLAYER_MOVES } from './pokemon.js';
+import { makeMon, addLevels, maxHp, isFainted, healFrac, monName, canLearn, knowsMove, defaultCopies, typesOf, defaultMoves } from './pokemon.js';
 import { makeEnemy } from './battle.js';
 import { RELICS, CONSUMABLES, BALLS, APRICORN_BALLS, isCurse } from './items.js';
 import { BOSS_RULES } from './bosses.js';
@@ -107,7 +107,7 @@ function learnables(mon) {
   for (const [, m] of s?.learnset || []) set.add(m);
   for (const m of s?.tmhm || []) set.add(m.replace(/^(?:TM|HM)\d\d_/, ''));
   for (const m of s?.tutor || []) set.add(m);
-  return [...set].filter(m => D.moves[m] && !NO_PLAYER_MOVES.has(m));
+  return [...set].filter(m => D.moves[m]);
 }
 // The move a card upgrades into: the strongest move of the same type this POKéMON can learn (power <= cap).
 export function upgradeTarget(mon, moveKey, cap = 150) {

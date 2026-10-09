@@ -6,7 +6,7 @@ import { swirlBackground, BG_THEMES, button, panel, pixBox, rect, drawTips, tip,
 import { D, TYPE_COLORS } from '../game/data.js';
 import { G, saveRun } from '../game/state.js';
 import { reachable, NODE_INFO } from '../game/map.js';
-import { LEGENDS } from '../game/acts.js';
+import { LEGENDS, BIRD_PARTNER } from '../game/acts.js';
 import { regionOf, actTitle, TIME_NAMES } from '../game/regions.js';
 import { BOSS_RULES, bossTypes, bossTypeLabel } from '../game/bosses.js';
 import { CONSUMABLES, RELICS } from '../game/items.js';
@@ -236,6 +236,12 @@ export class MapScene {
       const run = this.mapRun(), L = LEGENDS[hovered.legend || run.act.bird];
       const caught = (run.legendsCaught || []).includes(L?.species);
       const lt = bossTypes(hovered.legend || run.act.bird);
+      // co-op: the act's legendary and its trio partner together, one catch per player (coop.js legendPairConfig)
+      const key2 = G.coop ? BIRD_PARTNER[hovered.legend || run.act.bird] : null, L2 = key2 ? LEGENDS[key2] : null;
+      if (L && L2) {
+        const lt2 = bossTypes(key2), had = [L, L2].filter(x => (run.legendsCaught || []).includes(x.species)).map(x => x.title);
+        return tip(`${L.title} & ${L2.title}`, `Optional. Two legendary POKéMON at once, much tougher than an elite. Beat both for ${L.title}'s unique held item, then each player may catch one of them.${had.length ? ` (Already caught: ${had.join(', ')}.)` : ''}\nType: ${lt.join('/')} & ${lt2.join('/')}\nPRESSURE: every hand you play also costs a discard.`, { accent: TYPE_COLORS[lt[0]] });
+      }
       return tip(L?.title || info.name, `${info.desc}${caught ? ' (Already caught this run.)' : ''}${lt.length ? `\nType: ${lt.join('/')}` : ''}\nPRESSURE: every hand you play also costs a discard.`, { accent: TYPE_COLORS[lt[0]] });
     }
     if (hovered.type === 'boss') return tip(this.bossTitle(), `${this.bossDesc()}\n${this.bossTypeLine()}`, { accent: TYPE_COLORS[this.mapRun().act.gauntlet ? null : bossTypes(this.mapRun().boss)[0]] });

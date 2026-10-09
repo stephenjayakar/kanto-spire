@@ -451,7 +451,7 @@ export function postBattle(run, b, rng, skill, metrics) {
   if (r.newMon) addMon(run, r.newMon, skill);
   const cfg = b.cfg || {};
   if (cfg.rewardRelic && !run.hasRelic(cfg.rewardRelic)) { run.addRelic(cfg.rewardRelic); if (metrics) metrics.relicPicks.push(cfg.rewardRelic); }
-  if (cfg.catchOffer && b.result.outcome === 'win') { const caught = decideLegend(run, run.legendCatch(cfg), skill); if (metrics) metrics.legendCatches = (metrics.legendCatches || 0) + (caught ? 1 : 0); }
+  if ((cfg.catchOffer || cfg.catchOffers) && b.result.outcome === 'win') { const caught = decideLegend(run, (run.legendCatches ? run.legendCatches(cfg) : [run.legendCatch(cfg)].filter(Boolean)).sort((x, y) => monValue(y) - monValue(x))[0] || null, skill); if (metrics) metrics.legendCatches = (metrics.legendCatches || 0) + (caught ? 1 : 0); }
   if (metrics && r.released?.length) metrics.released = (metrics.released || 0) + r.released.length;
   const kind = b.kind;
   const moveRewardChance = kind === 'wild' ? 0.35 : 1;
