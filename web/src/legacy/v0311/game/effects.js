@@ -97,25 +97,11 @@ export function critStageOf(move) {
 // Effects applied after a damaging hit or when a status move is used.
 // Gen 3 rule for PROTECT / DETECT / ENDURE: used on consecutive turns, each success halves the next
 // one's chance (100%, 50%, 25%...). A second copy in the same hand does nothing more.
-// v0.3.19: a hand with one of them only goes first (their priority) when it will work, so the player's roll happens
-// when the turn order is decided (preRollProtect) and the card's effect then uses that roll.
-export const PROTECT_EFFECTS = new Set(['PROTECT', 'ENDURE']);
-const protectChance = (b, s) => 1 / Math.pow(2, s.protectTurn === b.turn - 1 ? (s.protectChain || 0) : 0);
-// b: the battle; cards: the hand's card infos. Rolls the hand's PROTECT / DETECT / ENDURE once, up front. -> did it work?
-export function preRollProtect(b, cards) {
-  if (!cards.some(i => PROTECT_EFFECTS.has(i.move.effect))) return null;
-  const s = b.sides.player;
-  const ok = s.protectTurn !== b.turn && b.rng.chance(protectChance(b, s));
-  s.protectPre = { turn: b.turn, ok };
-  return ok;
-}
 function protectRoll(ctx) {
   const b = ctx.b, s = b.sides[ctx.us];
   if (s.protectTurn === b.turn) return false;
   const chain = s.protectTurn === b.turn - 1 ? (s.protectChain || 0) : 0;
-  const pre = s.protectPre?.turn === b.turn ? s.protectPre : null;
-  s.protectPre = null;
-  const ok = pre ? pre.ok : b.rng.chance(protectChance(b, s));
+  const ok = b.rng.chance(1 / Math.pow(2, chain));
   s.protectTurn = b.turn;
   s.protectChain = ok ? chain + 1 : 0;
   if (!ok) b.msg('But it failed!');

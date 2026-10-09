@@ -2,7 +2,7 @@
 import { D, typeEffect, isSpecialMove, stageMult, accStageMult, gen3Damage, expYield, monStats, speciesName } from './data.js';
 import { stats, maxHp, typesOf, monName, isFainted, nextUid, defaultMoves, randomIVs, speciesOf, DECK_RULES, replaceMoves } from './pokemon.js';
 import { detectCombo, comboBonus, COMBOS } from './hands.js';
-import { EFFECTS, POWER_FN, FIXED_DAMAGE, hitCount, critStageOf, resolveCallMove, hiddenPower, STAT_NAMES, PROTECT_EFFECTS, preRollProtect } from './effects.js';
+import { EFFECTS, POWER_FN, FIXED_DAMAGE, hitCount, critStageOf, resolveCallMove, hiddenPower, STAT_NAMES } from './effects.js';
 import { RELICS, BADGES, CONSUMABLES, BALLS, ballRate } from './items.js';
 import { BOSS_RULES } from './bosses.js';
 import { RNG } from './rng.js';
@@ -528,9 +528,8 @@ export class Battle {
     return s;
   }
 
-  // protectOk: the hand's PROTECT / DETECT / ENDURE roll (preRollProtect); a failed one lends the hand no priority
-  enemyActsFirst(playerCards, enemyMove, protectOk = true) {
-    const pPrio = playerCards ? Math.max(0, ...playerCards.map(c => (PROTECT_EFFECTS.has(c.move.effect) && protectOk === false ? 0 : c.move.priority || 0))) : 0;
+  enemyActsFirst(playerCards, enemyMove) {
+    const pPrio = playerCards ? Math.max(0, ...playerCards.map(c => c.move.priority || 0)) : 0;
     const ePrio = enemyMove?.priority || 0;
     if (pPrio !== ePrio) return ePrio > pPrio;
     if (this.mods.quickClaw && (this.handsPlayed === 0 || this.quickClawProc)) return false;
@@ -774,7 +773,7 @@ export class Battle {
     const infos = cards.map(c => { c.faceDown = false; return this.cardInfo(c); });
     this.emit({ t: 'play', ids: cards.map(c => c.id) });
 
-    const enemyFirst = this.enemyActsFirst(infos, this.intent?.move, preRollProtect(this, infos));
+    const enemyFirst = this.enemyActsFirst(infos, this.intent?.move);
     if (enemyFirst) {
       this.emit({ t: 'foeFirst' });
       this.enemyAct();

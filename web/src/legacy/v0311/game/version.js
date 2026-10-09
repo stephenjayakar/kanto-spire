@@ -2,63 +2,9 @@
 // Game version and patch notes (shown from the title screen). Versions are major.minor.patch: every production
 // deploy that changes the game bumps the patch (v0.2.0 -> v0.2.1); the owner calls minor bumps (v0.1.x -> v0.2.0);
 // no major bumps yet. Each one gets a new top PATCH_NOTES entry; see AGENTS.md.
-export const VERSION = 'v0.3.19';
+export const VERSION = 'v0.3.14';
 
 export const PATCH_NOTES = [
-  {
-    v: 'v0.3.19',
-    sections: [
-      ['NEW', [
-        'COMBOS is now INFO, with COMBOS, TYPE CHART and STATUSES tabs',
-      ]],
-      ['CHANGES', [
-        'PROTECT, DETECT and ENDURE only make your hand go first when they work',
-      ]],
-    ],
-  },
-  {
-    v: 'v0.3.18',
-    sections: [
-      ['CHANGES', [
-        "Co-op runs in RECORDS show one line per player with that player's whole team",
-      ]],
-    ],
-  },
-  {
-    v: 'v0.3.17',
-    sections: [
-      ['CHANGES', [
-        'TMs cost half as much at the POKé MART',
-        'METEORITE and WHITE FLUTE show when they trigger',
-        'FILL is the default SCREEN mode',
-      ]],
-      ['FIXES', [
-        'Fixed map nodes showing faded at the start of later acts',
-        "Fixed the foe's next move flashing up while its current move plays",
-      ]],
-    ],
-  },
-  {
-    v: 'v0.3.16',
-    sections: [
-      ['FIXES', [
-        'Fixed the co-op TEAM UP tag overlapping the foe HP line',
-        'Fixed long trainer names running under the money display',
-      ]],
-    ],
-  },
-  {
-    v: 'v0.3.15',
-    sections: [
-      ['NEW', [
-        'Added AUTO in battle: plays the suggested hand every turn until you stop it (U)',
-        'Added a picture guide to HOW TO PLAY, also reachable from the map MENU and the ? in battle',
-      ]],
-      ['CHANGES', [
-        'Selected STATUS cards are marked NO COMBO, solo and co-op',
-      ]],
-    ],
-  },
   {
     v: 'v0.3.14',
     sections: [

@@ -1896,5 +1896,21 @@ t('deck-counting held items: the preview equals the real hand (UP-GRADE, SOOT SA
   }
 });
 
+t('PROTECT only moves the hand first when it works (v0.3.19)', () => {
+  const fast = () => { const e = slowFoe(['TACKLE']); e.stats.spe = 999; return e; };
+  // first use: always works -> the hand goes before the faster foe, and the foe's TACKLE is blocked
+  let { b } = soloWith(fast(), [], 'PR1');
+  let ev = b.play(handOf(b, ['PROTECT']));
+  assert.ok(!ev.some(e => e.t === 'foeFirst'), 'a working PROTECT goes first');
+  // back to back: the roll fails -> no priority, the faster foe moves first
+  ({ b } = soloWith(fast(), [], 'PR2'));
+  b.play(handOf(b, ['PROTECT']));
+  const chance = b.rng.chance.bind(b.rng);
+  b.rng.chance = (p) => (p === 0.5 ? false : chance(p));
+  ev = b.play(handOf(b, ['PROTECT']));
+  assert.ok(ev.some(e => e.t === 'foeFirst'), 'a failing PROTECT lends no priority');
+  assert.ok(ev.some(e => e.t === 'msg' && /failed/i.test(e.text)), 'it still says it failed');
+});
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

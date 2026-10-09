@@ -246,20 +246,24 @@ t('resume: unverifiable rooms (no checksums) replay as before', async () => {
 
 // ------------------------------------------------------------------------------------- legacy engine
 t('engines: selection is explicit (stamp first, then the current code, then the other frozen copies)', () => {
-  assert.equal(LOGIC_ID, 'v0311', 'v0.3.11 changed game logic (foes and self-KO moves, co-op legendary pairs)');
+  assert.equal(LOGIC_ID, 'v0319', 'v0.3.19 changed game logic (PROTECT / DETECT / ENDURE priority only when they work)');
   assert.equal(UNSTAMPED, 'v035');
-  assert.deepEqual(Object.keys(FROZEN), ['v037', 'v035', 'v031'], 'newest first');
+  assert.deepEqual(Object.keys(FROZEN), ['v0311', 'v037', 'v035', 'v031'], 'newest first');
   const ids = (l) => l.map(e => (e.current ? 'current:' : '') + e.id);
   // v0.3.6 (logic v035): an unstamped / v035 log tried the current code, then the frozen copies
-  assert.deepEqual(ids(engineOrder('v035', 'v035')), ['current:v035', 'v035', 'v037', 'v031']);
+  assert.deepEqual(ids(engineOrder('v035', 'v035')), ['current:v035', 'v035', 'v0311', 'v037', 'v031']);
   // v0.3.7-v0.3.10 (LOGIC_ID 'v037'): a v035 room went to frozen v035 first
-  assert.deepEqual(ids(engineOrder('v035', 'v037')), ['v035', 'current:v037', 'v037', 'v031']);
-  assert.deepEqual(ids(engineOrder('v037', 'v037')), ['current:v037', 'v037', 'v035', 'v031']);
-  // v0.3.11 (LOGIC_ID 'v0311'): a v0.3.7-v0.3.10 room goes to frozen v037 first, a v035 room to frozen v035
-  assert.deepEqual(ids(engineOrder('v037')), ['v037', 'current:v0311', 'v035', 'v031']);
-  assert.deepEqual(ids(engineOrder('v035')), ['v035', 'current:v0311', 'v037', 'v031']);
-  assert.deepEqual(ids(engineOrder('v0311')), ['current:v0311', 'v037', 'v035', 'v031']);
-  assert.deepEqual(ids(engineOrder('zzz')), ['current:v0311', 'v037', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('v035', 'v037')), ['v035', 'current:v037', 'v0311', 'v037', 'v031']);
+  assert.deepEqual(ids(engineOrder('v037', 'v037')), ['current:v037', 'v037', 'v0311', 'v035', 'v031']);
+  // v0.3.14-v0.3.18 (LOGIC_ID 'v0311'): a v0.3.7-v0.3.10 room went to frozen v037 first
+  assert.deepEqual(ids(engineOrder('v037', 'v0311')), ['v037', 'current:v0311', 'v0311', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('v0311', 'v0311')), ['current:v0311', 'v0311', 'v037', 'v035', 'v031']);
+  // v0.3.19 (LOGIC_ID 'v0319'): a v0.3.14-v0.3.18 room goes to frozen v0311 first, older ones to their own copy
+  assert.deepEqual(ids(engineOrder('v0311')), ['v0311', 'current:v0319', 'v037', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('v037')), ['v037', 'current:v0319', 'v0311', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('v035')), ['v035', 'current:v0319', 'v0311', 'v037', 'v031']);
+  assert.deepEqual(ids(engineOrder('v0319')), ['current:v0319', 'v0311', 'v037', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('zzz')), ['current:v0319', 'v0311', 'v037', 'v035', 'v031']);
   assert.equal(segmentStamp([{ p: -1, type: 'init' }, { p: 0, type: 'vote' }]), 'v035', 'unstamped = v0.3.5');
   assert.equal(segmentStamp([{ p: 0, type: 'vote', eng: 'v037' }, { p: 1, type: 'vote', eng: 'v037' }, { p: 1, eng: 'v035' }]), 'v037');
   for (const id of Object.keys(FROZEN)) assert.ok(fs.existsSync(`web/src/legacy/${id}/engine.js`), id);

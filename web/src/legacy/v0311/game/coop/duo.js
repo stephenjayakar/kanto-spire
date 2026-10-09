@@ -13,7 +13,7 @@ import { Battle, newSide, makeEnemy, effectiveness, abilityOf } from '../battle.
 import { isFainted, maxHp, monName, typesOf, defaultMoves, DECK_RULES } from '../pokemon.js';
 import { BOSS_RULES } from '../bosses.js';
 import { CONSUMABLES, BALLS } from '../items.js';
-import { FIXED_DAMAGE, PROTECT_EFFECTS, preRollProtect } from '../effects.js';
+import { FIXED_DAMAGE } from '../effects.js';
 import { COOP_TUNING } from './tuning.js';
 
 const DOWN = Object.freeze({ outcome: 'down' });
@@ -465,8 +465,7 @@ export class DuoBattle {
     if (this.subs.every(s => this.out(s.p) || this.locks[s.p])) this.resolveTurn();
   }
 
-  // protectOk: the hand's PROTECT / DETECT / ENDURE roll (preRollProtect); a failed one lends the hand no priority
-  handPriority(s, cards, protectOk = true) { return Math.max(0, ...cards.map(c => (PROTECT_EFFECTS.has(D.moves[c.move]?.effect) && protectOk === false ? 0 : D.moves[c.move]?.priority || 0))); }
+  handPriority(s, cards) { return Math.max(0, ...cards.map(c => D.moves[c.move]?.priority || 0)); }
 
   resolveTurn() {
     const actors = [];
@@ -491,8 +490,7 @@ export class DuoBattle {
       if (ns !== null) s.focus(this.field[ns]);
       s.emit({ t: 'play', ids: cards.map(c => c.id), target: L.target });
       const quick = s.mods.quickClaw && (s.handsPlayed === 0 || s.quickClawProc) ? 1 : 0;
-      const protectOk = preRollProtect(s, cards.map(c => s.cardInfo(c)));
-      actors.push({ kind: 'hand', p: s.p, prio: this.handPriority(s, cards, protectOk), quick, spd: s.speedOf('player'), slot: L.target, cards, kickers });
+      actors.push({ kind: 'hand', p: s.p, prio: this.handPriority(s, cards), quick, spd: s.speedOf('player'), slot: L.target, cards, kickers });
     }
     for (let i = 0; i < this.intents.length; i++) {
       const it = this.intents[i], slot = i % 2;
