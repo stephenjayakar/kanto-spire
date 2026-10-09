@@ -12,7 +12,7 @@ import { CONSUMABLES, BALLS, BADGES } from '../game/items.js';
 import { maxHp, monName, typesOf, isFainted, stats, DECK_RULES } from '../game/pokemon.js';
 import { G, saveRun, saveMeta } from '../game/state.js';
 import { Sound } from '../audio/sound.js';
-import { drawTrainer, drawHUD, drawCard, drawCardBack, cardTooltip, drawPartyPanel, drawMon, drawIcon, CARD_W, CARD_H, MessageBox, ChoiceModal, PartyPicker, DeckModal, monTooltip, consumableDesc, monSprite } from './common.js';
+import { drawTrainer, drawHUD, drawCard, drawCardBack, cardTooltip, drawPartyPanel, drawMon, drawIcon, CARD_W, CARD_H, MessageBox, ChoiceModal, PartyPicker, DeckModal, monTooltip, consumableDesc, monSprite, drawNoComboTag, STATUS_SEL } from './common.js';
 import { battleFinished } from './flow.js';
 import { STAT_NAMES } from '../game/effects.js';
 import { MoveAnims } from '../anim/player.js';
@@ -847,8 +847,11 @@ export class BattleScene {
     }
     if (!sc && prev && !this.busy) {
       text(ctx, dmg ? `foe HP ${fmt(foeHp)}${kills ? '  KO!' : ''}` : 'no damage', x + w / 2, 106, { align: 'center', color: kills ? 'gold' : 'gray', font: 'small' });
-      text(ctx, 'before crits & misses', x + w / 2, 116, { align: 'center', color: 'gray', font: 'small' });
-      if (hover(x, 31, w, 96)) tip(prev.name, COMBOS[prev.key].desc + `\nCombo lvl ${prev.level}: +${prev.bonus}% damage.\nEach scoring card deals POKéMON damage (level, move power, ATK vs the foe's DEF, x1.5 STAB, type matchup). Held items and badges add the rest: ${fmt(base)} x ${(1 + bonus / 100).toFixed(2)}${times !== 1 ? ` x ${+(+times).toFixed(2)}` : ''} = ${fmt(dmg || 0)}. (Assumes no crits or misses.)`, { width: 210 });
+      // selected STATUS cards: say they don't combo (in place of the crits note, which the tooltip keeps)
+      const sts = this.sel.map(id => b.deck.hand.find(c => c.id === id)).filter(Boolean).map(c => b.cardInfo(c)).filter(i => i.status).map(i => i.move.name);
+      if (sts.length) text(ctx, 'STATUS cards: no combo', x + w / 2, 116, { align: 'center', color: 'purple', font: 'small', maxW: w - 8 });
+      else text(ctx, 'before crits & misses', x + w / 2, 116, { align: 'center', color: 'gray', font: 'small' });
+      if (hover(x, 31, w, 96)) tip(prev.name, COMBOS[prev.key].desc + `\nCombo lvl ${prev.level}: +${prev.bonus}% damage.\nEach scoring card deals POKéMON damage (level, move power, ATK vs the foe's DEF, x1.5 STAB, type matchup). Held items and badges add the rest: ${fmt(base)} x ${(1 + bonus / 100).toFixed(2)}${times !== 1 ? ` x ${+(+times).toFixed(2)}` : ''} = ${fmt(dmg || 0)}. (Assumes no crits or misses.)${sts.length ? `\nSTATUS cards (${sts.join(', ')}) take effect but never count toward a combo.` : ''}`, { width: 210 });
     } else if (!name) text(ctx, 'Pick cards to see the damage', x + w / 2, 106, { align: 'center', color: 'gray', font: 'small' });
     // battle info
     panel(ctx, x, 130, w, 52);
@@ -914,7 +917,9 @@ DECK: cards left in the draw pile / cards in your lead's deck.`, { width: 200 })
       const v = this.vis.get(id); const card = b.deck.hand.find(c => c.id === id);
       if (!v || !card) continue;
       const info = b.cardInfo(card);
-      drawCard(ctx, info, v.x, v.y, { selected: this.sel.includes(id), animate: this.hoverId === id });
+      const stsSel = prev && info.status && this.sel.includes(id);
+      drawCard(ctx, info, v.x, v.y, { selected: this.sel.includes(id), selColor: stsSel ? STATUS_SEL : null, animate: this.hoverId === id });
+      if (stsSel) drawNoComboTag(ctx, v.x, v.y);
       if (prev && this.sel.includes(id) && !info.status && !prev.scoring.includes(id)) { ctx.save(); ctx.globalAlpha = 0.45; rect(ctx, v.x, v.y, CARD_W, CARD_H, '#000'); ctx.restore(); text(ctx, "won't score", v.x + CARD_W / 2, v.y + 40, { align: 'center', color: 'white', font: 'small' }); }
       if (id === shockId) { ctx.save(); ctx.globalAlpha = 0.45; rect(ctx, v.x, v.y, CARD_W, CARD_H, '#f8e030'); ctx.restore(); text(ctx, 'SHOCKED', v.x + CARD_W / 2, v.y + 52, { align: 'center', color: 'black', font: 'small' }); }
       if (card.frozen) { ctx.save(); ctx.globalAlpha = 0.35; rect(ctx, v.x, v.y, CARD_W, CARD_H, '#a0e0ff'); ctx.restore(); }

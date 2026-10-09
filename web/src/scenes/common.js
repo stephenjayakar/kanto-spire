@@ -185,7 +185,7 @@ export function drawCard(ctx, info, x, y, opts = {}) {
   const tcol = TYPE_COLORS[info.type] || '#888';
   const status = info.status;
   const sel = opts.selected;
-  const border = sel ? '#f8d038' : opts.highlight ? '#ffffff' : '#1a1a22';
+  const border = sel ? (opts.selColor || '#f8d038') : opts.highlight ? '#ffffff' : '#1a1a22';
   pixBox(ctx, x - (sel ? 1 : 0), y - (sel ? 1 : 0), CARD_W + (sel ? 2 : 0), CARD_H + (sel ? 2 : 0), status ? '#e8e6f4' : '#faf8ef', border, 4);
   // type band
   pixBox(ctx, x + 2, y + 2, CARD_W - 4, 15, tcol, null, 3);
@@ -227,6 +227,16 @@ export function drawCard(ctx, info, x, y, opts = {}) {
   }
 }
 
+// Selected STATUS card in the hand: lavender outline + a NO COMBO stamp over the icon (it takes effect but never
+// joins a combo).
+export const STATUS_SEL = '#b898f8';
+export function drawNoComboTag(ctx, x, y) {
+  x = Math.round(x); y = Math.round(y);
+  pixBox(ctx, x + 3, y + 31, CARD_W - 6, 27, '#5a1ea0', '#2a0c58', 3);
+  text(ctx, 'NO COMBO', x + CARD_W / 2, y + 32, { align: 'center', color: 'white', font: 'small' });
+  text(ctx, 'effect only', x + CARD_W / 2, y + 43, { align: 'center', color: ['#d8c8ff', '#2a0c58'], font: 'small', maxW: CARD_W - 10 });
+}
+
 // Type effectiveness of a card against the current foe, for views outside the hand.
 export function battleEff(b, info) {
   const e = b.enemy?.();
@@ -242,6 +252,7 @@ export function cardTooltip(info, x, y, above = false) {
   const lines = [];
   lines.push(`${info.type} · ${info.status ? 'STATUS' : (info.physical ? 'PHYSICAL' : 'SPECIAL')} · PWR ${m.power || '-'} · ACC ${m.accuracy || '-'}`);
   if (info.owner) lines.push(`Used by ${monName(info.owner)} Lv${info.owner.level}`);
+  if (info.status) lines.push('STATUS card: its effect happens when played, but it never counts toward a combo (PAIR, TRIPLE...).');
   if (!info.status) {
     const st = info.owner ? stats(info.owner) : null;
     lines.push(`Damage: ${info.dmgPreview ?? '?'} (PWR ${m.power}, Lv${info.owner?.level ?? '?'} ${info.physical ? 'ATK' : 'SP.ATK'} ${st ? (info.physical ? st.atk : st.spa) : '?'} vs the foe's ${info.physical ? 'DEF' : 'SP.DEF'}${info.stab ? ', x1.5 STAB' : ''}${(info.eff ?? 1) !== 1 ? `, x${info.eff} type` : ''})`);
