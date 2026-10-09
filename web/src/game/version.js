@@ -2,9 +2,21 @@
 // Game version and patch notes (shown from the title screen). Versions are major.minor.patch: every production
 // deploy that changes the game bumps the patch (v0.2.0 -> v0.2.1); the owner calls minor bumps (v0.1.x -> v0.2.0);
 // no major bumps yet. Each one gets a new top PATCH_NOTES entry; see AGENTS.md.
-export const VERSION = 'v0.3.14';
+export const VERSION = 'v0.3.15';
 
 export const PATCH_NOTES = [
+  {
+    v: 'v0.3.15',
+    sections: [
+      ['NEW', [
+        'Added AUTO in battle: plays the suggested hand every turn until you stop it (U)',
+        'Added a picture guide to HOW TO PLAY, also reachable from the map MENU and the ? in battle',
+      ]],
+      ['CHANGES', [
+        'Selected STATUS cards are marked NO COMBO, solo and co-op',
+      ]],
+    ],
+  },
   {
     v: 'v0.3.14',
     sections: [
