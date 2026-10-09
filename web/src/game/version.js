@@ -2,9 +2,23 @@
 // Game version and patch notes (shown from the title screen). Versions are major.minor.patch: every production
 // deploy that changes the game bumps the patch (v0.2.0 -> v0.2.1); the owner calls minor bumps (v0.1.x -> v0.2.0);
 // no major bumps yet. Each one gets a new top PATCH_NOTES entry; see AGENTS.md.
-export const VERSION = 'v0.3.12';
+export const VERSION = 'v0.3.13';
 
 export const PATCH_NOTES = [
+  {
+    v: 'v0.3.13',
+    sections: [
+      ['NEW', [
+        'Added NOW PLAYING to the title screen',
+        'Added a SCREEN setting: AUTO, PIXEL (whole-number scale) or FILL',
+      ]],
+      ['CHANGES', [
+        'Map paths are easier to read: open routes stand out and hovering a node traces the way there',
+        'Finished co-op games close and appear in RECORDS as one team entry',
+        'The face-down cards rule says when your SILPH SCOPE or FOG BADGE reveals them',
+      ]],
+    ],
+  },
   {
     v: 'v0.3.12',
     sections: [
