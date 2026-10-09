@@ -1,7 +1,7 @@
 import { mutation, query, MutationCtx, QueryCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { Doc, Id } from "./_generated/dataModel";
-import { normEmail, playerFor, requireUser } from "./lib";
+import { cleanRun, normEmail, playerFor, recordCoopRun, requireUser, runInput } from "./lib";
 
 // Online co-op for 2-4 players: rooms, members and the ordered (lockstep) action log.
 // Every client applies the same actions in seq order to its own CoopGame (web/src/game/coop/coop.js);
@@ -330,6 +330,21 @@ export const heartbeat = mutation({
     if (me.left && room.status === "playing") { patch.left = false; patch.savedAt = undefined; }
     await ctx.db.patch(me._id, patch);
     return { now: patch.lastSeen };
+  },
+});
+
+// v0.3.12: the run is over (a win or a wipe). Records the room as ONE team run in RECORDS (run: the runs:submit shape
+// with the whole team's party and stats, built by any member's client: every client holds every player's run) and
+// closes the room, so it leaves everyone's REJOIN list. Every client calls it when it reaches the end screen (queued
+// offline-safe in web/src/net/cloud.js): the first call records it, later calls change nothing.
+export const finish = mutation({
+  args: { roomId: v.id("coopRooms"), run: runInput },
+  handler: async (ctx, { roomId, run }) => {
+    const { room } = await myMembership(ctx, roomId);
+    if (room.status === "lobby" || (room.status === "closed" && !room.result)) throw new Error("The run is not in progress.");
+    const { score: _s, ...clean } = cleanRun({ ...run, clientRunId: `coop-${room.code}` });
+    const r = await recordCoopRun(ctx, room, clean, { replace: false, createTrainers: true });
+    return { score: r.score, duplicate: r.duplicate };
   },
 });
 

@@ -1,38 +1,7 @@
 import { internalMutation, mutation, query } from "./_generated/server";
 import { v } from "convex/values";
-import { cleanVersion, ensurePlayer, versionTotals, playerFor, requireUser, scoreRun } from "./lib";
-import { resultValidator } from "./schema";
-import { Id } from "./_generated/dataModel";
-
-const runInput = v.object({
-  clientRunId: v.string(),
-  result: resultValidator,
-  world: v.string(),
-  ascension: v.number(),
-  act: v.number(),
-  actName: v.string(),
-  floor: v.number(),
-  starter: v.string(),
-  party: v.array(v.object({ species: v.string(), level: v.number(), shiny: v.boolean() })),
-  seed: v.string(),
-  stats: v.object({
-    floors: v.number(),
-    battles: v.number(),
-    trainers: v.number(),
-    caught: v.number(),
-    bestHand: v.number(),
-    crits: v.number(),
-    elites: v.number(),
-    bosses: v.number(),
-    moneyEarned: v.number(),
-  }),
-  durationMs: v.number(),
-  finishedAt: v.number(),
-  version: v.optional(v.string()), // game version (VERSION in web/src/game/version.js); older clients omit it
-  regions: v.optional(v.string()), // v0.1.0 spire runs: the act regions, e.g. "K-H-H-K"
-});
-
-const nonNeg = (n: number, max: number) => Math.max(0, Math.min(max, Math.floor(Number.isFinite(n) ? n : 0)));
+import { cleanRun, ensurePlayer, normEmail, partnerCoopRuns, runInput, versionTotals, playerFor, requireUser } from "./lib";
+import { Doc, Id } from "./_generated/dataModel";
 
 // Records a finished run and returns its score and rank. Idempotent per clientRunId.
 export const submit = mutation({
@@ -45,26 +14,9 @@ export const submit = mutation({
       .unique();
     if (dup) return { id: dup._id, score: dup.score, duplicate: true };
 
-    const s = run.stats;
-    const stats = {
-      floors: nonNeg(s.floors, 1000), battles: nonNeg(s.battles, 1000), trainers: nonNeg(s.trainers, 1000),
-      caught: nonNeg(s.caught, 1000), bestHand: nonNeg(s.bestHand, 1e9), crits: nonNeg(s.crits, 1e6),
-      elites: nonNeg(s.elites, 100), bosses: nonNeg(s.bosses, 100), moneyEarned: nonNeg(s.moneyEarned, 1e9),
-    };
-    const ascension = nonNeg(run.ascension, 20);
-    const score = scoreRun({ result: run.result, ascension, stats });
-    const id = await ctx.db.insert("runs", {
-      ...run,
-      clientRunId: run.clientRunId.slice(0, 64),
-      seed: run.seed.slice(0, 32),
-      ...(run.regions !== undefined ? { regions: run.regions.slice(0, 24) } : {}),
-      actName: run.actName.slice(0, 40),
-      party: run.party.slice(0, 6),
-      ascension, stats, score,
-      act: nonNeg(run.act, 20), floor: nonNeg(run.floor, 1000), durationMs: nonNeg(run.durationMs, 1e10),
-      playerId: player._id, playerName: player.name,
-      version: cleanVersion(run.version),
-    });
+    const row = cleanRun(run);
+    const score = row.score;
+    const id = await ctx.db.insert("runs", { ...row, playerId: player._id, playerName: player.name });
     const won = run.result !== "lose";
     await ctx.db.patch(player._id, {
       runs: player.runs + 1,
@@ -105,12 +57,17 @@ export const leaderboard = query({
 });
 
 // The calling trainer's recent runs and personal bests, optionally for one game version.
+// Co-op team runs are one row owned by the host: a partner's list adds the ones they played in (partnerCoopRuns).
 export const mine = query({
   args: { version: v.optional(v.string()), limit: v.optional(v.number()) },
   handler: async (ctx, { version, limit }) => {
-    const player = await playerFor(ctx, await requireUser(ctx));
+    const user = await requireUser(ctx);
+    const player = await playerFor(ctx, user);
     if (!player) return null;
     const n = Math.min(limit ?? 10, 50);
+    const team = await partnerCoopRuns(ctx, normEmail(user.email || player.email), version);
+    const merge = (rows: Doc<"runs">[], key: "finishedAt" | "score") =>
+      team.length ? [...rows, ...team.filter((t) => !rows.some((r) => r._id === t._id))].sort((a, b) => b[key] - a[key]).slice(0, n) : rows;
     if (version) {
       const recent = await ctx.db
         .query("runs")
@@ -122,8 +79,10 @@ export const mine = query({
         .withIndex("by_player_version_score", (q) => q.eq("playerId", player._id).eq("version", version))
         .order("desc")
         .take(n);
-      const { runs, wins } = await versionTotals(ctx, player._id, version);
-      return { player: { name: player.name, runs, wins, bestScore: best[0]?.score ?? 0 }, recent, best, version };
+      const t = await versionTotals(ctx, player._id, version);
+      const runs = t.runs + team.length, wins = t.wins + team.filter((r) => r.result !== "lose").length;
+      const best2 = merge(best, "score");
+      return { player: { name: player.name, runs, wins, bestScore: best2[0]?.score ?? 0 }, recent: merge(recent, "finishedAt"), best: best2, version };
     }
     const recent = await ctx.db
       .query("runs")
@@ -135,7 +94,8 @@ export const mine = query({
       .withIndex("by_player_score", (q) => q.eq("playerId", player._id))
       .order("desc")
       .take(n);
-    return { player: { name: player.name, runs: player.runs, wins: player.wins, bestScore: player.bestScore }, recent, best };
+    // (the trainer's totals already count co-op runs: coop:finish credits every member)
+    return { player: { name: player.name, runs: player.runs, wins: player.wins, bestScore: player.bestScore }, recent: merge(recent, "finishedAt"), best: merge(best, "score") };
   },
 });
 

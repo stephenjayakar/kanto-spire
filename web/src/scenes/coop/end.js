@@ -8,6 +8,7 @@ import { drawMon, drawIcon } from '../common.js';
 import { PFONT, drawCoopOverlay } from './ui.js';
 import { coopStarterOffers } from '../unlock.js';
 import { D } from '../../game/data.js';
+import { Cloud } from '../../net/cloud.js';
 
 export class CoopEndScene {
   constructor(session) { this.s = session; this.drawsCoopOverlay = true; }
@@ -16,6 +17,7 @@ export class CoopEndScene {
     this.t = 0;
     Sound.playBGM(this.win ? 'mus_victory_road' : 'mus_poke_tower');
     coopStarterOffers(this.s); // victory clears the last act: pick a new starter (local meta only)
+    this.s.finishRun?.(); // one team run in RECORDS, and the room closes (off the REJOIN list)
   }
   update(dt) {
     this.t += dt;
@@ -65,6 +67,9 @@ export class CoopEndScene {
     const sh = this.win && s.coopShiny;
     if (sh) text(ctx, `SHINY ${D.species[sh.fam]?.name || sh.fam} ${sh.isNew ? 'UNLOCKED!' : 'is yours!'} Pick it on the starter screen.`, W / 2, 299, { align: 'center', color: 'gold', font: 'small' });
     if (button(ctx, 'TITLE', W / 2 - 60, H - 52, 120, 28, { color: THEME.green })) s.stop({ toTitle: true });
+    // the team run in RECORDS (online build only)
+    const cr = Cloud.url && s.finishSent ? Cloud.lastResult : null;
+    if (cr) text(ctx, cr.status === 'saved' ? `Team run saved in RECORDS${cr.score ? ` · score ${cr.score.toLocaleString()}` : ''}` : cr.status === 'error' ? `Team run not uploaded yet (${cr.message}) · will retry` : 'Saving the team run...', W / 2, H - 20, { align: 'center', color: cr.status === 'saved' ? 'gold' : cr.status === 'error' ? 'orange' : 'gray', font: 'small' });
     drawFx(ctx, Engine.dt);
     drawTips(ctx);
     drawCoopOverlay(ctx, s);

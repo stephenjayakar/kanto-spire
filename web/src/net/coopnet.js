@@ -1,7 +1,7 @@
 // Browser client for the co-op API (convex/coop.ts), over cloud.js's authenticated HTTP call.
 // Actions go up and come down as JSON strings (no Convex value limits for big Run snapshots); this module
 // hides that: fetchSince / CoopPoller hand out plain action objects { seq, p, type, ...payload, nonce }.
-import { cloudCall } from './cloud.js';
+import { cloudCall, queueCoopRun } from './cloud.js';
 import { VERSION } from '../game/version.js';
 import { LOGIC_ID } from '../game/coop/engines.js';
 
@@ -74,6 +74,9 @@ export async function latestCheckpoint(roomId) {
 }
 // SAVE & QUIT: marks me as away with a save (the others see "saved & quit").
 export const saveQuit = roomId => m('coop:saveQuit', { roomId });
+// v0.3.12: the run is over: record it as one team run and close the room (coop:finish, through cloud.js's offline-safe
+// queue). run: cloud.js coopRunPayload(game). Every client sends it; the first one counts.
+export const finishRoom = (roomId, run) => queueCoopRun(roomId, run);
 
 // ---- the run --------------------------------------------------------------------------------
 // Appends an action; the server sets seq and p. A random nonce makes retries safe: the same nonce is

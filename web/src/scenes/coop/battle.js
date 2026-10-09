@@ -380,12 +380,17 @@ export class CoopBattleScene {
         if (e.why === 'caught') { this.ballAnim = null; }
         break;
       }
-      case 'bossRule':
+      case 'bossRule': {
         this.bossBanner = { name: e.name, desc: e.desc, a: 1 };
         Sound.playSE('se_m_screech');
         await this.wait(0.2);
-        await this.say(`${e.name}: ${e.desc}`);
+        // (each player's own draws get face-down cards; a SILPH SCOPE or FOG BADGE reveals them: say so, or a
+        // player who holds one reads the rule as skipping them)
+        const sees = BOSS_RULES[e.rule]?.faceDown && this.sub?.mods?.trueSight;
+        const by = sees ? (this.run().hasRelic?.('SILPH_SCOPE') ? 'SILPH SCOPE' : 'FOG BADGE') : null;
+        await this.say(`${e.name}: ${e.desc}${by ? ` Your ${by} reveals them!` : ''}`);
         break;
+      }
       case 'leadOut': {
         const p = e.p ?? me;
         const mon = this.run(p).party.find(m => m.uid === e.uid);

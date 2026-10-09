@@ -224,6 +224,16 @@ export const saveQuit = (roomId) => withRoom(roomId, (room, mine) => {
   return { saved: room.status === 'playing' };
 }, { write: true });
 
+// v0.3.12 (same rules as convex/coop.ts finish): the run is over: the first call keeps the team run and closes the room
+// (it leaves the REJOIN list); later calls change nothing.
+export const finishRoom = (roomId, run) => withRoom(roomId, (room) => {
+  if (room.status === 'lobby' || (room.status === 'closed' && !room.result)) throw new Error('The run is not in progress.');
+  if (room.record) return { score: room.record.score ?? 0, duplicate: true };
+  room.record = { ...run, clientRunId: `coop-${room.code}`, coop: { room: room.code, with: [...room.members].sort((a, b) => a.slot - b.slot).slice(1).map(m => m.name) } };
+  room.status = 'closed'; room.result = run.result;
+  return { score: 0, duplicate: false };
+}, { write: true });
+
 // Same interface as coopnet's CoopPoller.
 export class CoopPoller {
   constructor(roomId, { intervalMs = 700, after = 0, onActions, onRoom, onError } = {}) {

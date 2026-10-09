@@ -23,6 +23,7 @@ import { LOGIC_ID } from '../../game/coop/engines.js';
 import { resumeRoom, parseCheckpoint } from '../../game/coop/resume.js';
 import { isSafePoint, snapshotGame } from '../../game/coop/snapshot.js';
 import { loadJSON } from '../../engine/assets.js';
+import { coopRunPayload } from '../../net/cloud.js';
 
 const POLL_MS = 700, HEARTBEAT_MS = 5000, CK_HISTORY = 300;
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
@@ -223,6 +224,17 @@ export class CoopSession {
     if (G.coop === this) { G.coop = null; G.run = null; }
     if (typeof window !== 'undefined' && window.__coop === this) window.__coop = null;
     if (toTitle) import('../title.js').then(m => setScene(new m.TitleScene()));
+  }
+  // v0.3.12: the run is over (a win or a wipe): record it once as ONE team run in RECORDS and close the room, so it
+  // leaves the REJOIN list (net.finishRoom -> coop:finish; the Convex client queues it offline-safe, so a reload on
+  // the end screen still records it). Every client sends it, the server keeps the first. Called by CoopEndScene.
+  finishRun() {
+    const g = this.game;
+    if (this.finishSent || !g || (g.phase !== 'victory' && g.phase !== 'over') || this.desync || !this.net.finishRoom) return;
+    this.finishSent = true;
+    let run;
+    try { run = coopRunPayload(g, { code: this.code }); } catch (e) { console.warn('[coop] no team run to record', e); return; }
+    Promise.resolve().then(() => this.net.finishRoom(this.roomId, run)).catch(e => console.warn('[coop] finish failed', e));
   }
   beat() { if (!this.stopped && !this.quitting) this.hbP = this.net.heartbeat(this.roomId, this.lastSeq).catch(() => {}); }
 
