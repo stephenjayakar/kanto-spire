@@ -18,6 +18,7 @@ import { STAT_NAMES } from '../game/effects.js';
 import { MoveAnims } from '../anim/player.js';
 import { pickHandAnim, ANIM_SPEED, HAND_START_EVENTS, orderTurnEvents } from '../anim/pick.js';
 import { opaqueBounds } from './common.js';
+import { AUTO, autoKey, autoStopInput, manualKey, autoLowHp, drawAutoButton } from './auto.js';
 
 const SCENE_X = 160, SCENE_Y = 27, SCENE_W = 480, SCENE_H = 200;
 const HAND_Y = 262;
@@ -478,6 +479,7 @@ export class BattleScene {
       G.meta.tipCatch = true; this.busy = true;
       this.msg.say('TIP: Weaken wild POKéMON below 50% HP (or put them to sleep), then press BALL to catch them before they faint.').then(() => { this.busy = false; });
     }
+    if (this.autoTick(dt)) return;
     if (this.busy) return;
     // keyboard
     if (keyPressed('Enter') || keyPressed('a') || keyPressed('A')) this.doPlay();
@@ -494,6 +496,7 @@ export class BattleScene {
   }
 
   toggle(id) {
+    if (this.auto) this.autoSet(false); // (picking a card yourself takes over from AUTO)
     const card = this.b.deck.hand.find(c => c.id === id);
     if (!card) return;
     const i = this.sel.indexOf(id);
@@ -893,8 +896,9 @@ DECK: cards left in the draw pile / cards in your lead's deck.`, { width: 200 })
     drawCardBack(ctx, PILE_X, PILE_Y, { count: b.deck.draw.length });
     drawPileTip(this, b.deck, b.mods.peek);
     // buttons
-    const can = !this.busy && this.sel.length > 0;
-    if (!this.stuck && button(ctx, 'HINT', W - 196, HAND_Y - 32, 42, 26, { color: '#6a5a90', font: 'small', disabled: this.busy || !!b.result })) { const h = this.bestHand(); if (h) { this.sel = h.slice(); Sound.playSE('se_select'); } else this.toast = { text: 'No damaging hand: discard or switch.', t: 2 }; }
+    const can = !this.busy && this.sel.length > 0 && !this.auto;
+    if (drawAutoButton(ctx, HAND_Y - 32, this.auto, { disabled: !!b.result })) this.autoSet(!this.auto);
+    if (!this.stuck && button(ctx, 'HINT', AUTO.hintX, HAND_Y - 32, AUTO.hintW, 26, { color: '#6a5a90', font: 'small', disabled: this.busy || !!b.result || this.auto })) { const h = this.bestHand(); if (h) { this.sel = h.slice(); Sound.playSE('se_select'); } else this.toast = { text: 'No damaging hand: discard or switch.', t: 2 }; }
     if (this.stuck && !this.busy && !b.result) { if (button(ctx, 'PASS', W - 150, HAND_Y - 32, 72, 26, { color: THEME.play })) this.doPass(); }
     else if (button(ctx, 'ATTACK', W - 150, HAND_Y - 32, 72, 26, { color: THEME.play, disabled: !can, hotkey: null })) this.doPlay();
     const freeNow = this.sel.length > 0 && (b.freeDiscardOk(this.sel.length) || b.acroOk(this.sel.length));
@@ -940,8 +944,11 @@ DECK: cards left in the draw pile / cards in your lead's deck.`, { width: 200 })
       if (Engine.mouse.clicked && !this.dragSuppress) this.toggle(this.hoverId);
       if (Engine.mouse.rclicked) { this.sel = []; }
     }
-    if (!this.busy && b.faintSwitch && !this.msg.active) text(ctx, 'Send out a POKéMON from the left (free)', 300, HAND_Y - 26, { align: 'center', color: 'gold', font: 'small' });
-    else if (!this.busy && this.handIds.length && !this.sel.length && !this.msg.active) text(ctx, this.stuck ? 'No playable cards · discard, switch or PASS' : hint ? 'Suggested hand outlined in gold · HINT selects it' : '1-5 select · A attack · D discard · drag to reorder', 300, HAND_Y - 26, { align: 'center', color: hint ? 'gold' : 'gray', font: 'small' });
+    // the line above the hand, centred in the strip left of the AUTO / HINT buttons (x 160..407: 239px of text)
+    const lineX = Math.round((160 + AUTO.x - 4) / 2);
+    if (this.auto && !b.result && !this.sel.length && !this.playedIds.length) text(ctx, 'AUTO ON · STOP, Esc or right-click ends it', lineX, HAND_Y - 26, { align: 'center', color: Math.floor(Engine.time * 2) % 2 ? 'gold' : 'orange', font: 'small' });
+    else if (!this.busy && b.faintSwitch && !this.msg.active) text(ctx, 'Send out a POKéMON from the left (free)', lineX, HAND_Y - 26, { align: 'center', color: 'gold', font: 'small' });
+    else if (!this.busy && this.handIds.length && !this.sel.length && !this.msg.active) text(ctx, this.stuck ? 'No playable cards · discard, switch or PASS' : hint ? 'Gold = suggested hand · HINT selects · U: AUTO' : '1-5 select · A attack · D discard · U AUTO', lineX, HAND_Y - 26, { align: 'center', color: hint ? 'gold' : 'gray', font: 'small' });
   }
 
   // ---- side actions ---------------------------------------------------------------------
@@ -966,6 +973,54 @@ DECK: cards left in the draw pile / cards in your lead's deck.`, { width: 200 })
     return this._hint;
   }
 
+  // ---- AUTO: plays the HINT hand every turn (see auto.js). Input only: it selects bestHand() and calls doPlay() the
+  // way a click on ATTACK does, so the battle and its RNG are untouched. Per battle (a new scene starts with it off).
+  autoSet(on, why) {
+    if (!!this.auto === on) return;
+    this.auto = on; this.autoT = 0;
+    if (on) {
+      const l = this.b.lead();
+      this.autoLowAck = l && l.hp / maxHp(l) < AUTO.lowHp ? { uid: l.uid, hp: l.hp } : null; // (turned on while already low)
+      this.autoFaintOk = !!this.b.faintSwitch; // (turned on during a faint pick: keep the lead that was sent out)
+      this.fast = true;
+    } else {
+      if (!this.b.result) this.fast = G.meta.settings.fast;
+      if (why) { this.toast = { text: why, t: 2.4 }; Sound.playSE('se_failure'); }
+    }
+  }
+  // Why AUTO must hand control back now (null: keep going). Wild foes turning catchable don't stop it.
+  autoStopReason() {
+    const b = this.b, l = b.lead();
+    if (!b.faintSwitch) this.autoFaintOk = false;
+    else if (!this.autoFaintOk) return 'AUTO stopped: your lead fainted · pick who goes in';
+    if (l && autoLowHp(l, maxHp(l), this.autoLowAck)) return `AUTO stopped: ${monName(l)} is low on HP`;
+    if (this.stuck) return 'AUTO stopped: no playable hand';
+    if (!this.bestHand()) return 'AUTO stopped: no damaging hand';
+    return null;
+  }
+  // Called from update() every frame; true = AUTO is on and owns the hand's input this frame.
+  autoTick(dt) {
+    const b = this.b;
+    if (!this.auto) { if (autoKey() && !b.result) { this.autoSet(true); Sound.playSE('se_select'); } return false; }
+    if (b.result) { this.auto = false; return true; }
+    if (autoKey() || autoStopInput()) { this.autoSet(false); Sound.playSE('se_card_flip'); return true; }
+    if (this.busy || this.msg.active || this.skipWait || this.drag) { this.autoT = 0; return true; }
+    if (manualKey()) { this.autoSet(false); Sound.playSE('se_card_flip'); return true; }
+    const why = this.autoStopReason();
+    if (why) { this.autoSet(false, why); return true; }
+    this.autoT += dt;
+    if (this.autoT < AUTO.pick) return true;
+    const h = this.bestHand();
+    if (this.sel.join() !== h.join()) { this.sel = h.slice(); Sound.playSE('se_select'); this.autoT = AUTO.pick; return true; }
+    if (this.autoT < AUTO.pick + AUTO.show) return true;
+    this.autoT = 0;
+    this.doPlay();
+    if (!this.busy) this.autoSet(false, "AUTO stopped: that hand can't be played");
+    return true;
+  }
+  // An overlay (menu, picker, modal) is a decision: AUTO stops (the scene's update() doesn't run under it).
+  passiveUpdate() { if (this.auto && Engine.overlays.length) this.autoSet(false, 'AUTO stopped: a menu opened'); }
+
   askSwitch(mon) {
     const b = this.b;
     // your lead fainted: the switch is free and needs no confirming (the foes stay in view; see the party panel)
@@ -980,6 +1035,7 @@ DECK: cards left in the draw pile / cards in your lead's deck.`, { width: 200 })
   }
 
   chooseBall() {
+    this.autoSet(false); // (throwing a ball yourself takes over from AUTO)
     const run = G.run;
     const balls = Object.entries(run.balls).filter(([, n]) => n > 0);
     if (balls.length === 1) return this.throw(balls[0][0]);
