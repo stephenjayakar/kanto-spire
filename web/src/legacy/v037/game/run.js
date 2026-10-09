@@ -1,7 +1,7 @@
 // Run state: party, money, items, map position, encounter generation, rewards, ascension.
 import { RNG, randomSeedString } from './rng.js';
 import { D, expYield, expForLevel, isSpecial, speciesName, typeEffect } from './data.js';
-import { canUseStone, makeMon, maxHp, healFull, healFrac, isFainted, gainExp, addLevels, teachMove, knowsMove, canLearn, typesOf, setUidCounter, nextUid, itemEvolution, evolve, monName, defaultMoves, defaultCopies, DECK_RULES, NO_PLAYER_MOVES } from './pokemon.js';
+import { canUseStone, makeMon, maxHp, healFull, healFrac, isFainted, gainExp, addLevels, teachMove, knowsMove, canLearn, typesOf, setUidCounter, nextUid, itemEvolution, evolve, monName, defaultMoves, defaultCopies, DECK_RULES } from './pokemon.js';
 import { LEGENDS, STARTERS, rivalKey, BIRDS, RIVAL_INTROS, counterStarter, rivalParty , blueParty } from './acts.js';
 import { actsForRun, regionOf, drawSpire, rivalFor, validSpire, spireCode, SPIRE, timeOfDay, areaPool } from './regions.js';
 import { HOENN_TRAINER_CLASSES } from './hoenn.js';
@@ -241,7 +241,7 @@ export class Run {
     if (d.cure) return cures ? null : 'No status';
     return 'No effect';
   }
-  relearnable(mon) { return [...new Set((D.species[mon.species]?.learnset || []).filter(([l, m]) => l <= mon.level && !knowsMove(mon, m) && D.moves[m] && !NO_PLAYER_MOVES.has(m)).map(([, m]) => m))]; }
+  relearnable(mon) { return [...new Set((D.species[mon.species]?.learnset || []).filter(([l, m]) => l <= mon.level && !knowsMove(mon, m) && D.moves[m]).map(([, m]) => m))]; }
   // Can key be used outside battle right now (on someone in the party, or without a target)?
   canUseNow(key) {
     const d = CONSUMABLES[key];
@@ -548,7 +548,7 @@ export class Run {
     const asc9 = this.ascension >= 9 && this.actIndex >= 1;
     if (LEGENDS[key]) {
       const L = LEGENDS[key];
-      const e = makeEnemy(L.species, target + 3 + (L.levelOffset || 0), { rng, hpScale: this.hpScaleFor(floor, 'legend'), isBoss: false, legendary: true, bossRule: asc9 ? 'LEGEND' : null, ivs: ivsFrom(200) });
+      const e = makeEnemy(L.species, target + 3 + (L.levelOffset || 0), { rng, hpScale: this.hpScaleFor(floor, 'legend'), isBoss: false, bossRule: asc9 ? 'LEGEND' : null, ivs: ivsFrom(200) });
       e.legendary = true;
       return { kind: 'wild', elite: true, enemies: [e], terrain: L.terrain, music: L.music, dmgScale: this.dmgScale() * 1.05, rng, legend: L.title };
     }
@@ -617,21 +617,17 @@ export class Run {
     const L = LEGENDS[key], B = BIRDS[key];
     if (!L || !B) return this.eliteConfig(rng, floor);
     const lvl = this.levelFor(floor) + TUNING.bird.lvl;
-    const e = makeEnemy(L.species, lvl, { rng, hpScale: this.hpScaleFor(floor, 'legend') * TUNING.bird.hp[Math.min(this.actIndex, TUNING.bird.hp.length - 1)], isBoss: false, isElite: true, legendary: true, bossRule: 'LEGEND', ivs: ivsFrom(200) });
+    const e = makeEnemy(L.species, lvl, { rng, hpScale: this.hpScaleFor(floor, 'legend') * TUNING.bird.hp[Math.min(this.actIndex, TUNING.bird.hp.length - 1)], isBoss: false, isElite: true, bossRule: 'LEGEND', ivs: ivsFrom(200) });
     e.legendary = true;
     const offer = !(this.legendsCaught || []).includes(L.species) ? { species: L.species, key } : null;
     return { kind: 'elite', legendNode: key, enemies: [e], terrain: L.terrain, music: L.music, dmgScale: this.dmgScale() * TUNING.bird.dmg, rng, legend: L.title, rewardRelic: B.item, catchOffer: offer };
   }
 
-  // The one-time catch offers of a won legendary battle: [{ species, key, ei }] (a co-op legendary node fields two
-  // legendaries, cfg.catchOffers; you may catch one of them).
-  legendOffers(cfg) { return cfg.catchOffers || (cfg.catchOffer ? [cfg.catchOffer] : []); }
-  // Every legendary you could catch from this battle (the ones you haven't had yet), ready to join.
-  legendCatches(cfg) { return this.legendOffers(cfg).map(o => this.legendCatch(cfg, o)).filter(Boolean); }
   // The legendary from a won bird battle, ready to join: at most your best POKéMON's level, with its deck.
-  legendCatch(cfg, o = this.legendOffers(cfg)[0]) {
+  legendCatch(cfg) {
+    const o = cfg.catchOffer;
     if (!o || (this.legendsCaught || []).includes(o.species)) return null;
-    const e = cfg.enemies[o.ei ?? 0] || cfg.enemies[0];
+    const e = cfg.enemies[0];
     const top = Math.max(5, ...this.party.map(m => m.level));
     const moves = (BIRDS[o.key]?.moves || []).filter(m => D.moves[m]);
     return makeMon(o.species, Math.min(e.level, top), { rng: this.rng.fork('legend' + o.species), ivs: e.ivs, moves: moves.length ? moves : null, caughtAct: this.actIndex, shiny: !!e.shiny });
@@ -653,7 +649,7 @@ export class Run {
     const key = this.boss;
     if (LEGENDS[key]) {
       const L = LEGENDS[key];
-      const e = makeEnemy(L.species, this.bossLevel(), { rng, hpScale: this.hpScaleFor(this.act.floors, 'legend') * 1.4, isBoss: true, legendary: true, bossRule: 'LEGEND', ivs: ivsFrom(255) });
+      const e = makeEnemy(L.species, this.bossLevel(), { rng, hpScale: this.hpScaleFor(this.act.floors, 'legend') * 1.4, isBoss: true, bossRule: 'LEGEND', ivs: ivsFrom(255) });
       e.legendary = true;
       return { kind: 'boss', legendBoss: true, enemies: [e], terrain: L.terrain, music: L.music, dmgScale: this.dmgScale() * 1.1, rng, legend: L.title };
     }
@@ -1054,7 +1050,7 @@ function familyParent(sp) { familyOf(sp); return PREVO[sp] || null; }
 // The eligible reward moves for `mon` in act `actIndex`: [{ move, fallback }], never a move it knows.
 export function movePool(mon, actIndex) {
   const maxPower = MOVE_POOL.maxPower[actIndex] ?? 150;
-  const ok = (m) => { const mv = D.moves[m]; return mv && !knowsMove(mon, m) && !NO_PLAYER_MOVES.has(m) && !(mv.power > maxPower) && !(MOVE_POOL.lateMoves.includes(m) && actIndex < 2); };
+  const ok = (m) => { const mv = D.moves[m]; return mv && !knowsMove(mon, m) && !(mv.power > maxPower) && !(MOVE_POOL.lateMoves.includes(m) && actIndex < 2); };
   const out = [], seen = new Set();
   const push = (m, fallback) => { if (!seen.has(m)) { seen.add(m); if (ok(m)) out.push({ move: m, fallback }); } };
   const sp = speciesPool(mon.species);

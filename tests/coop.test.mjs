@@ -402,8 +402,23 @@ t('v0.0.6: rival and legendary-bird duo configs; Nuzlocke rules stay off in co-o
   const rv = duoConfig(g.world, nodes.find(n => n.type === 'rival'));
   assert.ok(rv.rival && rv.coopKind === 'rival' && rv.slots === 2 && rv.enemies.length >= 2 && rv.trainer.name === 'BLUE');
   const lg = duoConfig(g.world, nodes.find(n => n.type === 'legend'));
-  assert.equal(lg.slots, 1); assert.equal(lg.coopKind, 'bird'); assert.equal(lg.enemies[0].species, 'ZAPDOS');
+  // v0.3.11: two legendaries, the act's own (the same foe a solo run meets) and its trio partner, one per slot
+  assert.equal(lg.slots, 2); assert.equal(lg.coopKind, 'bird2'); assert.deepEqual(lg.enemies.map(e => e.species), ['ZAPDOS', 'ARTICUNO']);
+  assert.deepEqual(lg.queues, [[0], [1]]); assert.deepEqual(lg.slotQueue, [0, 1]);
   assert.equal(lg.rewardRelic, 'THUNDER_FEATHER'); assert.ok(lg.catchOffer);
+  assert.deepEqual(lg.catchOffers.map(o => [o.species, o.ei]), [['ZAPDOS', 0], ['ARTICUNO', 1]]);
+  assert.ok(lg.enemies.every(e => e.legendary && e.isElite && e.level === lg.enemies[0].level));
+  // balanced: each legendary has less HP and damage than the old single one; together about the same
+  const solo = g.world.legendConfig(g.world.rng.fork('duo' + nodes.find(n => n.type === 'legend').id + ':' + g.world.actIndex), nodes.find(n => n.type === 'legend').floor, 'LEGEND_ZAPDOS');
+  assert.equal(Math.round(solo.enemies[0].maxHp * COOP_TUNING.hp.bird2 * COOP_TUNING.hpComp), lg.enemies[0].maxHp, "the act's legendary: the solo foe at bird2 HP");
+  const { hp: H, dmg: Dm } = COOP_TUNING;
+  assert.ok(H.bird2 < H.bird && Dm.bird2 < Dm.bird && Math.abs(2 * H.bird2 / H.bird - 1) <= 0.15 && Math.abs(2 * Dm.bird2 / Dm.bird - 1) <= 0.15, 'pair ~ the old single legendary');
+  // 3-4 players: still the pair (one per slot), HP x n/2 x the per-size factor, like every co-op fight
+  for (const n of [3, 4]) {
+    const big = duoConfig(g.world, nodes.find(x => x.type === 'legend'), n);
+    assert.equal(big.slots, 2); assert.equal(big.catchOffers.length, 2);
+    assert.ok(Math.abs(big.enemies[0].maxHp / lg.enemies[0].maxHp - n / 2 * (COOP_TUNING.players[n]?.hpAll ?? 1)) < 0.01, `${n} players`);
+  }
   // same seed, same configs
   const g2 = CoopGame.fromInit({ ...INIT('V6'), ascension: 10 }); g2.world.startAct(1);
   const lg2 = duoConfig(g2.world, Object.values(g2.world.map.nodes).find(n => n.type === 'legend'));
@@ -441,13 +456,14 @@ function throughNode(seed, type, act) {
 t('v0.0.6: rival and legendary battles (and the one-time catch in the private reward) replay identically', () => {
   const rv = throughNode('V6R', 'rival', 0);
   assert.ok(rv.cfg.rival && rv.g.phase === 'map', 'rival fought, back on the map: ' + rv.g.phase);
-  const birdHp = COOP_TUNING.hp.bird; COOP_TUNING.hp.bird = 0.4; // (a quick fight: this test is about the replay and the catch)
-  let lg; try { lg = throughNode('V6L', 'legend', 1); } finally { COOP_TUNING.hp.bird = birdHp; }
+  const birdHp = COOP_TUNING.hp.bird2; COOP_TUNING.hp.bird2 = 0.25; // (a quick fight: this test is about the replay and the catch)
+  let lg; try { lg = throughNode('V6L', 'legend', 1); } finally { COOP_TUNING.hp.bird2 = birdHp; }
   assert.ok(lg.cfg.legendNode, 'legendary bird fought');
   assert.equal(lg.g.phase, 'map', 'won it');
   for (const r of lg.g.runs) {
     assert.ok(r.hasRelic('THUNDER_FEATHER'), 'each player gets the bird\'s held item');
-    assert.ok((r.legendsCaught || []).includes('ZAPDOS'), 'each player had the one-time offer');
+    // v0.3.11: each player caught (or let go) one of the two legendaries
+    assert.equal((r.legendsCaught || []).filter(sp => ['ZAPDOS', 'ARTICUNO'].includes(sp)).length, 1, 'each player had one catch: ' + r.legendsCaught);
   }
 });
 

@@ -272,13 +272,6 @@ export const BIRDS = {
   LEGEND_REGISTEEL: { item: 'STEEL_CORE', moves: ['METAL_CLAW', 'ANCIENT_POWER', 'IRON_DEFENSE', 'AMNESIA'] },
   ...JOHTO_BIRDS,
 };
-// Co-op (v0.3.11): a legendary node fields two legendaries, the act's own and the next one of its trio (each player
-// may catch one of the two). The act's legendary keeps its held item; the partner brings no item.
-export const BIRD_PARTNER = {
-  LEGEND_ZAPDOS: 'LEGEND_ARTICUNO', LEGEND_ARTICUNO: 'LEGEND_MOLTRES', LEGEND_MOLTRES: 'LEGEND_ZAPDOS',
-  LEGEND_REGIROCK: 'LEGEND_REGICE', LEGEND_REGICE: 'LEGEND_REGISTEEL', LEGEND_REGISTEEL: 'LEGEND_REGIROCK',
-  LEGEND_RAIKOU: 'LEGEND_ENTEI', LEGEND_ENTEI: 'LEGEND_SUICUNE', LEGEND_SUICUNE: 'LEGEND_RAIKOU',
-};
 
 export const MAP_NODE_WEIGHTS = {
   wild: 24, trainer: 25, event: 18, center: 10, mart: 9, elite: 10,

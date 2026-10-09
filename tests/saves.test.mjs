@@ -166,6 +166,46 @@ t('resume: a v0.3.6 room mid-battle replays on the frozen v035 engine and hands 
   assert.ok(res.dropped > 0);
 });
 
+// A room played on v0.3.7-v0.3.10 (logic v037, stamped), resumed on this code (v0.3.11: foes and self-KO moves,
+// co-op legendary pairs).
+const V0310 = { v: 'v0.3.10', eng: 'v037' };
+t('resume: a v0.3.10 room mid-battle replays on the frozen v037 engine and hands over on the map', async () => {
+  assert.notEqual(LOGIC_ID, 'v037');
+  const Game = (await getEngine('v037', dataLoader)).CoopGame;
+  const { game, log, cks } = botGame('RS37', { max: 900, stop: g => g.seq > 60 && g.phase === 'battle' && g.battle.turn >= 2, stamp: V0310, Game });
+  assert.equal(game.phase, 'battle');
+  const res = await resumeRoom({ actions: log, dataLoader });
+  assert.equal(res.mode, 'legacy');
+  assert.equal(res.engine, 'v037');
+  assert.equal(res.stamp, 'v037');
+  assert.equal(res.game.phase, 'map');
+  assert.ok(res.game instanceof CoopGame, 'handed to the current code');
+  assert.ok(res.dropped > 0, 'the battle in progress restarts from the map');
+  // the hand-over is the latest safe point of the old game: same teams as the frozen engine had there
+  let S = null;
+  { const g = new Game(); for (const a of log) { g.apply(clone(a)); if (isSafePoint(g)) S = facts(g); } }
+  const f = facts(res.game);
+  assert.deepEqual({ act: f.act, node: f.node, teams: f.teams, money: f.money }, { act: S.act, node: S.node, teams: S.teams, money: S.money });
+  assert.equal(cks.get(game.seq), game.checksum() >>> 0);
+  // and it plays on, on this code
+  const P = coopPlayer(res.game, 'RS37b', STAMP);
+  assert.ok(P.until(x => x.phase !== 'map'));
+  assert.ok(P.until(x => x.phase === 'map' || x.phase === 'over', 4000));
+});
+
+t('resume: a v0.3.10 checkpoint (written on logic v037) loads on this code and plays on', async () => {
+  const Game = (await getEngine('v037', dataLoader)).CoopGame;
+  const { game } = botGame('CP37', { max: 3000, stop: g => g.seq > 120 && isSafePoint(g), stamp: V0310, Game });
+  assert.ok(isSafePoint(game));
+  const row = { seq: game.seq, phase: 'map', state: JSON.stringify(snapshotGame(game)), checksum: game.checksum() >>> 0, gameVersion: 'v0.3.10', engine: 'v037' };
+  const res = await resumeRoom({ checkpoint: row, actions: [], dataLoader });
+  assert.equal(res.mode, 'checkpoint');
+  assert.deepEqual(facts(res.game), facts(game), 'same place, same teams');
+  const P = coopPlayer(res.game, 'CP37b', STAMP);
+  assert.ok(P.until(x => x.phase !== 'map'));
+  assert.ok(P.until(x => x.phase === 'map' || x.phase === 'over', 4000), 'back on the map after the node');
+});
+
 t('resume: a finished game stays finished after a logic change (no hand-over back to the map)', async () => {
   const Game = (await getEngine('v035', dataLoader)).CoopGame;
   const { game, log } = botGame('FIN', { max: 30000, stamp: V036, Game });
@@ -206,16 +246,20 @@ t('resume: unverifiable rooms (no checksums) replay as before', async () => {
 
 // ------------------------------------------------------------------------------------- legacy engine
 t('engines: selection is explicit (stamp first, then the current code, then the other frozen copies)', () => {
-  assert.equal(LOGIC_ID, 'v037', 'v0.3.7 changed game logic');
+  assert.equal(LOGIC_ID, 'v0311', 'v0.3.11 changed game logic (foes and self-KO moves, co-op legendary pairs)');
   assert.equal(UNSTAMPED, 'v035');
+  assert.deepEqual(Object.keys(FROZEN), ['v037', 'v035', 'v031'], 'newest first');
   const ids = (l) => l.map(e => (e.current ? 'current:' : '') + e.id);
   // v0.3.6 (logic v035): an unstamped / v035 log tried the current code, then the frozen copies
-  assert.deepEqual(ids(engineOrder('v035', 'v035')), ['current:v035', 'v035', 'v031']);
-  // v0.3.7 (LOGIC_ID 'v037'): a v035 room goes to frozen v035 first
-  assert.deepEqual(ids(engineOrder('v035')), ['v035', 'current:v037', 'v031']);
-  assert.deepEqual(ids(engineOrder('v035', 'v037')), ['v035', 'current:v037', 'v031']);
-  assert.deepEqual(ids(engineOrder('v037', 'v037')), ['current:v037', 'v035', 'v031']);
-  assert.deepEqual(ids(engineOrder('zzz', 'v037')), ['current:v037', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('v035', 'v035')), ['current:v035', 'v035', 'v037', 'v031']);
+  // v0.3.7-v0.3.10 (LOGIC_ID 'v037'): a v035 room went to frozen v035 first
+  assert.deepEqual(ids(engineOrder('v035', 'v037')), ['v035', 'current:v037', 'v037', 'v031']);
+  assert.deepEqual(ids(engineOrder('v037', 'v037')), ['current:v037', 'v037', 'v035', 'v031']);
+  // v0.3.11 (LOGIC_ID 'v0311'): a v0.3.7-v0.3.10 room goes to frozen v037 first, a v035 room to frozen v035
+  assert.deepEqual(ids(engineOrder('v037')), ['v037', 'current:v0311', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('v035')), ['v035', 'current:v0311', 'v037', 'v031']);
+  assert.deepEqual(ids(engineOrder('v0311')), ['current:v0311', 'v037', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('zzz')), ['current:v0311', 'v037', 'v035', 'v031']);
   assert.equal(segmentStamp([{ p: -1, type: 'init' }, { p: 0, type: 'vote' }]), 'v035', 'unstamped = v0.3.5');
   assert.equal(segmentStamp([{ p: 0, type: 'vote', eng: 'v037' }, { p: 1, type: 'vote', eng: 'v037' }, { p: 1, eng: 'v035' }]), 'v037');
   for (const id of Object.keys(FROZEN)) assert.ok(fs.existsSync(`web/src/legacy/${id}/engine.js`), id);
@@ -238,8 +282,8 @@ t('legacy: a v0.3.5 room after a logic change replays on v035, then continues on
     // the problem v0.3.6 fixes: the changed code can't replay the old log
     const naive = replayOn(CURRENT, null, fx.log);
     assert.equal(naive.ok, false, 'the changed logic disagrees with the logged checksums');
-    // the fix: logic id bumped (pretend 'v037'), the unstamped log goes to the frozen v035 engine
-    const res = await resumeRoom({ actions: fx.log, dataLoader, logicId: 'v037' });
+    // the fix: logic id bumped (pretend 'vNEXT'), the unstamped log goes to the frozen v035 engine
+    const res = await resumeRoom({ actions: fx.log, dataLoader, logicId: 'vNEXT' });
     assert.equal(res.mode, 'legacy');
     assert.equal(res.engine, 'v035');
     assert.equal(res.stamp, 'v035');
@@ -252,16 +296,16 @@ t('legacy: a v0.3.5 room after a logic change replays on v035, then continues on
       { act: fx.safe.act, node: fx.safe.node, floor: fx.safe.floor, phase: 'map', teams: fx.safe.teams, money: fx.safe.money });
     assert.equal(res.safe.seq, fx.final.seq, 'the hand-over becomes the room\'s first checkpoint');
     // the next resume (by any client) loads that checkpoint: same state
-    const again = await resumeRoom({ checkpoint: { ...res.safe, phase: 'map', state: JSON.stringify(res.safe.snap) }, actions: [], dataLoader, logicId: 'v037' });
+    const again = await resumeRoom({ checkpoint: { ...res.safe, phase: 'map', state: JSON.stringify(res.safe.snap) }, actions: [], dataLoader, logicId: 'vNEXT' });
     assert.equal(again.game.checksum(), res.game.checksum());
     // and the game goes on, on the changed code: vote, fight the node, back to the map
-    const P = coopPlayer(res.game, 'LEG', { v: 'v0.3.7', eng: 'v037' });
+    const P = coopPlayer(res.game, 'LEG', { v: 'vNEXT', eng: 'vNEXT' });
     assert.ok(P.until(g => g.phase !== 'map'));
     assert.ok(P.until(g => g.phase === 'map' || g.phase === 'over', 4000));
-    assert.ok(P.log.length > 3 && P.log.every(a => a.eng === 'v037'));
-    // a log with a v037 tail after a v035 checkpoint-less part (the hand-over checkpoint got lost): the v037 part
+    assert.ok(P.log.length > 3 && P.log.every(a => a.eng === 'vNEXT'));
+    // a log with a vNEXT tail after a v035 checkpoint-less part (the hand-over checkpoint got lost): the vNEXT part
     // can't be verified on v035, so the room still lands on a verified safe point
-    const mixed = await resumeRoom({ actions: [...fx.log, ...P.log.map(a => ({ ...a }))], dataLoader, logicId: 'v037' });
+    const mixed = await resumeRoom({ actions: [...fx.log, ...P.log.map(a => ({ ...a }))], dataLoader, logicId: 'vNEXT' });
     assert.ok(['legacy', 'fallback'].includes(mixed.mode) && mixed.game.phase === 'map');
   });
 });
@@ -404,12 +448,12 @@ if (EXP && fs.existsSync(path.join(EXP, 'coopActions.jsonl'))) {
       const now = await resumeRoom({ actions: log, dataLoader });
       assert.equal(now.game.world.actIndex + 1, +act, `act on ${LOGIC_ID}: ${now.mode} ${JSON.stringify(now.tried)}`);
       const want = facts(now.game);
-      const later = await changedLogic(() => resumeRoom({ actions: log, dataLoader, logicId: 'v037' }));
+      const later = await changedLogic(() => resumeRoom({ actions: log, dataLoader, logicId: 'vNEXT' }));
       assert.equal(later.mode, 'legacy');
       assert.deepEqual(facts(later.game), want, 'same place, same teams');
       // the checkpoint written on the first resume loads after the change too
       const row = { seq: now.safe.seq, phase: 'map', state: JSON.stringify(now.safe.snap), checksum: now.safe.checksum, engine: LOGIC_ID };
-      const fromCp = await changedLogic(() => resumeRoom({ checkpoint: row, actions: log.filter(a => a.seq > row.seq), dataLoader, logicId: 'v037' }));
+      const fromCp = await changedLogic(() => resumeRoom({ checkpoint: row, actions: log.filter(a => a.seq > row.seq), dataLoader, logicId: 'vNEXT' }));
       assert.deepEqual(facts(fromCp.game), want);
       console.log(`  ${code}: ${now.mode}/${now.engine} -> act ${want.act + 1} node ${want.node} ${want.phase}; after a logic change: ${later.mode}/${later.engine}; teams ${want.teams.map(x => x.map(m => m.split(':').slice(0, 2).join(' ')).join(', ')).join(' | ')}`);
     });

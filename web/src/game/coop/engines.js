@@ -17,14 +17,17 @@ import { CoopGame } from './coop.js';
 import { Run } from '../run.js';
 import { RNG } from '../rng.js';
 
-// The logic generation of THIS code (v0.3.6 changed no game logic; v0.3.7 did: move rewards, REST, KING'S ROCK, item damage).
-export const LOGIC_ID = 'v037';
+// The logic generation of THIS code (v0.3.6 changed no game logic; v0.3.7 did: move rewards, REST, KING'S ROCK, item damage;
+// v0.3.8-v0.3.10 didn't; v0.3.11 did: foes stop self-KO moves, two legendaries at a co-op legendary node).
+// (Further logic changes for the same release fold into this id; once v0.3.11 ships, the next change needs a new one.)
+export const LOGIC_ID = 'v0311';
 // Actions from before v0.3.6 carry no stamp: they were played on v0.3.5 (or, for older rooms, earlier; the
 // replay checks the clients' logged checksums and tries every frozen engine, see resume.js).
 export const UNSTAMPED = 'v035';
 // Frozen copies, newest first: id -> the versions it covers and its loader (dynamic import: only fetched when a
 // room needs it).
 export const FROZEN = {
+  v037: { versions: 'v0.3.7-v0.3.10', load: () => import('../../legacy/v037/engine.js') },
   v035: { versions: 'v0.3.5-v0.3.6', load: () => import('../../legacy/v035/engine.js') },
   v031: { versions: 'v0.3.1', load: () => import('../../legacy/v031/engine.js') },
 };
