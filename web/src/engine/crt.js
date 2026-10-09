@@ -4,12 +4,16 @@
 // barrel curvature, scanlines, aperture mask, soft bloom, vignette, slight chromatic aberration and a
 // faint flicker. Without WebGL a pre-rendered 2D overlay adds just scanlines + a vignette.
 // When off nothing exists or runs: no overlay, frame() returns at once, map() is never applied.
+// The same pass, with every effect off, also scales the picture for Settings > SCREEN: FILL (setSmooth).
 
 const PRESETS = {
   // curve: barrel amount, scan/mask: darkening, bloom: glow added, vig: vignette power, ca: RGB split in CSS px
   subtle: { curve: 0.022, scan: 0.22, mask: 0.05, bloom: 0.20, vig: 0.14, ca: 0.35, flick: 0.004, warm: 0.015 },
   strong: { curve: 0.055, scan: 0.5, mask: 0.11, bloom: 0.3, vig: 0.2, ca: 0.9, flick: 0.01, warm: 0.03 },
 };
+// Settings > SCREEN: FILL with the CRT look off: the same pass with every effect off, used only as a scaler
+// (px() below: crisp, evenly sized pixels at a fractional scale instead of nearest-neighbour's uneven ones).
+const CLEAN = { curve: 0, scan: 0, mask: 0, bloom: 0, vig: 0, ca: 0, flick: 0, warm: 0 };
 const BG = [8 / 255, 9 / 255, 13 / 255]; // page background (index.html) for the area outside the curved glass
 const MAX_DPR = 2, MAX_W = 2880; // backing-store cap: crisp scanlines/mask without a 4K fragment bill
 
@@ -66,13 +70,13 @@ void main() {
   // warm tint, vignette, flicker
   col *= vec3(1.0 + warm, 1.0 + warm * 0.3, 1.0 - warm);
   float v = clamp(uv.x * uv.y * (1.0 - uv.x) * (1.0 - uv.y) * 16.0, 0.0, 1.0);
-  col *= pow(v, vig);
+  if (vig > 0.0) col *= pow(v, vig);
   col *= 1.0 + flick * sin(time * 47.0) * sin(time * 13.0) + flick * 0.6 * sin((uv.y - time * 0.12) * 6.28318);
   gl_FragColor = vec4(mix(bg, clamp(col, 0.0, 1.0), edge), 1.0);
 }`;
 
 export const CRT = {
-  mode: 'off', on: false, curveOn: true,
+  mode: 'off', on: false, curveOn: true, smooth: false,
   src: null, el: null, gl: null, prog: null, tex: null, u: null, fallback: false,
   rect: { left: 0, top: 0, width: 0, height: 0 },
 
@@ -80,11 +84,29 @@ export const CRT = {
 
   // 'off' | 'subtle' | 'strong'; anything else reads as off (old saves have no key).
   set(mode) {
-    mode = PRESETS[mode] ? mode : 'off';
-    this.mode = mode;
-    this.on = mode !== 'off' && !!this.src;
+    this.mode = PRESETS[mode] ? mode : 'off';
+    this.apply();
+  },
+
+  // core.js: the picture is at a fractional scale with SCREEN: FILL. With the CRT look off, the clean pass
+  // (CLEAN) scales it; with no WebGL it stays plain CSS nearest-neighbour (the 2D fallback has no scaler).
+  setSmooth(on) {
+    on = !!on;
+    if (on === this.smooth) return;
+    this.smooth = on;
+    this.apply();
+  },
+
+  // The preset being drawn: the CRT look, else the clean scaler, else null (nothing runs).
+  preset() { return PRESETS[this.mode] || (this.smooth && !this.fallback ? CLEAN : null); },
+
+  apply() {
+    this.on = !!this.src && !!this.preset();
+    if (this.on && !this.el) {
+      this.create();
+      this.on = !!this.preset(); // (create() may have found no WebGL: then the clean scaler is off)
+    }
     if (!this.on) { if (this.el) this.el.style.display = 'none'; return; }
-    if (!this.el) this.create();
     this.el.style.display = 'block';
     this.resize();
     this.frame();
@@ -92,7 +114,7 @@ export const CRT = {
 
   // Settings > CURVE: the curved glass (barrel distortion + rounded corners) on or off; off = a flat screen.
   setCurve(on) { this.curveOn = on !== false; if (this.on) this.frame(); },
-  curve() { return this.curveOn ? PRESETS[this.mode].curve : 0; },
+  curve() { return this.curveOn ? this.preset()?.curve || 0 : 0; },
 
   create() {
     const mk = () => {
@@ -172,7 +194,8 @@ export const CRT = {
     if (!gl) return;
     const r = this.src.getBoundingClientRect();
     if (r.left !== this.rect.left || r.top !== this.rect.top || r.width !== this.rect.width || r.height !== this.rect.height) this.resize();
-    const P = PRESETS[this.mode], u = this.u;
+    const P = this.preset(), u = this.u;
+    if (!P) return;
     gl.viewport(0, 0, this.el.width, this.el.height);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, this.src);
     gl.uniform2f(u.res, this.el.width, this.el.height);
@@ -187,7 +210,7 @@ export const CRT = {
   // No WebGL: a static transparent overlay with scanlines (one per game row) and a vignette.
   drawFallback() {
     const P = PRESETS[this.mode], el = this.el, ctx = el.getContext('2d');
-    if (!ctx) return;
+    if (!ctx || !P) return;
     this._fbMode = this.mode;
     ctx.clearRect(0, 0, el.width, el.height);
     const rows = this.src.height, rowH = el.height / rows;

@@ -28,7 +28,7 @@ const DEFAULT_META = {
   dexSeen: [], dexCaught: [],
   runs: [], // {date, starter, ascension, result, act, floor, party:[species], seed}
   totalWins: 0, totalRuns: 0,
-  settings: { music: 0.35, sfx: 0.45, fast: false, stereo: true, vol2: true, audioQuality: 'hq', crt: 'off', crtCurve: true },
+  settings: { music: 0.35, sfx: 0.45, fast: false, stereo: true, vol2: true, audioQuality: 'hq', crt: 'off', crtCurve: true, display: 'auto' },
 };
 
 export function loadMeta() {

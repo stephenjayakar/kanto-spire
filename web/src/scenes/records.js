@@ -217,3 +217,6 @@ export function cloudStatusLine() {
   if (r.status === 'error') return [`Not uploaded yet (${r.message}) · will retry`, 'orange'];
   return ['Uploading run...', 'gray'];
 }
+
+// Not part of a run: NOW PLAYING (net/presence.js) does not list you here.
+RecordsScene.prototype.idle = true;

@@ -288,3 +288,6 @@ export class CoopLobbyScene {
   config(opts) { this.act(net => net.configure(this.roomId, opts)).then(() => this.poll()); }
   toTitle() { import('../title.js').then(m => setScene(new m.TitleScene())); }
 }
+
+// Not part of a run: NOW PLAYING (net/presence.js) does not list you here.
+CoopLobbyScene.prototype.idle = true;

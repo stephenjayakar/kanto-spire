@@ -44,3 +44,6 @@ export class DexScene {
     drawTips(ctx);
   }
 }
+
+// Not part of a run: NOW PLAYING (net/presence.js) does not list you here.
+DexScene.prototype.idle = true;

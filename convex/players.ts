@@ -1,7 +1,7 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { INVITER } from "./invites";
-import { cleanName, currentUser, ensurePlayer, playerFor, requireUser, versionTotals } from "./lib";
+import { cleanName, currentUser, ensurePlayer, normEmail, playerFor, requireUser, versionTotals } from "./lib";
 import { Id } from "./_generated/dataModel";
 
 function publicPlayer(p: { _id: string; name: string; runs: number; wins: number; bestScore: number; createdAt: number }) {
@@ -69,5 +69,61 @@ export const exists = query({
   handler: async (ctx) => {
     const user = await currentUser(ctx);
     return !!user && !!(await playerFor(ctx, user));
+  },
+});
+
+// ---- NOW PLAYING: who is in a run right now (the title screen lists them) ----
+// Clients send a heartbeat about once a minute while in a run (web/src/net/presence.js) and clear it when they
+// leave; anyone not heard from within NOW_WINDOW_MS has stopped (closed the tab, lost the connection).
+const NOW_WINDOW_MS = 3 * 60_000;
+const NOW_LIMIT = 20;
+
+function cleanActivity(raw: string): string {
+  return raw.toUpperCase().replace(/[^A-Z0-9 .+'!?:\-]/g, "").replace(/\s+/g, " ").trim().slice(0, 32);
+}
+
+export const presence = mutation({
+  args: { activity: v.union(v.string(), v.null()), room: v.optional(v.string()) },
+  handler: async (ctx, { activity, room }) => {
+    const user = await requireUser(ctx);
+    const player = await playerFor(ctx, user);
+    if (!player) return null;
+    const what = activity === null ? "" : cleanActivity(activity);
+    if (!what) {
+      if (player.lastSeen !== undefined) await ctx.db.patch(player._id, { lastSeen: undefined, activity: undefined, activityRoom: undefined });
+      return null;
+    }
+    // a co-op room only counts if this account is in it (it decides who is listed together)
+    let activityRoom: string | undefined;
+    const code = (room || "").trim().toUpperCase().slice(0, 8);
+    if (code) {
+      const r = await ctx.db.query("coopRooms").withIndex("by_code", (q) => q.eq("code", code)).first();
+      const email = normEmail(user.email);
+      const member = r && email ? await ctx.db.query("coopMembers").withIndex("by_room_email", (q) => q.eq("roomId", r._id).eq("email", email)).first() : null;
+      if (member) activityRoom = code;
+    }
+    const now = Date.now();
+    await ctx.db.patch(player._id, { lastSeen: now, activity: what, activityRoom });
+    return now;
+  },
+});
+
+// [{ names: ["CLIVE", "STEPHEN"], what: "CO-OP ACT 3" }, { names: ["MARIA"], what: "ACT 2 TORCHIC" }], newest first.
+// Names and labels only: no emails, ids or room codes.
+export const nowPlaying = query({
+  args: {},
+  handler: async (ctx) => {
+    if (!(await currentUser(ctx))) return [];
+    const since = Date.now() - NOW_WINDOW_MS;
+    const rows = await ctx.db.query("players").withIndex("by_lastSeen", (q) => q.gte("lastSeen", since)).order("desc").take(NOW_LIMIT);
+    const groups = new Map<string, { names: string[]; what: string }>();
+    for (const p of rows) {
+      if (!p.activity) continue;
+      const key = p.activityRoom ? "room:" + p.activityRoom : "player:" + p._id;
+      const g = groups.get(key);
+      if (g) { if (!g.names.includes(p.name)) g.names.push(p.name); }
+      else groups.set(key, { names: [p.name], what: p.activity });
+    }
+    return [...groups.values()];
   },
 });
