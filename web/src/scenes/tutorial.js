@@ -117,7 +117,7 @@ const PAGES = [
   },
   {
     tab: 'TYPES',
-    body: () => 'Every move has a TYPE. A foe weak to it takes |x2| (|x4| if both its types are weak), one that resists it |x0.5|, and some take nothing (|x0|). Cards show the matchup against the foe in front of you. Full chart: |COMBOS| button > |TYPE CHART|.',
+    body: () => 'Every move has a TYPE. A foe weak to it takes |x2| (|x4| if both its types are weak), one that resists it |x0.5|, and some take nothing (|x0|). Cards show the matchup against the foe in front of you. Full chart: |INFO| button > |TYPE CHART|.',
     draw(ctx) {
       const cols = [['ELECTRIC', 'THUNDER_SHOCK', 'GYARADOS'], ['WATER', 'WATER_GUN', 'CHARMANDER'], ['FIRE', 'EMBER', 'SQUIRTLE'], ['NORMAL', 'TACKLE', 'GASTLY']];
       cols.forEach(([type, move, foe], i) => {

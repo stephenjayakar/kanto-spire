@@ -96,9 +96,9 @@ const root = path.resolve(__dirname, '..');
   await expect('ball picker X', s => s.n === 0);
   await tap(607, 13); await expect('battle DECK opens', s => s.top === 'DeckModal');
   await tap(8, 200); await expect('DECK closes on tap outside', s => s.n === 0);
-  await tap(547, 13); await expect('COMBOS opens', s => s.top === 'ComboModal');
-  await shot('combos');
-  await tap(30, 200); await expect('COMBOS closes on tap outside', s => s.n === 0);
+  await tap(547, 13); await expect('INFO opens', s => s.top === 'InfoModal');
+  await shot('info');
+  await tap(30, 200); await expect('INFO closes on tap outside', s => s.n === 0);
   await tap(506, 13); await expect('battle ? opens HOW TO PLAY', s => s.top === 'BasicsModal');
   await tap(61, 341); await expect('HOW TO PLAY CLOSE (battle)', s => s.n === 0);
 

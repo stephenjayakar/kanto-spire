@@ -11,6 +11,7 @@ import { RELICS, BADGES, CONSUMABLES, badgeIcon } from '../game/items.js';
 import { G } from '../game/state.js';
 import { TUNING, LEVEL_CAP_ASC } from '../game/run.js';
 import { Sound } from '../audio/sound.js';
+import { drawStatusInfo } from './status_info.js';
 
 export const GFX = { manifest: null };
 
@@ -381,7 +382,9 @@ export function drawHUD(ctx, run, opts = {}) {
     const bx = W - 60;
     if (button(ctx, 'DECK', bx, 3, 54, 21, { color: '#506080', font: 'small' })) opts.onDeck();
   }
-  if (button(ctx, 'COMBOS', W - (opts.onDeck ? 120 : 60), 3, 56, 21, { color: '#806040', font: 'small' })) pushOverlay(new ComboModal({}));
+  const ix = W - (opts.onDeck ? 120 : 60);
+  if (button(ctx, 'INFO', ix, 3, 56, 21, { color: '#806040', font: 'small' })) pushOverlay(new InfoModal({}));
+  if (hover(ix, 3, 56, 21)) tip('INFO', 'COMBOS, the TYPE CHART and what every STATUS does.');
   if (opts.onMenu && button(ctx, 'MENU', W - (opts.onDeck ? 168 : 108), 3, 44, 21, { color: '#604080', font: 'small' })) opts.onMenu();
   // opts.help: a "?" in MENU's slot (battles have no MENU) opening HOW TO PLAY as a local overlay (scenes/tutorial.js)
   if (opts.help && !opts.onMenu) {
@@ -636,21 +639,26 @@ export class MessageBox {
   }
 }
 
-// Combo reference (every combo, its level and damage bonus) with a second TYPE CHART tab.
-let comboTab = 0; // last tab shown, remembered for the session
-export class ComboModal extends Modal {
+// The INFO screen (top-bar INFO button): COMBOS (every combo, its level and damage bonus), TYPE CHART and STATUSES
+// (scenes/status_info.js).
+const INFO_TABS = ['COMBOS', 'TYPE CHART', 'STATUSES'];
+let infoTab = 0; // last tab shown, remembered for the session
+export class InfoModal extends Modal {
   draw(ctx) {
     this.dim(ctx);
     const x = 60, y = 6, w = W - 120, h = H - 12;
     panel(ctx, x, y, w, h);
-    if (this.tab === undefined) this.tab = comboTab;
-    ['COMBOS', 'TYPE CHART'].forEach((label, i) => {
-      const on = this.tab === i, bx = W / 2 - 104 + i * 108;
-      if (button(ctx, label, bx, y + 5, 100, 21, { color: on ? '#806040' : '#3a4052', font: 'small', silent: on }) && !on) comboTab = this.tab = i;
+    if (this.tab === undefined) this.tab = infoTab;
+    const n = INFO_TABS.length;
+    INFO_TABS.forEach((label, i) => {
+      const on = this.tab === i, bx = W / 2 - 54 * n + 4 + i * 108;
+      if (button(ctx, label, bx, y + 5, 100, 21, { color: on ? '#806040' : '#3a4052', font: 'small', silent: on }) && !on) infoTab = this.tab = i;
       if (on) rect(ctx, bx + 4, y + 26, 92, 2, '#f8d038');
     });
-    if (keyPressed('ArrowLeft') || keyPressed('ArrowRight')) comboTab = this.tab = 1 - this.tab;
+    if (keyPressed('ArrowLeft')) infoTab = this.tab = (this.tab + n - 1) % n;
+    if (keyPressed('ArrowRight')) infoTab = this.tab = (this.tab + 1) % n;
     if (this.tab === 1) drawTypeChart(ctx, x, y, w, h);
+    else if (this.tab === 2) drawStatusInfo(ctx, (this.stScroll ||= {}), x, y, w, h);
     else this.drawCombos(ctx, x, y, w);
     if (button(ctx, 'CLOSE', W / 2 - 40, y + h - 25, 80, 20, { color: '#506080', font: 'small' })) this.close(null);
     this.closeOnTapOutside(x, y, w, h);
@@ -675,7 +683,7 @@ export class ComboModal extends Modal {
   }
 }
 
-// ---- type chart (TYPE CHART tab of the combos screen) ----------------------------------------
+// ---- type chart (TYPE CHART tab of the INFO screen) -------------------------------------------
 // The FireRed font has no ½ glyph, so it's drawn as an 8x9 pixel bitmap.
 const HALF_GLYPH = ['.#.....#', '##....#.', '.#...#..', '###.#...', '...#.##.', '..#.#..#', '.#....#.', '#....#..', '....####'];
 function drawHalfGlyph(ctx, x, y, fill, shadow) {
