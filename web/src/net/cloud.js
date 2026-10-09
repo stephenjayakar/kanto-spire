@@ -231,25 +231,91 @@ export function queueRun(run, result) {
   } catch (e) { console.warn('queueRun failed', e); }
 }
 
+// ---- co-op team runs (v0.3.12) --------------------------------------------------------------
+// A finished co-op room is ONE run in RECORDS (convex coop:finish; the host owns the row, the partners are listed):
+// the team's party (the best floor(6/n) POKéMON by level of each player), the shared counts as the furthest anyone
+// got, catches / crits / money summed, the best hand of anyone. game: the CoopGame at its end (phase victory / over).
+export function coopRunPayload(game, { code = '' } = {}) {
+  const runs = (game.runs || []).filter(Boolean), w = game.world || {};
+  if (!runs.length) throw new Error('no runs');
+  const result = game.phase === 'victory' || game.result === 'win' ? (w.act?.postgame ? 'postgame' : 'win') : 'lose';
+  const per = runs.map(r => runPayload(r, result));
+  const k = Math.max(1, Math.floor(6 / runs.length));
+  const party = per.flatMap(p => p.party.map((m, i) => ({ m, i })).sort((a, b) => b.m.level - a.m.level || a.i - b.i).slice(0, k).map(x => x.m)).slice(0, 6);
+  const all = (key) => per.map(p => p.stats[key] || 0);
+  const max = (key) => Math.max(0, ...all(key)), sum = (key) => all(key).reduce((a, b) => a + b, 0);
+  const regions = w.world === 'spire' || game.worldName === 'spire' ? spireCode(w.regions) : null;
+  return {
+    ...per[0],
+    clientRunId: `coop-${code}`, // (the server sets it from the room)
+    result,
+    world: game.worldName || w.world || per[0].world,
+    ...(regions ? { regions } : {}),
+    ascension: game.ascension ?? w.ascension ?? per[0].ascension,
+    act: (w.actIndex || 0) + 1,
+    actName: w.act?.name || per[0].actName,
+    floor: Math.max(0, (w.floor ?? -1) + 1),
+    starter: runs[0].starter,
+    party,
+    seed: String(game.seed ?? per[0].seed).slice(0, 32),
+    stats: {
+      floors: max('floors'), battles: max('battles'), trainers: max('trainers'), elites: max('elites'), bosses: max('bosses'),
+      caught: sum('caught'), crits: sum('crits'), moneyEarned: sum('moneyEarned'), bestHand: max('bestHand'),
+    },
+    durationMs: Math.max(0, ...per.map(p => p.durationMs)),
+  };
+}
+
+// Queues a finished co-op room for coop:finish (offline-safe, like queueRun: a reload on the end screen still sends
+// it). Every client of the room does this; the server records the first and ignores the rest. -> flushQueue's promise
+export function queueCoopRun(roomId, run) {
+  if (!hasStorage || !roomId || !run) return Promise.resolve();
+  try {
+    const q = load(queueKey(), []);
+    if (!q.some(e => e.kind === 'coop' && e.roomId === roomId)) q.push({ kind: 'coop', roomId, run });
+    store(queueKey(), q.slice(-50));
+    Cloud.lastResult = { status: 'queued' };
+  } catch (e) { console.warn('queueCoopRun failed', e); }
+  return flushQueue();
+}
+
+const entryKey = (e) => (e?.kind === 'coop' ? 'coop:' + e.roomId : e?.clientRunId);
+const missingFn = (e) => /Could not find public function|No such function/i.test(String(e?.message || e));
+
 let flushing = null;
 export function flushQueue() {
   if (!Cloud.url || !Cloud.me) return Promise.resolve();
   flushing ??= (async () => {
     await null; // let the assignment land before the finally below can clear it
     try {
-      let q = load(queueKey(), []);
-      while (q.length) {
-        const { log, ...entry } = q[0];
-        // (a server without the v0.1.0 regions field rejects it: send the run without it rather than block the queue)
-        const r = await call('mutation', 'runs:submit', { run: entry }).catch(e => {
-          if (entry.regions && /regions/.test(String(e?.message || e))) { const { regions, ...rest } = entry; return call('mutation', 'runs:submit', { run: rest }); }
-          throw e;
-        });
-        // Best effort: an older server without runlogs, or an oversized log, must not block the queue.
-        if (log) await call('mutation', 'runlogs:submit', { clientRunId: entry.clientRunId, log }).catch(e => console.warn('run log upload failed', e));
-        Cloud.lastResult = { status: 'saved', score: r.score };
-        q = load(queueKey(), []).slice(1);
-        store(queueKey(), q);
+      // each entry once per flush (one an older server can't take yet, e.g. no coop:finish, stays queued for later)
+      const tried = new Set();
+      for (;;) {
+        const q = load(queueKey(), []);
+        const entry = q.find(e => !tried.has(entryKey(e)));
+        if (!entry) break;
+        tried.add(entryKey(entry));
+        let r = null;
+        if (entry.kind === 'coop') {
+          r = await call('mutation', 'coop:finish', { roomId: entry.roomId, run: entry.run }).catch(e => {
+            if (missingFn(e)) return null;
+            // (not a member any more, the room was deleted, or it never started: nothing to record)
+            if (/Room not found|not in progress/i.test(String(e?.message || e))) { console.warn('co-op run not recorded:', e.message); return { dropped: true }; }
+            throw e;
+          });
+          if (!r) continue;
+        } else {
+          const { log, ...run } = entry;
+          // (a server without the v0.1.0 regions field rejects it: send the run without it rather than block the queue)
+          r = await call('mutation', 'runs:submit', { run }).catch(e => {
+            if (run.regions && /regions/.test(String(e?.message || e))) { const { regions, ...rest } = run; return call('mutation', 'runs:submit', { run: rest }); }
+            throw e;
+          });
+          // Best effort: an older server without runlogs, or an oversized log, must not block the queue.
+          if (log) await call('mutation', 'runlogs:submit', { clientRunId: run.clientRunId, log }).catch(e => console.warn('run log upload failed', e));
+        }
+        if (!r.dropped) Cloud.lastResult = { status: 'saved', score: r.score };
+        store(queueKey(), load(queueKey(), []).filter(e => entryKey(e) !== entryKey(entry)));
       }
       Cloud.online = true;
     } catch (e) {

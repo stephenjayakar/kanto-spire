@@ -1,7 +1,7 @@
 import { internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
-import { LEGACY_VERSION, normEmail, cleanVersion, scoreRun } from "./lib";
+import { LEGACY_VERSION, normEmail, recordCoopRun } from "./lib";
 import { resultValidator } from "./schema";
 import { applyClears, type HistoryRun } from "./ascension";
 
@@ -166,28 +166,8 @@ export const finishCoopRoom = internalMutation({
   handler: async (ctx, { code, result, run, credit, removeRunIds }) => {
     const room = await ctx.db.query("coopRooms").withIndex("by_code", (q) => q.eq("code", code)).first();
     if (!room) throw new Error("No room " + code);
-    const members = (await ctx.db.query("coopMembers").withIndex("by_room", (q) => q.eq("roomId", room._id)).collect()).sort((a, b) => a.slot - b.slot);
-    const trainers = [];
-    for (const m of members) {
-      const p = await ctx.db.query("players").withIndex("by_email", (q) => q.eq("email", m.email)).first();
-      if (!p) throw new Error("No trainer for slot " + m.slot);
-      trainers.push(p);
-    }
-    for (const id of removeRunIds ?? []) if (await ctx.db.get(id)) await ctx.db.delete(id);
-    const host = trainers[0];
-    const dup = await ctx.db.query("runs").withIndex("by_player_clientRunId", (q) => q.eq("playerId", host._id).eq("clientRunId", run.clientRunId)).unique();
-    const score = scoreRun({ result: run.result, ascension: run.ascension, stats: run.stats });
-    const row = {
-      ...run, score, playerId: host._id, playerName: host.name, version: cleanVersion(run.version),
-      coop: { room: code, with: members.slice(1).map((m) => m.name), starters: members.map((m) => m.starter ?? "") },
-    };
-    if (dup) await ctx.db.replace(dup._id, row);
-    const id = dup ? dup._id : await ctx.db.insert("runs", row);
-    for (const p of trainers) {
-      const counts = !dup && credit !== false ? { runs: p.runs + 1, wins: p.wins + (run.result !== "lose" ? 1 : 0) } : {};
-      await ctx.db.patch(p._id, { ...counts, bestScore: Math.max(p.bestScore, score) });
-    }
-    await ctx.db.patch(room._id, { status: "closed", result, updatedAt: Date.now() });
-    return { room: room._id, id, score, replaced: !!dup };
+    // (the same recording as the game's own coop:finish, see recordCoopRun in lib.ts; by hand the row is replaced)
+    const r = await recordCoopRun(ctx, room, run, { replace: true, credit, removeRunIds, roomResult: result });
+    return { room: r.room, id: r.id, score: r.score, replaced: r.replaced };
   },
 });

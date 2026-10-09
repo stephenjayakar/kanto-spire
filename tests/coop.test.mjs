@@ -12,6 +12,7 @@ import { Battle, makeEnemy } from '../web/src/game/battle.js';
 import { COOP_TUNING } from '../web/src/game/coop/tuning.js';
 import { playCoop, makeBot, botAction } from './coop_bot.mjs';
 import { chooseHand } from './bot.mjs';
+import { coopRunPayload } from '../web/src/net/cloud.js';
 
 await loadData(async f => JSON.parse(fs.readFileSync('web/assets/data/' + f, 'utf8')));
 let pass = 0, fail = 0;
@@ -1014,6 +1015,44 @@ t('REST still heals and cures when a faster partner wins the battle before the h
   assert.equal(d.result?.outcome, 'win');
   assert.equal(L.hp, maxHp(L));
   assert.equal(L.status, null);
+});
+
+// ------------------------------------------------------------------------------------ v0.3.12 co-op runs in RECORDS
+t('co-op team run: one payload for the room (best floor(6/n) of each party, max/sum stats, result)', () => {
+  for (const n of [2, 3, 4]) {
+    const g = CoopGame.fromInit({ ...INIT('TEAM' + n, ['BULBASAUR', 'CHARMANDER', 'SQUIRTLE', 'PIKACHU'].slice(0, n)), names: ['A', 'B', 'C', 'D'].slice(0, n) });
+    g.runs.forEach((r, p) => {
+      while (r.party.length < 6) r.party.push({ ...r.party[0], uid: 900 + p * 10 + r.party.length, species: 'RATTATA', level: 3 + r.party.length });
+      r.stats.floors = 5 + p; r.stats.caught = 2; r.stats.crits = p; r.stats.moneyEarned = 100; r.stats.bestHand = 1000 * (p + 1); r.stats.bosses = p ? 0 : 1;
+    });
+    g.phase = 'over'; g.result = 'lose';
+    const pl = coopRunPayload(g, { code: 'ABCDE' });
+    const k = Math.floor(6 / n);
+    assert.equal(pl.clientRunId, 'coop-ABCDE');
+    assert.equal(pl.result, 'lose');
+    assert.equal(pl.party.length, k * n, `${n}p party`);
+    for (let p = 0; p < n; p++) {
+      const best = g.runs[p].party.map(m => m.level).sort((a, b) => b - a).slice(0, k);
+      assert.deepEqual(pl.party.slice(p * k, p * k + k).map(m => m.level), best, `${n}p: P${p + 1}'s best ${k}`);
+    }
+    assert.equal(pl.stats.floors, 5 + n - 1);
+    assert.equal(pl.stats.caught, 2 * n);
+    assert.equal(pl.stats.moneyEarned, 100 * n);
+    assert.equal(pl.stats.crits, (n * (n - 1)) / 2);
+    assert.equal(pl.stats.bestHand, 1000 * n);
+    assert.equal(pl.stats.bosses, 1);
+    assert.equal(pl.starter, 'BULBASAUR');
+    assert.equal(pl.world, g.worldName);
+    assert.equal(pl.ascension, 0);
+    g.phase = 'victory'; g.result = 'win';
+    assert.equal(coopRunPayload(g, { code: 'ABCDE' }).result, 'win');
+  }
+  // (a bot run to the end: the payload is valid runs:submit input)
+  const { game } = playCoop({ seed: 'TEAMBOT' });
+  const pl = coopRunPayload(game, { code: 'QQQQQ' });
+  assert.ok(['win', 'lose'].includes(pl.result) && pl.party.every(m => typeof m.species === 'string' && m.level >= 1 && typeof m.shiny === 'boolean'));
+  for (const key of ['clientRunId', 'world', 'actName', 'starter', 'seed']) assert.equal(typeof pl[key], 'string', key);
+  for (const key of ['ascension', 'act', 'floor', 'durationMs', 'finishedAt']) assert.ok(Number.isFinite(pl[key]), key);
 });
 
 console.log(`${pass} passed, ${fail} failed`);
