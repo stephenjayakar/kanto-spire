@@ -24,6 +24,7 @@ import { MoveAnims } from '../../anim/player.js';
 import { pickHandAnim, ANIM_SPEED } from '../../anim/pick.js';
 import { opaqueBounds, monSprite } from '../common.js';
 import { tinted } from '../../engine/assets.js';
+import { AUTO, autoKey, autoStopInput, manualKey, autoLowHp, drawAutoButton } from '../auto.js';
 
 const SCENE_X = 160, SCENE_Y = 27, SCENE_W = 480, SCENE_H = 200;
 const HAND_Y = 262;
@@ -807,6 +808,7 @@ export class CoopBattleScene {
 
   toggle(id) {
     if (!this.canAct()) return;
+    if (this.auto) this.autoSet(false); // (picking a card yourself takes over from AUTO)
     const card = this.sub.deck.hand.find(c => c.id === id);
     if (!card) return;
     const i = this.sel.indexOf(id);
@@ -921,6 +923,7 @@ export class CoopBattleScene {
       } else if (!inHand && !inPlay && typeof k !== 'number') this.vis.delete(k);
       v.flash = Math.max(0, (v.flash || 0) - dt * 3);
     }
+    if (this.autoTick(dt)) return;
     if (this.canUnlock() && (keyPressed('Enter') || keyPressed('a') || keyPressed('A') || keyPressed('Escape') || keyPressed('u') || keyPressed('U'))) { this.doUnlock(); return; }
     if (!this.canAct()) return;
     if (keyPressed('Enter') || keyPressed('a') || keyPressed('A')) { if (this.stuck && !this.sel.length) this.doPass(); else this.doLock(); }
@@ -1402,8 +1405,9 @@ DECK: cards left in the draw pile / cards in your lead's deck.`, { width: 200 })
     drawCardBack(ctx, PILE_X, PILE_Y, { count: sub.deck.draw.length });
     drawPileTip(this, sub.deck, sub.mods.peek); // (my own pile only)
     // buttons
-    const can = act && this.sel.length > 0;
-    if (!this.stuck && !locked && button(ctx, 'HINT', W - 196, HAND_Y - 32, 42, 26, { color: '#6a5a90', font: 'small', disabled: !act })) { const h = this.bestHand(); if (h) { this.sel = h.slice(); Sound.playSE('se_select'); } else this.toast = { text: 'No damaging hand vs this target: discard, switch or retarget.', t: 2 }; }
+    const can = act && this.sel.length > 0 && !this.auto;
+    if (drawAutoButton(ctx, HAND_Y - 32, this.auto, { disabled: !!d.result, coop: true })) this.autoSet(!this.auto);
+    if (!this.stuck && !locked && button(ctx, 'HINT', AUTO.hintX, HAND_Y - 32, AUTO.hintW, 26, { color: '#6a5a90', font: 'small', disabled: !act || this.auto })) { const h = this.bestHand(); if (h) { this.sel = h.slice(); Sound.playSE('se_select'); } else this.toast = { text: 'No damaging hand vs this target: discard, switch or retarget.', t: 2 }; }
     if (locked && !d.result) {
       if (button(ctx, 'UNLOCK', W - 150, HAND_Y - 32, 72, 26, { color: '#b06a20', disabled: !this.canUnlock() })) this.doUnlock();
       if (hover(W - 150, HAND_Y - 32, 72, 26)) tip('UNLOCK', `Take back your lock-in and change your hand or target. Works until ${this.many ? 'everyone has locked in' : this.s.nameOf(this.pa) + ' locks in too'} (then the turn resolves). Enter / U / Esc.`);
@@ -1465,20 +1469,21 @@ DECK: cards left in the draw pile / cards in your lead's deck.`, { width: 200 })
     let line = null, shortLine = null, col = 'gray';
     if (d.result || this.finishing) line = null;
     else if (this.posting) { line = this.posting.type === 'unlock' ? 'Unlocking...' : 'Sending...'; col = 'whiteSoft'; }
+    else if (this.auto && !locked && !this.sel.length) { line = 'AUTO ON · STOP, Esc or right-click ends it'; shortLine = 'AUTO ON · Esc stops'; col = Math.floor(this.t * 2) % 2 ? 'gold' : 'orange'; }
     else if (locked) {
       const wait = this.s.others.filter(q => !d.locks[q] && !d.out(q));
       line = (this.many ? `WAITING FOR ${wait.map(q => 'P' + (q + 1)).join(', ')}` : `WAITING FOR ${this.s.nameOf(this.pa).toUpperCase()}`) + '...'.slice(0, 1 + Math.floor(this.t * 2) % 3); col = 'gold';
     }
-    else if (act && this.sub.faintSwitch && !this.msg.active) { line = 'Send out a POKéMON from the left (free)'; shortLine = 'Send out from the left'; col = 'gold'; }
+    else if (act && this.sub.faintSwitch && !this.msg.active) { line = 'Send out a POKéMON from the left (free)'; shortLine = 'Pick from the left'; col = 'gold'; }
     else if (act && this.handIds.length && !this.sel.length && !this.msg.active) {
       const live = this.liveSlots();
       line = this.stuck ? 'No playable cards · discard, switch or PASS' : hint ? 'Suggested hand outlined in gold · HINT selects it' : live.length > 1 ? 'Click a foe to target it (Tab) · pick cards · LOCK IN' : '1-5 select · Enter lock in · D discard · drag to reorder';
-      shortLine = this.stuck ? 'Discard, switch or PASS' : hint ? 'Gold = suggested hand' : live.length > 1 ? 'Click a foe to target' : '1-5 select · Enter';
+      shortLine = this.stuck ? 'Discard/switch/PASS' : hint ? 'Gold = suggested' : live.length > 1 ? 'Click foe to target' : '1-5 select · Enter'; // (2 players: ~97px beside the AUTO button)
       col = hint ? 'gold' : 'gray';
     }
     if (line) {
-      // centred in the free strip between the left panel and the HINT / LOCK IN / DISCARD buttons (x 444+), never under them
-      const L = Math.max(160, (this.partnerStripR || 0) + 6), R = W - 202, cx = Math.round((L + R) / 2), maxW = R - L - 16;
+      // centred in the free strip between the left panel and the AUTO / HINT / LOCK IN / DISCARD buttons (x 411+), never under them
+      const L = Math.max(160, (this.partnerStripR || 0) + 6), R = AUTO.x - 6, cx = Math.round((L + R) / 2), maxW = R - L - 16;
       if (shortLine && measure(line, 'small') > maxW) line = shortLine;
       while (line.length > 1 && measure(line, 'small') > maxW) line = line.slice(0, -1);
       const boxed = locked && !this.posting;
@@ -1502,6 +1507,57 @@ DECK: cards left in the draw pile / cards in your lead's deck.`, { width: 200 })
     if (hover(x, y, w + bw + 8, 14)) tip(`${s.nameOf(pa)} · ${st.label}`, `${d.down[pa] ? 'Their team fainted. Win the battle to revive them (or use a REVIVE on them from your bag).' : `Lead ${monName(l)} ${Math.round(hp)}/${maxHp(l)} HP.`}\n${st.key === 'ready' ? 'They have locked in: the turn resolves when you lock in too.' : st.key === 'choosing' ? 'Still picking their cards.' : ''}`, { width: 200 });
   }
 
+  // ---- AUTO: locks in the HINT hand every turn (see ../auto.js). Per player and input only: it posts the same one
+  // 'lock' action a click on LOCK IN would (once per turn), so the lockstep log and every client stay unchanged.
+  autoSet(on, why) {
+    if (!!this.auto === on) return;
+    this.auto = on; this.autoT = 0;
+    if (on) {
+      const l = this.duo?.down[this.me] ? null : this.sub?.lead();
+      this.autoLowAck = l && l.hp / maxHp(l) < AUTO.lowHp ? { uid: l.uid, hp: l.hp } : null; // (turned on while already low)
+      this.autoFaintOk = !!this.sub?.faintSwitch; // (turned on during a faint pick: keep the lead that was sent out)
+      this.autoTurn = this.duo?.locks[this.me] ? this.duo.turn : null;
+      this.fast = true;
+    } else {
+      if (!this.duo?.result) this.fast = G.meta.settings.fast;
+      if (why) { this.toast = { text: why, t: 2.4 }; Sound.playSE('se_failure'); }
+    }
+  }
+  autoStopReason() {
+    const s = this.sub, l = s.lead();
+    if (!s.faintSwitch) this.autoFaintOk = false;
+    else if (!this.autoFaintOk) return 'AUTO stopped: your lead fainted · pick who goes in';
+    if (l && autoLowHp(l, maxHp(l), this.autoLowAck)) return `AUTO stopped: ${monName(l)} is low on HP`;
+    if (this.stuck) return 'AUTO stopped: no playable hand';
+    if (!this.bestHand()) return 'AUTO stopped: no damaging hand vs this target';
+    return null;
+  }
+  // Called from update() every frame; true = AUTO is on and owns the hand's input this frame.
+  autoTick(dt) {
+    const d = this.duo, me = this.me;
+    if (!this.auto) { if (autoKey() && !d.locks[me] && !d.result && !d.down[me] && this.g.phase === 'battle') { this.autoSet(true); Sound.playSE('se_select'); return true; } return false; }
+    if (d.result || this.finishing || this.g.phase !== 'battle') { this.auto = false; return false; }
+    if (autoKey() || autoStopInput()) { this.autoSet(false); Sound.playSE('se_card_flip'); return true; }
+    if (d.down[me]) { this.autoSet(false); return false; }
+    // my lock for this turn was taken back (UNLOCK) or refused: hand control back rather than lock again
+    if (this.autoTurn === d.turn && !d.locks[me] && !this.posting && !this.busy) { this.autoSet(false); return false; }
+    if (!this.canAct() || this.msg.active || this.skipWait || this.drag) { this.autoT = 0; return true; }
+    if (manualKey()) { this.autoSet(false); Sound.playSE('se_card_flip'); return true; }
+    const why = this.autoStopReason();
+    if (why) { this.autoSet(false, why); return true; }
+    this.autoT += dt;
+    if (this.autoT < AUTO.pick) return true;
+    const h = this.bestHand();
+    if (this.sel.join() !== h.join()) { this.sel = h.slice(); Sound.playSE('se_select'); this.autoT = AUTO.pick; return true; }
+    if (this.autoT < AUTO.pick + AUTO.show) return true;
+    this.autoT = 0;
+    this.doLock();
+    if (this.posting) this.autoTurn = d.turn; else this.autoSet(false, "AUTO stopped: that hand can't be locked in");
+    return true;
+  }
+  // An overlay (menu, picker, modal) is a decision: AUTO stops (the scene's update() doesn't run under it).
+  passiveUpdate() { if (this.auto && Engine.overlays.length) this.autoSet(false, 'AUTO stopped: a menu opened'); }
+
   // ---- side actions -----------------------------------------------------------------------------
   askSwitch(mon) {
     const sub = this.sub;
@@ -1517,6 +1573,7 @@ DECK: cards left in the draw pile / cards in your lead's deck.`, { width: 200 })
   }
 
   chooseBall() {
+    this.autoSet(false); // (throwing a ball yourself takes over from AUTO)
     const run = this.run();
     const balls = Object.entries(run.balls).filter(([, n]) => n > 0);
     const target = this.target;
