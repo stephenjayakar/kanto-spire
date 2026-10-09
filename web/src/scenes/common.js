@@ -393,6 +393,11 @@ export function drawPartyPanel(ctx, run, x, y, w, opts = {}) {
     text(ctx, `${Math.round(mh)}/${maxHp(mon)}`, x + w - 4, ry + 12, { align: 'right', color: 'gray', font: 'small' });
     if (mon.status) draw(ctx, `gfx/ui/status/${mon.status === 'TOX' ? 'psn' : mon.status.toLowerCase()}.png`, x + w - 54, ry + 2);
     if (opts.showExp) { rect(ctx, x + 31, ry + 21, w - 70, 2, '#202020'); rect(ctx, x + 31, ry + 21, Math.round((w - 70) * expProgress(mon)), 2, '#40c8f8'); }
+    // opts.pick: the lead fainted, so the healthy benched POKéMON pulse gold (click one to send it out)
+    if (opts.pick && !fainted && !isLead) {
+      ctx.save(); ctx.globalAlpha = 0.55 + 0.45 * Math.sin(Engine.time * 6); ctx.strokeStyle = '#f8d038'; ctx.lineWidth = 2;
+      ctx.strokeRect(x + 1, ry + 1, w - 2, rowH - 4); ctx.restore();
+    }
     if (hot) {
       if (opts.tooltip !== false) monTooltip(mon, opts.tipX ?? (x + w + 4), ry);
       if (Engine.mouse.clicked) clickedMon = mon;

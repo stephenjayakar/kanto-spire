@@ -104,7 +104,6 @@ export class BattleScene {
     if (this.b.result) await this.finish();
     else {
       this.stuck = !this.anyLegalPlay(); this.busy = false;
-      if (this.b.faintSwitch) this.chooseAfterFaint();
     }
   }
 
@@ -869,7 +868,7 @@ DECK: cards left in the draw pile / cards in your lead's deck.`, { width: 200 })
     // party
     const leadUid = b.leadUid;
     panel(ctx, x, 185, w, Math.max(60, run.party.length * 24 + 8));
-    const clickedMon = drawPartyPanel(ctx, run, x + 4, 189, w - 8, { rowH: 24, leadUid, dispHp: this.partyHp, tipX: 160 });
+    const clickedMon = drawPartyPanel(ctx, run, x + 4, 189, w - 8, { rowH: 24, leadUid, dispHp: this.partyHp, tipX: 160, pick: b.faintSwitch && !this.busy });
     if (clickedMon && !this.busy && clickedMon.uid !== leadUid && !isFainted(clickedMon)) this.askSwitch(clickedMon);
     // action buttons under party (catch / run / bag)
     const by = 189 + run.party.length * 24 + 10;
@@ -941,24 +940,11 @@ DECK: cards left in the draw pile / cards in your lead's deck.`, { width: 200 })
       if (Engine.mouse.clicked && !this.dragSuppress) this.toggle(this.hoverId);
       if (Engine.mouse.rclicked) { this.sel = []; }
     }
-    if (!this.busy && this.handIds.length && !this.sel.length && !this.msg.active) text(ctx, this.stuck ? 'No playable cards · discard, switch or PASS' : hint ? 'Suggested hand outlined in gold · HINT selects it' : '1-5 select · A attack · D discard · drag to reorder', 300, HAND_Y - 26, { align: 'center', color: hint ? 'gold' : 'gray', font: 'small' });
+    if (!this.busy && b.faintSwitch && !this.msg.active) text(ctx, 'Send out a POKéMON from the left (free)', 300, HAND_Y - 26, { align: 'center', color: 'gold', font: 'small' });
+    else if (!this.busy && this.handIds.length && !this.sel.length && !this.msg.active) text(ctx, this.stuck ? 'No playable cards · discard, switch or PASS' : hint ? 'Suggested hand outlined in gold · HINT selects it' : '1-5 select · A attack · D discard · drag to reorder', 300, HAND_Y - 26, { align: 'center', color: hint ? 'gold' : 'gray', font: 'small' });
   }
 
   // ---- side actions ---------------------------------------------------------------------
-  // Your lead fainted: pick who goes out next (free). Keeping the auto-picked one is fine too.
-  chooseAfterFaint() {
-    const b = this.b;
-    pushOverlay(new PartyPicker({
-      title: 'Who goes out next?', cancelable: false,
-      filter: m => isFainted(m) ? 'Fainted' : true,
-      sub: m => m.uid === b.leadUid ? 'Out now (keep)' : 'Send out (free)',
-      onClose: async (mon) => {
-        if (!mon || mon.uid === b.leadUid || !b.faintSwitch) { b.faintSwitch = false; return; }
-        await this.runEvents(b.switchLead(mon.uid));
-      },
-    }));
-  }
-
   // Best hand right now by the exact preview (used by HINT and the early-battle suggestion).
   bestHand() {
     const b = this.b;
@@ -982,6 +968,8 @@ DECK: cards left in the draw pile / cards in your lead's deck.`, { width: 200 })
 
   askSwitch(mon) {
     const b = this.b;
+    // your lead fainted: the switch is free and needs no confirming (the foes stay in view; see the party panel)
+    if (b.faintSwitch) { this.runEvents(b.switchLead(mon.uid)); return; }
     const free = b.freeSwitches > 0;
     if (!free && b.discardsLeft <= 0) { this.toast = { text: 'Switching costs a discard — none left!', t: 2 }; return; }
     pushOverlay(new ChoiceModal({

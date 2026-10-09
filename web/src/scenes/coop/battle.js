@@ -225,7 +225,6 @@ export class CoopBattleScene {
     const d = this.duo;
     if (d.result || this.g.phase !== 'battle') { this.finish(); return; }
     this.stuck = !this.anyLegalPlay();
-    if (this.canAct() && this.sub.faintSwitch) this.chooseAfterFaint();
   }
 
   async finish() {
@@ -1360,7 +1359,7 @@ DECK: cards left in the draw pile / cards in your lead's deck.`, { width: 200 })
     // party
     const leadUid = sub.leadUid;
     panel(ctx, x, 185, w, Math.max(60, run.party.length * 24 + 8));
-    const clickedMon = drawPartyPanel(ctx, run, x + 4, 189, w - 8, { rowH: 24, leadUid, dispHp: this.partyHp[me], tipX: 160 });
+    const clickedMon = drawPartyPanel(ctx, run, x + 4, 189, w - 8, { rowH: 24, leadUid, dispHp: this.partyHp[me], tipX: 160, pick: sub.faintSwitch && this.canAct() });
     if (clickedMon && this.canAct() && clickedMon.uid !== leadUid && !isFainted(clickedMon)) this.askSwitch(clickedMon);
     // catch (wild only, at my target)
     const by = Math.min(H - 26, 189 + run.party.length * 24 + 10);
@@ -1459,6 +1458,7 @@ DECK: cards left in the draw pile / cards in your lead's deck.`, { width: 200 })
       const wait = this.s.others.filter(q => !d.locks[q] && !d.out(q));
       line = (this.many ? `WAITING FOR ${wait.map(q => 'P' + (q + 1)).join(', ')}` : `WAITING FOR ${this.s.nameOf(this.pa).toUpperCase()}`) + '...'.slice(0, 1 + Math.floor(this.t * 2) % 3); col = 'gold';
     }
+    else if (act && this.sub.faintSwitch && !this.msg.active) { line = 'Send out a POKéMON from the left (free)'; shortLine = 'Send out from the left'; col = 'gold'; }
     else if (act && this.handIds.length && !this.sel.length && !this.msg.active) {
       const live = this.liveSlots();
       line = this.stuck ? 'No playable cards · discard, switch or PASS' : hint ? 'Suggested hand outlined in gold · HINT selects it' : live.length > 1 ? 'Click a foe to target it (Tab) · pick cards · LOCK IN' : '1-5 select · Enter lock in · D discard · drag to reorder';
@@ -1492,25 +1492,11 @@ DECK: cards left in the draw pile / cards in your lead's deck.`, { width: 200 })
   }
 
   // ---- side actions -----------------------------------------------------------------------------
-  chooseAfterFaint() {
-    const sub = this.sub;
-    const key = `${this.duo.turn}:${sub.leadUid}:${sub.faintCount || 0}`;
-    if (this.faintAskedKey === key) return;
-    this.faintAskedKey = key;
-    pushOverlay(new PartyPicker({
-      title: 'Who goes out next?', cancelable: false,
-      filter: m => isFainted(m) ? 'Fainted' : true,
-      sub: m => m.uid === sub.leadUid ? 'Out now (keep)' : 'Send out (free)',
-      onClose: (mon) => {
-        if (!mon || mon.uid === sub.leadUid || !sub.faintSwitch || !this.canChoose()) return;
-        this.post({ type: 'switch', uid: mon.uid });
-      },
-    }));
-  }
-
   askSwitch(mon) {
     const sub = this.sub;
-    const free = sub.faintSwitch || sub.freeSwitches > 0;
+    // your lead fainted: the switch is free and needs no confirming (the foes stay in view; see the party panel)
+    if (sub.faintSwitch) { if (this.canChoose()) this.post({ type: 'switch', uid: mon.uid }); return; }
+    const free = sub.freeSwitches > 0;
     if (!free && sub.discardsLeft <= 0) { this.toast = { text: 'Switching costs a discard — none left!', t: 2 }; return; }
     pushOverlay(new ChoiceModal({
       title: `Send out ${monName(mon)}?`, body: free ? 'This switch is free.' : 'Switching your lead costs 1 discard. The new lead takes the foes\' hits, and your hand becomes its deck.',
