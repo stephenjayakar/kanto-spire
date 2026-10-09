@@ -257,6 +257,7 @@ export function coopRunPayload(game, { code = '' } = {}) {
     floor: Math.max(0, (w.floor ?? -1) + 1),
     starter: runs[0].starter,
     party,
+    coopParties: per.map(p => p.party), // every player's whole team (RECORDS shows one line per player)
     seed: String(game.seed ?? per[0].seed).slice(0, 32),
     stats: {
       floors: max('floors'), battles: max('battles'), trainers: max('trainers'), elites: max('elites'), bosses: max('bosses'),
@@ -299,6 +300,8 @@ export function flushQueue() {
         if (entry.kind === 'coop') {
           r = await call('mutation', 'coop:finish', { roomId: entry.roomId, run: entry.run }).catch(e => {
             if (missingFn(e)) return null;
+            // (a server from before v0.3.18 rejects the per-player teams: send the run without them)
+            if (entry.run.coopParties && /coopParties/.test(String(e?.message || e))) { const { coopParties, ...run } = entry.run; return call('mutation', 'coop:finish', { roomId: entry.roomId, run }); }
             // (not a member any more, the room was deleted, or it never started: nothing to record)
             if (/Room not found|not in progress/i.test(String(e?.message || e))) { console.warn('co-op run not recorded:', e.message); return { dropped: true }; }
             throw e;

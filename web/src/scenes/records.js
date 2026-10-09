@@ -2,7 +2,7 @@
 import { regionByLetter } from '../game/regions.js';
 import { Engine, W, H, setScene, pushOverlay, hover } from '../engine/core.js';
 import { text, textFit } from '../engine/font.js';
-import { swirlBackground, button, panel, pixBox, drawTips, tip, THEME, scrollArea } from '../engine/ui.js';
+import { swirlBackground, button, panel, pixBox, rect, drawTips, tip, THEME, scrollArea } from '../engine/ui.js';
 import { Cloud, rename, signOut, createInviteLink, leaderboard, topTrainers, myRuns, pendingRuns, flushQueue } from '../net/cloud.js';
 import { drawIcon, Modal, ChoiceModal } from './common.js';
 import { TitleScene } from './title.js';
@@ -117,26 +117,40 @@ export class RecordsScene {
       const m = this.mine.player;
       text(ctx, `${m.runs} runs · ${m.wins} wins · best ${m.bestScore.toLocaleString()}`, 464, y0, { align: 'right', color: 'gold', font: 'small' }); // in the gap after TEAM
     }
-    scrollArea(ctx, this, 12, y0 + 14, W - 24, H - 26, (top) => this.rows.reduce((_, r, i) => {
-      const y = top + 2 + i * 27;
-      const me = Cloud.me && (r.playerName === Cloud.me.name || r.coop?.with.includes(Cloud.me.name));
-      pixBox(ctx, 14, y - 2, W - 28, 25, me ? '#34406a' : i % 2 ? '#262c3c' : '#2e3548', null, 2);
+    // a co-op run with every player's team (coop.parties, v0.3.18) takes one line per player: name, starter, team
+    scrollArea(ctx, this, 12, y0 + 14, W - 24, H - 26, (top) => this.rows.reduce((y, r, i) => {
+      const names = r.coop ? [r.playerName, ...r.coop.with] : [r.playerName];
+      const lines = r.coop?.parties?.length === names.length ? names.length : 1, rowH = 25 + (lines - 1) * 24;
+      const me = Cloud.me && names.includes(Cloud.me.name);
+      pixBox(ctx, 14, y - 2, W - 28, rowH, me ? '#34406a' : i % 2 ? '#262c3c' : '#2e3548', null, 2);
       const [label, color] = RESULT[r.result] || RESULT.lose;
       text(ctx, String(i + 1), 20, y + 6, { color: i < 3 ? 'gold' : 'white', font: 'small' });
-      // the trainer, and under it the starter they climbed with
-      // a co-op run is one row for the whole team: every trainer, and CO-OP where the starter goes
-      if (r.coop) {
-        textFit(ctx, [r.playerName, ...r.coop.with].join(' + '), 44, y, 92, { color: me ? 'gold' : 'white', font: 'small' });
+      if (lines > 1) {
+        // one line per player: the trainer and their starter, and their whole team
+        names.forEach((n, k) => {
+          const ly = y + k * 24;
+          if (k) { rect(ctx, 40, ly - 2, 96, 1, '#ffffff14'); rect(ctx, 276, ly - 2, 186, 1, '#ffffff14'); } // (between players: under the names and the teams)
+          text(ctx, n, 44, ly, { color: Cloud.me?.name === n ? 'gold' : 'white', font: 'small' });
+          const st = r.coop.starters?.[k];
+          text(ctx, st ? D.species[st]?.name || st : '', 44, ly + 11, { color: 'whiteSoft', font: 'small' });
+          r.coop.parties[k].slice(0, 6).forEach((m, j) => drawIcon(ctx, m.species, 280 + j * 30, ly - 6, { still: true }));
+        });
+        text(ctx, 'CO-OP', 200, y + 17, { color: 'pink', font: 'small' });
+        if (hover(196, y + 15, 40, 12)) tip(`CO-OP · ROOM ${r.coop.room}`, `A ${names.length}-player run: one entry for the whole team.`);
+      } else if (r.coop) {
+        // (a co-op run recorded before every player's team was kept: one line, a few of each team's POKéMON)
+        textFit(ctx, names.join(' + '), 44, y, 92, { color: me ? 'gold' : 'white', font: 'small' });
         text(ctx, 'CO-OP', 44, y + 11, { color: 'pink', font: 'small' });
-        if (hover(40, y - 2, 96, 25)) tip(`CO-OP · ROOM ${r.coop.room}`, [r.playerName, ...r.coop.with].map((n, k) => `${n}: ${D.species[r.coop.starters?.[k]]?.name || r.coop.starters?.[k] || '?'}`).join('\n'));
+        if (hover(40, y - 2, 96, 25)) tip(`CO-OP · ROOM ${r.coop.room}`, names.map((n, k) => `${n}: ${D.species[r.coop.starters?.[k]]?.name || r.coop.starters?.[k] || '?'}`).join('\n'));
       } else {
+        // the trainer, and under it the starter they climbed with
         text(ctx, r.playerName, 44, y, { color: me ? 'gold' : 'white', font: 'small' });
         if (r.starter) text(ctx, D.species[r.starter]?.name || r.starter, 44, y + 11, { color: 'whiteSoft', font: 'small' });
       }
       text(ctx, r.score.toLocaleString(), 140, y + 6, { color: 'white', font: 'small' });
       text(ctx, label, 200, y + 6, { color, font: 'small' });
       text(ctx, 'A' + r.ascension, 252, y + 6, { color: 'whiteSoft', font: 'small' });
-      r.party.slice(0, 6).forEach((m, j) => drawIcon(ctx, m.species, 280 + j * 30, y - 6, { still: true }));
+      if (lines === 1) r.party.slice(0, 6).forEach((m, j) => drawIcon(ctx, m.species, 280 + j * 30, y - 6, { still: true }));
       // where it ended: the run's region route ("K-H-H-K") for a spire run, or its old world
       text(ctx, worldLabel(r), 470, y, { color: r.world === 'spire' ? 'gold' : 'purple', font: 'small' });
       text(ctx, `ACT ${r.act} · F${r.floor}`, 470, y + 11, { color: 'whiteSoft', font: 'small' });
@@ -145,8 +159,8 @@ export class RecordsScene {
         text(ctx, ago(r.finishedAt), 572, y, { color: 'gray', font: 'small' });
         text(ctx, r.version, 572, y + 11, { color: r.version === VERSION ? 'dmg' : 'purple', font: 'small' });
       } else text(ctx, ago(r.finishedAt), 572, y + 6, { color: 'gray', font: 'small' });
-      return y + 25;
-    }, top), 10); // slower wheel than the default: a third of a row per tick
+      return y + rowH + 2;
+    }, top + 2) - 2, 10); // slower wheel than the default: a third of a row per tick
   }
   drawTrainers(ctx) {
     const y0 = 70;

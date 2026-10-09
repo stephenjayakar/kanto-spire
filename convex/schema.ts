@@ -114,7 +114,10 @@ export default defineSchema({
     version: v.optional(v.string()), // game version the run was played on (e.g. "v0.0.2"); older rows were backfilled to v0.0.1
     regions: v.optional(v.string()), // v0.1.0 spire runs (world "spire"): the act regions, e.g. "K-H-H-K"
     // a co-op run (one row per room, owned by the host): its room code, the partners' names, every player's starter
-    coop: v.optional(v.object({ room: v.string(), with: v.array(v.string()), starters: v.optional(v.array(v.string())) })),
+    coop: v.optional(v.object({
+      room: v.string(), with: v.array(v.string()), starters: v.optional(v.array(v.string())),
+      parties: v.optional(v.array(v.array(v.object({ species: v.string(), level: v.number(), shiny: v.boolean() })))), // v0.3.18: every player's whole team, host first
+    })),
   })
     .index("by_score", ["score"])
     .index("by_finishedAt", ["finishedAt"])

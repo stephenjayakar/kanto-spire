@@ -152,13 +152,16 @@ export const runInput = v.object({
   finishedAt: v.number(),
   version: v.optional(v.string()), // game version (VERSION in web/src/game/version.js); older clients omit it
   regions: v.optional(v.string()), // v0.1.0 spire runs: the act regions, e.g. "K-H-H-K"
+  // v0.3.18 co-op team runs (coop:finish): every player's whole team, host first (stored as coop.parties)
+  coopParties: v.optional(v.array(v.array(v.object({ species: v.string(), level: v.number(), shiny: v.boolean() })))),
 });
 export type RunInput = Infer<typeof runInput>;
 
 const nonNeg = (n: number, max: number) => Math.max(0, Math.min(max, Math.floor(Number.isFinite(n) ? n : 0)));
 
 // A client's run, clamped and trimmed for the runs table, with its score.
-export function cleanRun(run: RunInput) {
+export function cleanRun(full: RunInput) {
+  const { coopParties: _cp, ...run } = full; // (only a co-op team run carries it)
   const s = run.stats;
   const stats = {
     floors: nonNeg(s.floors, 1000), battles: nonNeg(s.battles, 1000), trainers: nonNeg(s.trainers, 1000),
@@ -222,9 +225,11 @@ export async function recordCoopRun(
     return { room: room._id, id: dup._id, score: dup.score, duplicate: true, replaced: false };
   }
   const score = scoreRun({ result: run.result, ascension: run.ascension, stats: run.stats });
+  const { coopParties, ...rest } = run;
+  const parties = coopParties?.slice(0, 4).map((p) => p.slice(0, 6));
   const row = {
-    ...run, clientRunId, score, playerId: host._id, playerName: host.name, version: cleanVersion(run.version),
-    coop: { room: room.code, with: members.slice(1).map((m) => m.name), starters: members.map((m) => m.starter ?? "") },
+    ...rest, clientRunId, score, playerId: host._id, playerName: host.name, version: cleanVersion(run.version),
+    coop: { room: room.code, with: members.slice(1).map((m) => m.name), starters: members.map((m) => m.starter ?? ""), ...(parties ? { parties } : {}) },
   };
   if (dup) await ctx.db.replace(dup._id, row);
   const id = dup ? dup._id : await ctx.db.insert("runs", row);
