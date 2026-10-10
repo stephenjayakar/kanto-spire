@@ -248,20 +248,22 @@ t('resume: unverifiable rooms (no checksums) replay as before', async () => {
 
 // ------------------------------------------------------------------------------------- legacy engine
 t('engines: selection is explicit (stamp first, then the current code, then the other frozen copies)', () => {
-  assert.equal(LOGIC_ID, 'v0323', 'v0.3.23 changed game logic (FLY-family dodges are followed by a LANDING turn)');
+  assert.equal(LOGIC_ID, 'v0325', 'v0.3.25 changes game logic (one legendary per run, the mythic "?" events)');
   assert.equal(UNSTAMPED, 'v035');
-  assert.deepEqual(Object.keys(FROZEN), ['v0319', 'v0311', 'v037', 'v035', 'v031'], 'newest first');
+  assert.deepEqual(Object.keys(FROZEN), ['v0323', 'v0319', 'v0311', 'v037', 'v035', 'v031'], 'newest first');
   const ids = (l) => l.map(e => (e.current ? 'current:' : '') + e.id);
   // a room stamped by an older logic goes to its own frozen copy first, then the current code, then the rest
-  assert.deepEqual(ids(engineOrder('v0319')), ['v0319', 'current:v0323', 'v0311', 'v037', 'v035', 'v031']);
-  assert.deepEqual(ids(engineOrder('v0311')), ['v0311', 'current:v0323', 'v0319', 'v037', 'v035', 'v031']);
-  assert.deepEqual(ids(engineOrder('v037')), ['v037', 'current:v0323', 'v0319', 'v0311', 'v035', 'v031']);
-  assert.deepEqual(ids(engineOrder('v035')), ['v035', 'current:v0323', 'v0319', 'v0311', 'v037', 'v031']);
-  assert.deepEqual(ids(engineOrder('v0323')), ['current:v0323', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
-  assert.deepEqual(ids(engineOrder('zzz')), ['current:v0323', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('v0323')), ['v0323', 'current:v0325', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('v0319')), ['v0319', 'current:v0325', 'v0323', 'v0311', 'v037', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('v0311')), ['v0311', 'current:v0325', 'v0323', 'v0319', 'v037', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('v037')), ['v037', 'current:v0325', 'v0323', 'v0319', 'v0311', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('v035')), ['v035', 'current:v0325', 'v0323', 'v0319', 'v0311', 'v037', 'v031']);
+  assert.deepEqual(ids(engineOrder('v0325')), ['current:v0325', 'v0323', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('zzz')), ['current:v0325', 'v0323', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
   // under the older ids (what those versions did)
-  assert.deepEqual(ids(engineOrder('v0311', 'v0319')), ['v0311', 'current:v0319', 'v0319', 'v037', 'v035', 'v031']);
-  assert.deepEqual(ids(engineOrder('v037', 'v0311')), ['v037', 'current:v0311', 'v0319', 'v0311', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('v0319', 'v0323')), ['v0319', 'current:v0323', 'v0323', 'v0311', 'v037', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('v0311', 'v0319')), ['v0311', 'current:v0319', 'v0323', 'v0319', 'v037', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('v037', 'v0311')), ['v037', 'current:v0311', 'v0323', 'v0319', 'v0311', 'v035', 'v031']);
   assert.equal(segmentStamp([{ p: -1, type: 'init' }, { p: 0, type: 'vote' }]), 'v035', 'unstamped = v0.3.5');
   assert.equal(segmentStamp([{ p: 0, type: 'vote', eng: 'v037' }, { p: 1, type: 'vote', eng: 'v037' }, { p: 1, eng: 'v035' }]), 'v037');
   for (const id of Object.keys(FROZEN)) assert.ok(fs.existsSync(`web/src/legacy/${id}/engine.js`), id);
@@ -323,6 +325,39 @@ t('legacy: frozen v031 brings back rooms played on v0.3.1 (PIKACHU starter chang
   // snapshot from the old engine, restored on the current one
   const g = restoreGame(snapshotGame(old), CURRENT);
   assert.ok(g instanceof CoopGame && g.phase === 'map' && g.runs[0].party[0].species === 'PIKACHU');
+});
+
+t('legacy: frozen v0323 is v0.3.24 (no ONE LEGENDARY PER RUN, no mythics); its rooms replay there and hand over to this code', async () => {
+  const eng = await getEngine('v0323', dataLoader);
+  const m = await import('../web/src/legacy/v0323/engine.js');
+  const R = (await import('../web/src/legacy/v0323/game/run.js')).Run;
+  assert.equal(typeof R.prototype.hasLegendary, 'undefined', 'v0.3.24 had no one-legendary rule');
+  assert.equal(typeof Run.prototype.hasLegendary, 'function');
+  assert.ok(m.ID === 'v0323');
+  // a room played on v0.3.24 logic replays exactly on the frozen copy, and its map checkpoint loads into this code
+  const stamp = { v: '0.3.24', eng: 'v0323' };
+  const { game, log, cks } = botGame('FRZ323M', { stop: (g) => g.world.actIndex >= 1 && g.phase === 'map', stamp, Game: eng.CoopGame });
+  const g2 = new eng.CoopGame();
+  for (const a of log) { g2.apply(clone(a)); if (cks.has(g2.seq)) assert.equal(g2.checksum() >>> 0, cks.get(g2.seq)); }
+  assert.equal(g2.checksum() >>> 0, game.checksum() >>> 0);
+  const g = restoreGame(snapshotGame(game), CURRENT);
+  assert.ok(g instanceof CoopGame && g.phase === 'map' && g.world.actIndex === game.world.actIndex);
+  // (v0.3.25 fields filled in: no legendary yet, unless one is already in the party)
+  for (const r of g.runs) assert.equal(r.legendTaken, r.party.find(x => ['ARTICUNO', 'ZAPDOS', 'MOLTRES', 'REGIROCK', 'REGICE', 'REGISTEEL', 'RAIKOU', 'ENTEI', 'SUICUNE'].includes(x.species))?.species ?? null);
+});
+
+t('old solo save with a caught legendary: v0.3.25 counts it as the run\'s one legendary', () => {
+  const o = clone(fixture('solo_v035.json').save);
+  const took = { ...o, runLog: { v: 1, events: [...(o.runLog?.events || []), { a: 2, f: 9, k: 'legendCatch', species: 'ZAPDOS', took: true }] } };
+  assert.equal(Run.fromJSON(clone(took)).legendTaken, 'ZAPDOS', 'from the run log');
+  const gift = clone(o);
+  gift.party.push({ ...clone(gift.party[0]), uid: 999, species: 'LATIAS' });
+  const r = Run.fromJSON(gift);
+  assert.equal(r.legendTaken, 'LATIAS', 'from the party');
+  assert.ok(r.hasLegendary() && r.legendCatches({ enemies: [{ level: 30, ivs: {} }], catchOffer: { species: 'ARTICUNO', key: 'LEGEND_ARTICUNO' } }).length === 0);
+  const none = Run.fromJSON(clone(o));
+  assert.equal(none.legendTaken, null);
+  assert.equal(none.hasLegendary(), false);
 });
 
 // ------------------------------------------------------------------------------------- SAVE & QUIT
@@ -391,9 +426,11 @@ t('SAVE & QUIT: checkpoint on the map, partner sees it, REJOIN resumes at the sa
 t('old solo save (v0.3.5) loads, round-trips unchanged and plays on', () => {
   const fx = fixture('solo_v035.json');
   const run = Run.fromJSON(clone(fx.save));
-  // v0.3.7 added run.moveOffers: the old save gets it (empty), everything else comes out exactly as it went in
+  // v0.3.7 added run.moveOffers, v0.3.25 run.legendTaken: the old save gets them (empty), everything else comes out
+  // exactly as it went in
   assert.deepEqual(run.moveOffers, {}, 'v0.3.7 default');
-  const { moveOffers, ...rest } = JSON.parse(JSON.stringify(run));
+  assert.equal(run.legendTaken, null, 'v0.3.25 default: no legendary in this save');
+  const { moveOffers, legendTaken, ...rest } = JSON.parse(JSON.stringify(run));
   assert.equal(JSON.stringify(rest), JSON.stringify(fx.save), 'the v0.3.5 fields are unchanged');
   assert.ok(run.party.length >= 1 && run.map && run.rng);
   // a save of this version comes out exactly as it went in, and upgradeJSON is a no-op on it

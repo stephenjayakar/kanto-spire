@@ -29,6 +29,8 @@ const BOSS_SPRITE = {
 // legendaries with a FireRed overworld sprite in 32x32 frames (gfx/overworld/pokemon/<file>.png)
 const LEGEND_OW = { ZAPDOS: 'zapdos', ARTICUNO: 'articuno', MOLTRES: 'moltres', LUGIA: 'lugia', HO_OH: 'ho_oh', DEOXYS: 'deoxys_n' }; // (MEWTWO, ENTEI, RAIKOU, SUICUNE, CELEBI: 16x16 only)
 const MAP_X0 = 172, MAP_W = 296, FLOOR_H = 40;
+// ONE LEGENDARY PER RUN (v0.3.25): the legendary node's tooltip says whether a catch is still possible.
+const legendLine = (run) => (run?.legendRuleText ? (run.hasLegendary() ? `${run.legendRuleText()} You can still fight it for its held item.` : run.legendRuleText()) : '');
 const NODE_COLORS = { wild: '#58b858', trainer: '#5878d8', elite: '#d84848', rival: '#38a0f8', legend: '#f8f8f8', center: '#e868a8', mart: '#f08830', event: '#a868d8', treasure: '#e8b838', boss: '#f8d038' };
 
 // The nodes walked this act. run.visited keeps "act:node" keys: node ids repeat in every act, so plain ids (saves
@@ -305,9 +307,9 @@ export class MapScene {
       const key2 = G.coop ? BIRD_PARTNER[hovered.legend || run.act.bird] : null, L2 = key2 ? LEGENDS[key2] : null;
       if (L && L2) {
         const lt2 = bossTypes(key2), had = [L, L2].filter(x => (run.legendsCaught || []).includes(x.species)).map(x => x.title);
-        return tip(`${L.title} & ${L2.title}`, `Optional. Two legendary POKéMON at once, much tougher than an elite. Beat both for ${L.title}'s unique held item, then each player may catch one of them.${had.length ? ` (Already caught: ${had.join(', ')}.)` : ''}\nType: ${lt.join('/')} & ${lt2.join('/')}\nPRESSURE: every hand you play also costs a discard.`, { accent: TYPE_COLORS[lt[0]] });
+        return tip(`${L.title} & ${L2.title}`, `Optional. Two legendary POKéMON at once, much tougher than an elite. Beat both for ${L.title}'s unique held item, then each player may catch one of the two (the same one is fine: everyone gets their own).${had.length ? ` (Already caught: ${had.join(', ')}.)` : ''}\nType: ${lt.join('/')} & ${lt2.join('/')}\nPRESSURE: every hand you play also costs a discard.\n${legendLine(run)}`, { accent: TYPE_COLORS[lt[0]], width: 230 });
       }
-      return tip(L?.title || info.name, `${info.desc}${caught ? ' (Already caught this run.)' : ''}${lt.length ? `\nType: ${lt.join('/')}` : ''}\nPRESSURE: every hand you play also costs a discard.`, { accent: TYPE_COLORS[lt[0]] });
+      return tip(L?.title || info.name, `${info.desc}${caught ? ' (Already caught this run.)' : ''}${lt.length ? `\nType: ${lt.join('/')}` : ''}\nPRESSURE: every hand you play also costs a discard.\n${legendLine(run)}`, { accent: TYPE_COLORS[lt[0]] });
     }
     if (hovered.type === 'boss') return tip(this.bossTitle(), `${this.bossDesc()}\n${this.bossTypeLine()}`, { accent: TYPE_COLORS[this.mapRun().act.gauntlet ? null : bossTypes(this.mapRun().boss)[0]] });
     tip(info.name, info.desc);

@@ -21,13 +21,11 @@
 //   gauntlet (the RADIO TOWER: started right after a win, no heal; null after the last).
 // Labels and texts must be pure functions of the run (no rng): a reload shows the same event the same way.
 import { D, bst, speciesName, itemName, moveName } from './data.js';
-import { makeMon, addLevels, maxHp, isFainted, healFrac, monName, canLearn, knowsMove, defaultCopies, typesOf, defaultMoves, NO_PLAYER_MOVES, LEGENDARY } from './pokemon.js';
+import { makeMon, addLevels, maxHp, isFainted, healFrac, monName, canLearn, knowsMove, defaultCopies, typesOf, defaultMoves, NO_PLAYER_MOVES } from './pokemon.js';
 import { makeEnemy } from './battle.js';
 import { RELICS, CONSUMABLES, BALLS, APRICORN_BALLS, isCurse } from './items.js';
 import { BOSS_RULES } from './bosses.js';
 import { regionOf, regionIdOf, ruleKeyOf } from './regions.js';
-import { MYTHICS } from './acts.js';
-import { RNG } from './rng.js';
 
 export const SHRINE_SHARE = 0.25;
 
@@ -65,7 +63,7 @@ export function removeCurse(r, key) { if (!isCurse(key) || !has(r, key)) return 
 const CURSE_TEXT = (key) => ` ${/^[AEIOU]/.test(itemName(key)) ? 'An' : 'A'} ${itemName(key)} clings to you! (curse)`;
 const rarityRank = { common: 0, uncommon: 1, rare: 2 };
 const bstAll = (s) => s ? s.stats.hp + s.stats.atk + s.stats.def + s.stats.spa + s.stats.spd + s.stats.spe : 0;
-// (LEGENDARY: pokemon.js, shared with ONE LEGENDARY PER RUN)
+const LEGENDARY = new Set(['ARTICUNO', 'ZAPDOS', 'MOLTRES', 'MEWTWO', 'MEW', 'RAIKOU', 'ENTEI', 'SUICUNE', 'LUGIA', 'HO_OH', 'CELEBI', 'REGIROCK', 'REGICE', 'REGISTEEL', 'LATIAS', 'LATIOS', 'KYOGRE', 'GROUDON', 'RAYQUAZA', 'JIRACHI', 'DEOXYS']);
 const seededPick = (r, list, salt) => { let h = 0; for (const ch of `${r.seed}:${act(r)}:${r.nodeId}:${salt}`) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return list[h % list.length]; };
 
 // ---- NUZLOCKE (A8): an event catch is that act's one catch -----------------------------------------------
@@ -596,7 +594,7 @@ const KANTO = [
     id: 'mansion', title: "MANSION: MEW'S JOURNAL", npc: null, item: 'secret_key', weight: 1, music: 'mus_poke_mansion',
     text: 'A diary in the burned-out POKéMON MANSION: "July 5. We named the newly discovered POKéMON MEW..." Beyond it, a sealed lab.',
     choices: [
-      { label: r => `Fund the research (pay $${Math.floor(r.money / 2)}): all +2 levels`, cond: r => r.money >= 600, ai: r => (r.money > 2000 ? 1.4 : 0.4), run: (r) => { const n = Math.floor(r.money / 2); r.money -= n; flags(r).mewJournal = 'funded'; return { text: `You paid $${n}. The research notes make your whole team stronger!`, levelEvents: r.party.filter(m => !isFainted(m)).map(m => ({ mon: m, events: addLevels(m, 2) })) }; } },
+      { label: r => `Fund the research (pay $${Math.floor(r.money / 2)}): all +2 levels`, cond: r => r.money >= 600, ai: r => (r.money > 2000 ? 1.4 : 0.4), run: (r) => { const n = Math.floor(r.money / 2); r.money -= n; return { text: `You paid $${n}. The research notes make your whole team stronger!`, levelEvents: r.party.filter(m => !isFainted(m)).map(m => ({ mon: m, events: addLevels(m, 2) })) }; } },
       { label: 'Open the sealed lab (elite: 1 of 3 rare items)', solo: true, minFloor: 4, ai: r => fightAi(r, 1.7, 0.8), run: (r, rng) => ({ text: "The lab's experiments break loose!", battle: eliteFight(r, rng, [...trainersLike(/^SCIENTIST_/), ...trainersLike(/^BURGLAR_/)], { rewardRelicW: W.rare }) }) },
       { label: 'Recreate the experiment (upgrades + curse)', curse: 'HEX_LETTER', ai: r => r.party.reduce((a, m) => a + (bestUpgrade(m, powerCap(r)) ? 0.35 : 0), 0) - curseAi, tip: 'Every POKéMON upgrades its best move. A HEX LETTER (curse: -1 discard, foes +5% damage) seals the deal.',
         run: (r) => { const ups = []; for (const m of r.party) { const b = bestUpgrade(m, powerCap(r)); if (b) { const from = m.moves[b.index].move; upgradeMove(m, b.index, powerCap(r)); ups.push(`${moveName(from)} -> ${moveName(b.into)}`); } } const c = addCurse(r, 'HEX_LETTER'); return { text: (ups.length ? `Upgraded: ${ups.slice(0, 3).join(', ')}${ups.length > 3 ? '...' : ''}.` : 'Nothing could be upgraded.') + (c ? CURSE_TEXT(c) : ''), curse: c }; } },
@@ -1057,7 +1055,7 @@ const HOENN = [
     text: 'On SOUTHERN ISLAND, a red and white POKéMON watches you from behind a tree. An EON TICKET lies in the sand.',
     choices: [
       { label: 'Take the EON TICKET', show: r => !has(r, 'EON_TICKET'), ai: () => 1.3, run: (r) => { r.addRelic('EON_TICKET'); return { text: 'You picked up the EON TICKET!', relic: 'EON_TICKET' }; } },
-      { label: 'Wait for it to trust you (LATIAS)', mon: 'gift', legend: 'LATIAS', ai: r => roomAi(r) * 1.4, run: (r, rng) => ({ text: 'After a long while, LATIAS came out and nuzzled you!', newMon: legendGift(r, gift(r, rng, 'LATIAS', -6, 20)) }) },
+      { label: 'Wait for it to trust you (LATIAS)', mon: 'gift', ai: r => roomAi(r) * 1.4, run: (r, rng) => ({ text: 'After a long while, LATIAS came out and nuzzled you!', newMon: gift(r, rng, 'LATIAS', -6, 20) }) },
       LEAVE(),
     ],
   }),
@@ -1472,7 +1470,7 @@ const JOHTO = [
     id: 'gs_ball', title: 'THE GS BALL', npc: null, mon: 'CELEBI', weight: 1, music: 'mus_viridian_forest',
     text: 'KURT finally opened the GS BALL. Placed at the ILEX FOREST shrine, it hums... and the air shimmers as if time itself were bending.',
     choices: [
-      { label: 'Wait at the shrine (CELEBI)', mon: 'gift', legend: 'CELEBI', ai: r => roomAi(r) * 1.4, run: (r, rng) => ({ text: 'A small green POKéMON blinked into being and settled on your shoulder. CELEBI!', newMon: legendGift(r, gift(r, rng, 'CELEBI', -6, 20)) }) },
+      { label: 'Wait at the shrine (CELEBI)', mon: 'gift', ai: r => roomAi(r) * 1.4, run: (r, rng) => ({ text: 'A small green POKéMON blinked into being and settled on your shoulder. CELEBI!', newMon: gift(r, rng, 'CELEBI', -6, 20) }) },
       { label: 'Let time flow back (full heal + 2 RARE CANDY)', ai: () => 1.0, run: (r) => { healAll(r, 1, true); const overflow = found(r, ['RARE_CANDY', 'RARE_CANDY']); return { text: `For a moment it was yesterday. Your team is fresh, and two RARE CANDIES sit by the shrine.${fullNote(overflow)}`, overflow }; } },
       { label: "KURT's masterwork (1 of every APRICORN BALL)", ai: () => 0.4, run: (r) => { for (const k of APRICORN_BALLS) giveBalls(r, k, 1); return { text: "KURT: My finest work. One of each, carved from the GS BALL's own APRICORN tree!" }; } },
     ],
@@ -1513,83 +1511,7 @@ const FALLBACKS = [
   },
 ];
 
-// =============================================================================================================
-// MYTHIC "?" EVENTS (v0.3.25): rare one-off fights with a mythic POKéMON (acts.js MYTHICS, Run.mythicConfig).
-// Each is forced at the first "?" room of an act where it can happen once its roll (from the run's seed, per act)
-// came up, and is never part of the normal pools. Win: a one-time catch offer (ONE LEGENDARY PER RUN) and a held
-// item; lose: the run goes on (the mythic throws your team out: Run.softLoss). Co-op: the whole room fights
-// (coop.js mythicDuoConfig; no "Leave": the mythic blocks the way) and every player gets their own catch offer.
-//   CERULEAN CAVE  MEWTWO    KANTO act 3, only if a CHAMPION was beaten in an earlier run (flags.champ; co-op: anyone)
-//   FARAWAY ISLAND MEW       any act, ultra rare; more likely after MEW'S JOURNAL's "Fund the research"
-//   BIRTH ISLAND   DEOXYS    holding the METEORITE (co-op: anyone), HOENN act 3+ or the SEVII ISLANDS post-game
-//   SKY PILLAR     RAYQUAZA  holding the RED ORB or BLUE ORB, or met GROUDON / KYOGRE this run; HOENN act 3+
-// MYTHIC_ODDS: the chance per eligible act (MEW: per act, MEW_FUNDED once the research was funded). With "?" rooms on
-// most paths about this many eligible runs meet them: MEWTWO ~15%, MEW ~3% of all runs, DEOXYS / RAYQUAZA ~1 in 4.
-export const MYTHIC_ODDS = { MEWTWO: 0.2, MEW: 0.01, MEW_FUNDED: 0.05, DEOXYS: 0.3, RAYQUAZA: 0.3 };
-export const mythicRoll = (p, salt) => new RNG(`${p.seed}:mythic:${salt}`).next();
-const hasAny = (p, keys) => keys.some(k => has(p, k));
-const metAny = (p, sps) => sps.some(sp => (p.seen || []).includes(sp));
-export const MYTHIC_CAN = {
-  MEWTWO: (p) => regionIdOf(p) === 'kanto' && act(p) === 2 && !!flags(p).champ,
-  MEW: () => true,
-  DEOXYS: (p) => has(p, 'METEORITE') && ((regionIdOf(p) === 'hoenn' && act(p) >= 2) || (regionIdOf(p) === 'kanto' && act(p) === 4)),
-  RAYQUAZA: (p) => (hasAny(p, ['RED_ORB', 'BLUE_ORB']) || metAny(p, ['GROUDON', 'KYOGRE'])) && regionIdOf(p) === 'hoenn' && act(p) >= 2,
-};
-export const MYTHIC_ROLL = {
-  MEWTWO: (p) => mythicRoll(p, 'MEWTWO') < MYTHIC_ODDS.MEWTWO,
-  MEW: (p) => mythicRoll(p, 'MEW' + act(p)) < (flags(p).mewJournal === 'funded' ? MYTHIC_ODDS.MEW_FUNDED : MYTHIC_ODDS.MEW),
-  DEOXYS: (p) => mythicRoll(p, 'DEOXYS' + act(p)) < MYTHIC_ODDS.DEOXYS,
-  RAYQUAZA: (p) => mythicRoll(p, 'RAYQUAZA' + act(p)) < MYTHIC_ODDS.RAYQUAZA,
-};
-export const mythicDue = (p, id) => !!MYTHIC_CAN[id](p) && !!MYTHIC_ROLL[id](p);
-// The mythic battle of a "?" event (solo: this config; co-op ignores it and starts the room's duo battle instead).
-export function mythicFight(r, rng, id) { return eventBattle(r, r.mythicConfig(rng, floorOf(r), id)); }
-// The bots: a mythic is worth a lot while you can still catch it; the held item alone is a decent prize; a loss costs 30% HP.
-const mythicAi = (r) => (r.hasLegendary?.() ? 0.9 : 2.4) - (teamHp(r) < 0.55 || r.party.some(isFainted) ? 1.6 : 0);
-const catchLine = (r) => (r.hasLegendary?.() ? ' You already have a legendary this run: win for the held item.' : ' Catching it is your one legendary this run.');
-function mythicEvent(id, e) {
-  const M = MYTHICS[id];
-  return {
-    id: e.id, title: e.title, npc: null, mon: M.species, mythic: id, world: null, acts: [0, 1, 2, 3, 4], weight: 1, weightFn: () => 0.001, music: M.music,
-    follows: (p) => MYTHIC_CAN[id](p), spawn: (p) => mythicDue(p, id), forced: (p) => mythicDue(p, id),
-    text: r => e.text(r) + catchLine(r),
-    choices: [
-      { label: r => (r.coop ? `${e.verb} together! (the whole room fights)` : `${e.verb} (mythic battle)`), mythic: id, ai: mythicAi, tip: e.tip,
-        run: (r, rng) => ({ text: e.fight, battle: mythicFight(r, rng, id) }) },
-      LEAVE(e.leave, e.leaveText),
-    ],
-  };
-}
-const MYTHIC_EVENTS = [
-  mythicEvent('MEWTWO', {
-    id: 'cerulean_cave', title: 'CERULEAN CAVE', verb: 'Face MEWTWO',
-    text: () => 'Deep in CERULEAN CAVE, a POKéMON made by human hands opens its eyes. Its power fills the cavern.',
-    tip: 'MEWTWO hits hard and every hand you play costs a discard (co-op: it attacks EVERY player each turn). Lose and your team is thrown out (all lose 30% HP); the run goes on.',
-    fight: 'MEWTWO: ...', leave: 'Back away quietly', leaveText: 'You left the cave. MEWTWO closed its eyes again.',
-  }),
-  mythicEvent('MEW', {
-    id: 'faraway_island', title: 'FARAWAY ISLAND', verb: 'Chase MEW',
-    text: r => `On a FARAWAY ISLAND, something pink giggles in the tall grass and darts away.${flags(r).mewJournal === 'funded' ? ' The MANSION research notes in your bag rustle.' : ''} It won't stay long: catch it or beat it in 3 turns!`,
-    tip: 'A short hide-and-seek battle: MEW flees after 3 turns unless it is asleep or paralyzed. It is easy to catch with a ball, and it knows every move.',
-    fight: 'MEW wants to play!', leave: 'Let it be', leaveText: 'MEW giggled and vanished into the grass.',
-  }),
-  mythicEvent('DEOXYS', {
-    id: 'birth_island', title: 'BIRTH ISLAND', verb: 'Face DEOXYS',
-    text: () => 'Your METEORITE hums. On BIRTH ISLAND, a triangle of light breaks open and DEOXYS descends, shifting shape.',
-    tip: 'DEOXYS switches forme every turn: ATTACK (hits much harder), DEFENSE (takes much less damage), SPEED (moves first). Lose and your team is thrown out (all lose 30% HP).',
-    fight: 'DEOXYS shifted into its ATTACK FORME!', leave: 'Back away', leaveText: 'DEOXYS faded into the night sky.',
-  }),
-  mythicEvent('RAYQUAZA', {
-    id: 'sky_pillar', title: 'SKY PILLAR', verb: 'Climb to RAYQUAZA',
-    text: r => `${hasAny(r, ['RED_ORB', 'BLUE_ORB']) ? 'Your ORB glows' : 'The clash of GROUDON and KYOGRE echoes'}: atop the SKY PILLAR, RAYQUAZA stirs from its rest.`,
-    tip: 'RAYQUAZA is a top-tier legendary: PRESSURE costs you a discard per hand. Lose and your team is thrown out (all lose 30% HP).',
-    fight: 'RAYQUAZA roared from the top of the SKY PILLAR!', leave: 'Climb back down', leaveText: 'RAYQUAZA went back to sleep in the clouds.',
-  }),
-];
-// A "?" event's legendary gift (LATIAS, CELEBI): it is the run's one legendary.
-function legendGift(r, mon) { r.markLegendary?.(mon.species); return mon; }
-
-export const EVENTS = [...SHRINES, ...KANTO, ...HOENN, ...JOHTO, ...FALLBACKS, ...MYTHIC_EVENTS];
+export const EVENTS = [...SHRINES, ...KANTO, ...HOENN, ...JOHTO, ...FALLBACKS];
 const BY_ID = new Map(EVENTS.map(e => [e.id, e]));
 export const eventById = (id) => BY_ID.get(id) || null;
 
@@ -1607,9 +1529,6 @@ export function eventChoices(ev, run) {
     let c = c0;
     if (run.nuzlocke && giftLike(c)) { if (!c.nuz) continue; c = c.nuz; }
     if (c.solo && run.coop) continue;
-    if (ev.mythic && run.coop && c.leave) continue; // (co-op: the mythic blocks the way, the room fights it)
-    // ONE LEGENDARY PER RUN (v0.3.25): a legendary gift says so, and is greyed out once you have one
-    if (c.legend) { const base = c; c = { ...base, label: r => `${choiceLabel(base, r)}${r.hasLegendary?.() ? ': you already have a legendary' : ' (your one legendary)'}`, cond: r => !r.hasLegendary?.() && (!base.cond || base.cond(r)), tip: run.legendRuleText?.() || base.tip }; }
     if (c.minFloor && floorOf(run) < c.minFloor) continue;
     if (c.show && !c.show(run)) continue;
     if (c.curse && has(run, c.curse)) continue; // (one of each curse: a choice that would give a curse you hold is hidden)
@@ -1670,11 +1589,7 @@ export function coopProbe(world, runs) {
   const rs = runs.filter(Boolean);
   const fl = {};
   for (const r of rs) for (const [k, v] of Object.entries(r.flags || {})) if (fl[k] === undefined) fl[k] = v;
-  if (world.flags?.champ) fl.champ = true; // (v0.3.25: someone in the room beat a CHAMPION, see CoopGame 'champ')
-  // (v0.3.25, the mythic events: anyone's held items and anyone's POKéMON met this run)
-  const relicKeys = [...new Set(rs.flatMap(r => (r.relics || []).map(x => x.key)))];
   return {
-    relics: relicKeys.map(key => ({ key })), seen: [...new Set(rs.flatMap(r => r.seen || []))],
     world: world.world, region: world.region, actIndex: world.actIndex, floor: world.floor, nodeId: world.nodeId, seed: world.seed, coop: true, nuzlocke: false, ascension: world.ascension,
     party: { length: Math.min(...rs.map(r => r.party.length)) },
     relicCount: Math.min(...rs.map(r => relicCountOf(r))),

@@ -352,7 +352,7 @@ export class DuoBattle {
     this.emit({ t: 'down', p });
     if (this.down.every((d, q) => d || this.away[q])) { this.finish('lose'); return; }
     this.msg(`${this.subs[p].run.playerName || 'Your partner'} is out of usable POKéMON!`);
-    this.retarget(p);
+    for (const it of this.intents) if (it && it.target === p) it.target = this.nextAlive(p);
     this.refreshIntents();
   }
 
@@ -417,15 +417,10 @@ export class DuoBattle {
   }
 
   // One intent per foe action: intents[slot + 2 * k] is the k-th action of the foe in that slot this turn
-  // (2 players: one action each, intents = [slot 0, slot 1]). An all-target foe (v0.3.25: CERULEAN CAVE's MEWTWO,
-  // enemy.allTarget) aims its damaging move at EVERY player: one intent per player, all the same move (it.spread).
+  // (2 players: one action each, intents = [slot 0, slot 1]).
   chooseIntents() {
     const taken = [];
-    const plan = [0, 1].map(slot => {
-      const ri = this.field[slot];
-      return ri === null || this.gone[ri] || !this.enemies[ri].allTarget ? null : this.spreadPlan(ri, taken);
-    });
-    const acts = [0, 1].map(slot => (plan[slot] ? plan[slot].targets.length : this.actsFor(slot)));
+    const acts = [0, 1].map(slot => this.actsFor(slot));
     this.intents = new Array(2 * Math.max(...acts)).fill(null);
     for (let k = 0; k < Math.max(...acts); k++) {
       for (let slot = 0; slot < 2; slot++) {
@@ -433,11 +428,6 @@ export class DuoBattle {
         const i = slot + 2 * k;
         const ri = this.field[slot];
         if (ri === null || this.gone[ri]) { this.intents[i] = null; continue; }
-        if (plan[slot]) {
-          const P = plan[slot];
-          this.intents[i] = { ri, move: P.move, target: P.targets[k], first: false, kind: 'attack', text: '', damage: null, eff: 1, lethal: false, ...(P.targets.length > 1 ? { spread: true } : {}) };
-          continue;
-        }
         const p = this.pickTarget(ri, taken, k ? this.intentsOf(slot).map(it => it.target) : null);
         if (p === null) { this.intents[i] = null; continue; }
         taken.push(p);
@@ -449,27 +439,6 @@ export class DuoBattle {
       }
     }
     this.refreshIntents();
-  }
-  // An all-target foe's turn: its move (picked against one target, as usual) and who it hits: everyone still fighting
-  // for a damaging move, else (a buff, a status move, RECHARGE) just that one target. null: fight normally (one player left).
-  spreadPlan(ri, taken) {
-    const alive = this.subs.map(s => s.p).filter(p => !this.out(p) && this.subs[p].lead());
-    if (alive.length < 2) return null;
-    const p0 = this.pickTarget(ri, taken);
-    if (p0 === null) return null;
-    const s = this.subs[p0];
-    const move = s.withFocus(ri, () => s.pickEnemyMove(this.enemies[ri], s.lead()));
-    if (!(move.power > 0 || FIXED_DAMAGE[move.effect])) { taken.push(p0); return { move, targets: [p0] }; }
-    taken.push(...alive);
-    return { move, targets: [p0, ...alive.filter(p => p !== p0)] };
-  }
-  // A player went down / left: their foe actions go to the next player still in (an all-target foe's hit on them is dropped).
-  retarget(p) {
-    this.intents.forEach((it, i) => {
-      if (!it || it.target !== p) return;
-      if (it.spread) this.intents[i] = null;
-      else it.target = this.nextAlive(p);
-    });
   }
   // The intents of the foe in a slot (its actions this turn, in order).
   clearIntents(slot) { for (let i = slot; i < this.intents.length; i += 2) this.intents[i] = null; }
@@ -483,7 +452,7 @@ export class DuoBattle {
       for (let i = 0; i < this.intents.length; i++) {
         const it = this.intents[i];
         if (!it) continue;
-        if (this.out(it.target)) { if (it.spread) { this.intents[i] = null; continue; } const o = this.nextAlive(it.target); if (o === null) continue; it.target = o; }
+        if (this.out(it.target)) { const o = this.nextAlive(it.target); if (o === null) continue; it.target = o; }
         const s = this.subs[it.target];
         this.curIntent = it;
         try { s.withFocus(it.ri, () => Battle.prototype.updateIntentPreview.call(s)); } finally { this.curIntent = null; }
@@ -528,7 +497,6 @@ export class DuoBattle {
     for (let i = 0; i < this.intents.length; i++) {
       const it = this.intents[i], slot = i % 2;
       if (!it || this.field[slot] !== it.ri) continue;
-      if (it.spread && this.spreadGroup(slot)[0] !== it) continue; // (an all-target move is one action: its first intent)
       const s = this.subs[it.target];
       const spd = s.withFocus(it.ri, () => s.speedOf('enemy'));
       actors.push({ kind: 'enemy', slot, i, ri: it.ri, prio: it.move.priority || 0, quick: 0, spd });
@@ -541,7 +509,7 @@ export class DuoBattle {
         if (a.kind === 'hand') { const s = this.subs[a.p]; if (!this.out(a.p)) s.lateRest(a.cards.map(c => s.cardInfo(c))); s.returnPlayed(a.cards); }
         continue;
       }
-      if (a.kind === 'hand') { this.execHand(a); this.subs[a.p].markLanding(actors.slice(ai + 1).some(x => x.kind === 'enemy' && (this.intents[x.i]?.target === a.p || (this.intents[x.i]?.spread && this.spreadGroup(x.slot).some(t => t.target === a.p))))); }
+      if (a.kind === 'hand') { this.execHand(a); this.subs[a.p].markLanding(actors.slice(ai + 1).some(x => x.kind === 'enemy' && this.intents[x.i]?.target === a.p)); }
       else if (a.kind === 'ball') this.execBall(a);
       else this.execEnemy(a);
     }
@@ -580,39 +548,15 @@ export class DuoBattle {
     if (s.ballAttempt(a.ball)) this.enemyGone(ri, 'caught');
   }
 
-  // The all-target intents of the foe in a slot this turn, in order.
-  spreadGroup(slot) { return this.intentsOf(slot).filter(it => it.spread); }
-
   execEnemy(a) {
     const it = this.intents[a.i];
     if (!it || it.ri !== a.ri || this.field[a.slot] !== a.ri || this.gone[a.ri]) return;
-    if (it.spread) return this.execSpread(a);
     let p = it.target;
     if (this.out(p)) { p = this.nextAlive(p); if (p === null) return; it.target = p; }
     const s = this.subs[p];
     s.focus(a.ri);
     this.curIntent = it;
     try { s.enemyAct(); } finally { this.curIntent = null; }
-  }
-
-  // An all-target move: the first player still in takes the full enemyAct (can it move? the move announced), then
-  // if it moved, the same move lands on every other player still in (Battle.enemyStrike via _spreadFollow).
-  execSpread(a) {
-    const group = this.spreadGroup(a.slot).filter(it => it.ri === a.ri && !this.out(it.target));
-    const seen = new Set(), hits = group.filter(it => !seen.has(it.target) && seen.add(it.target));
-    let moved = false;
-    for (const [k, it] of hits.entries()) {
-      if (this.result || this.gone[a.ri] || this.field[a.slot] !== a.ri || this.out(it.target)) continue;
-      const s = this.subs[it.target];
-      s.focus(a.ri);
-      this.curIntent = it;
-      s.spreadMoved = false;
-      s._spreadFollow = k > 0;
-      try {
-        if (k === 0) { s.enemyAct(); moved = !!s.spreadMoved; }
-        else if (moved) s.enemyAct();
-      } finally { this.curIntent = null; s._spreadFollow = false; s.spreadMoved = false; }
-    }
   }
 
   endTurn() {
@@ -722,7 +666,7 @@ export class DuoBattle {
     else if (L.ball) {
       if (this.kind !== 'wild' || !BALLS[L.ball] || !(s.run.balls[L.ball] > 0) || s.caught) return [];
       const slot = this.normSlot(L.target);
-      if (slot === null || this.enemyAt(slot).isBoss || s.legendBlocked(this.enemyAt(slot))) return [];
+      if (slot === null || this.enemyAt(slot).isBoss) return [];
       lk = { ball: L.ball, target: slot };
     } else if (Array.isArray(L.ids)) {
       if (!validIds(s, L.ids) || !s.canPlay(L.ids).ok) return [];
@@ -787,7 +731,7 @@ export class DuoBattle {
       this.locks[p] = null;
       this.emit({ t: 'away', p, away: true });
       if (!this.result && this.subs.every(s => this.out(s.p))) { if (this.away.every(Boolean)) return true; this.finish('lose'); return true; }
-      this.retarget(p);
+      for (const it of this.intents) if (it && it.target === p) it.target = this.nextAlive(p);
       this.refreshIntents();
       this.maybeResolve();
     } else this.emit({ t: 'away', p, away: false });

@@ -642,6 +642,7 @@ export class CoopSession {
     if (!g || this.stopped) return;
     const p = this.mySlot;
     this.recordDex();
+    this.postChamp();
     let key, make;
     switch (g.phase) {
       case 'map': key = 'map'; make = () => { G.run = g.runs[p]; return new CoopMapScene(this); }; break;
@@ -660,6 +661,15 @@ export class CoopSession {
     if (!force && this.routeKey === 'battle' && key !== 'battle' && Engine.scene?.holdRoute?.()) return;
     this.routeKey = key;
     setScene(this.wrap(make()));
+  }
+
+  // v0.3.25: a player who has beaten a CHAMPION in an earlier run tells the room once (CoopGame.setChamp): CERULEAN CAVE's
+  // MEWTWO can then show up. Only once in sync on a live room (a replay or a resume must not post).
+  postChamp() {
+    const g = this.game;
+    if (this.champPosted || !this.synced || !g?.world || g.world.flags?.champ || !G.meta?.unlocks?.win || g.phase === 'over' || g.phase === 'victory' || g.phase === 'init') return;
+    this.champPosted = true;
+    this.post({ type: 'champ' });
   }
 
   // The local player's Pokédex (meta.dexSeen / dexCaught): what this player has met and caught so far (game/coop/dex.js;

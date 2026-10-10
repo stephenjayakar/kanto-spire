@@ -99,25 +99,6 @@ export const BOSS_RULES = {
     name: 'PRESSURE', desc: 'Every hand you play also costs you 1 discard.',
     afterHand(b) { if (b.discardsLeft > 0) { b.discardsLeft--; b.msg('The PRESSURE is immense! (-1 discard)'); } },
   },
-  // Mythic "?" events (v0.3.25, acts.js MYTHICS)
-  MEWTWO: {
-    name: 'PSYSTRIKE', desc: 'Every hand you play also costs you 1 discard. In co-op MEWTWO attacks EVERY player each turn.',
-    afterHand(b) { if (b.discardsLeft > 0) { b.discardsLeft--; b.msg("MEWTWO's PRESSURE is immense! (-1 discard)"); } },
-  },
-  MEW: {
-    name: 'HIDE AND SEEK', desc: 'MEW flees after 3 turns unless it is asleep or paralyzed. Throw a ball: it is easy to catch.',
-    onTurnEnd(b) {
-      const e = b.enemy();
-      if (!e || e.hp <= 0 || b.turn < MEW_TURNS || e.status === 'SLP' || e.status === 'PAR') return;
-      b.msg('MEW giggled and vanished!');
-      b.end('enemyFled');
-    },
-  },
-  DEOXYS: {
-    name: 'FORME CHANGE', desc: 'DEOXYS switches forme every turn: ATTACK (hits much harder), DEFENSE (takes much less damage), SPEED (moves first).',
-    // the forme follows the turn number, so applying it again (co-op: once per player) changes nothing
-    onTurnStart(b) { deoxysForme(b, b.enemy()); },
-  },
   // Hoenn leaders (post-game world)
   ROXANNE: { name: 'STURDY', desc: 'Her POKéMON survive the first knockout blow with 1 HP.', sturdy: true },
   BRAWLY: { name: 'BULK UP', desc: 'His POKéMON gain +1 ATTACK every turn.', onTurnEnd(b) { b.addStage('enemy', 'atk', 1, 'BULK UP'); } },
@@ -155,28 +136,6 @@ export const BOSS_RULES = {
 };
 
 for (const [k, v] of Object.entries(BOSS_RULES)) v.key = k;
-
-// MEW's HIDE AND SEEK: the turn it flees at the end of (unless asleep or paralyzed).
-export const MEW_TURNS = 3;
-// DEOXYS's formes, in turn order (turn 1: ATTACK, 2: DEFENSE, 3: SPEED, 4: ATTACK...): multipliers on its real stats.
-export const DEOXYS_FORMES = [
-  { key: 'ATTACK', atk: 1.5, spa: 1.5, def: 0.6, spd: 0.6, spe: 1 },
-  { key: 'DEFENSE', atk: 0.6, spa: 0.6, def: 1.8, spd: 1.8, spe: 0.6 },
-  { key: 'SPEED', atk: 1, spa: 1, def: 0.8, spd: 0.8, spe: 2 },
-];
-export const deoxysFormeAt = (turn) => DEOXYS_FORMES[(Math.max(1, turn) - 1) % DEOXYS_FORMES.length];
-export function deoxysForme(b, e) {
-  if (!e || e.hp <= 0) return null;
-  const f = deoxysFormeAt(b.turn);
-  e.baseStats ||= { ...e.stats };
-  if (e.forme === f.key) return f;
-  e.forme = f.key;
-  e.stats = { ...e.baseStats };
-  for (const k of ['atk', 'def', 'spa', 'spd', 'spe']) e.stats[k] = Math.max(1, Math.round(e.baseStats[k] * f[k]));
-  b.msg(`DEOXYS changed to its ${f.key} FORME!`);
-  b.emit({ t: 'forme', forme: f.key, species: e.species });
-  return f;
-}
 
 // Rules picked for the Champion's individual Pokémon.
 export const CHAMPION_RULE_POOL = ['BROCK', 'LT_SURGE', 'KOGA', 'GIOVANNI', 'LORELEI', 'BRUNO'];

@@ -139,7 +139,7 @@ export class StarterScene {
   begin(st) {
     G.meta.lastAscension = this.asc;
     (G.meta.lastAscBy ||= {})[st.species] = this.asc;
-    G.run = Run.create({ starter: st.species, ascension: this.asc, world: SPIRE, pool: unlockedRegions(G.meta), shiny: this.shinyOn(st.species) });
+    G.run = Run.create({ starter: st.species, ascension: this.asc, world: SPIRE, pool: unlockedRegions(G.meta), shiny: this.shinyOn(st.species), champ: !!G.meta.unlocks?.win });
     saveRun();
     Sound.playCry(st.species);
     goToMap({ intro: true });

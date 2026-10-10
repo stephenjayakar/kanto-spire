@@ -13,7 +13,7 @@ import { D, TYPE_COLORS, speciesName, typeEffect } from '../../game/data.js';
 import { COMBOS } from '../../game/hands.js';
 import { BOSS_RULES } from '../../game/bosses.js';
 import { CONSUMABLES, BADGES } from '../../game/items.js';
-import { maxHp, monName, typesOf, isFainted, DECK_RULES } from '../../game/pokemon.js';
+import { maxHp, monName, typesOf, isFainted, DECK_RULES, LEGENDARY } from '../../game/pokemon.js';
 import { G, saveMeta } from '../../game/state.js';
 import { Sound } from '../../audio/sound.js';
 import { drawTrainer, drawHUD, drawCard, drawCardBack, cardTooltip, drawPartyPanel, drawMon, drawIcon, CARD_W, CARD_H, MessageBox, ChoiceModal, PartyPicker, DeckModal, monTooltip, Modal, drawNoComboTag, STATUS_SEL, ordinal, orderTagWidth, drawOrderTag, ORDER_RULE } from '../common.js';
@@ -1245,9 +1245,54 @@ export class CoopBattleScene {
 
   shownIntents() { return (this.busy ? this.idleIntents : null) || this.duo.intents; }
 
+  // An all-target foe's intents in a slot this turn (v0.3.25: CERULEAN CAVE's MEWTWO hits every player), or null.
+  spreadIntents(slot) {
+    const f = this.foes[slot];
+    if (!f) return null;
+    const its = this.shownIntents().filter((it, i) => it && i % 2 === slot && it.ri === f.ri && it.spread);
+    return its.length ? its : null;
+  }
+
+  // One box for an all-target move: an ALL tag, the move, then one row per player: seat tag, damage to that player's
+  // lead (KO! flashing when it could knock it out), FIRST! when it acts before that player's hand.
+  drawSpreadIntent(ctx, slot, its) {
+    const d = this.duo, f = this.foes[slot];
+    const x = INTENT_X, [, y] = FOE_BOX[slot], w = INTENT_W_N, hh = 14, rh = 12, h = hh + rh * its.length + 3;
+    const en = d.enemies[f.ri], mv = its[0].move;
+    const sleeping = en && (en.status === 'SLP' || en.status === 'FRZ');
+    const hidden = this.g.ascension >= 2 || this.run().ascension >= 2;
+    const mine = its.find(it => it.target === this.me);
+    const blink = Math.floor(Engine.time * 3) % 2 === 0;
+    pixBox(ctx, x, y, w, h, '#101018d8', mine?.lethal && !sleeping && blink ? '#ff3030' : '#ff6060', 3);
+    pixBox(ctx, x + 3, y + 3, 26, 11, '#c01818', null, 2);
+    text(ctx, 'ALL', x + 16, y + 2, { align: 'center', color: 'white', font: 'small' });
+    if (sleeping) text(ctx, en.status === 'SLP' ? 'ASLEEP' : 'FROZEN', x + 33, y + 2, { color: 'blue', font: 'small' });
+    else textFit(ctx, hidden ? '???' : mv.name, x + 33, y + 2, w - 38, { color: 'white', font: 'small' });
+    its.forEach((it, k) => {
+      const ry = y + hh + k * rh, tp = it.target;
+      const first = this.intentFirst(this.shownIntents().indexOf(it), it);
+      const tag = tp === this.me ? 'YOU' : `P${tp + 1}`;
+      const tw = measure(tag, 'small') + 6;
+      pixBox(ctx, x + 3, ry + 1, tw, 11, PCOL[tp] || '#606060', null, 2);
+      text(ctx, tag, x + 3 + tw / 2, ry, { align: 'center', color: 'white', font: 'small' });
+      if (first) text(ctx, 'FIRST!', x + tw + 7, ry, { color: 'red', font: 'small' });
+      if (!hidden && !sleeping && it.kind === 'attack') {
+        if (it.lethal && blink) { pixBox(ctx, x + w - 74, ry + 1, 22, 11, '#c01818', null, 2); text(ctx, 'KO!', x + w - 63, ry, { align: 'center', color: 'white', font: 'small' }); }
+        text(ctx, it.text, x + w - 5, ry, { align: 'right', color: it.eff > 1 ? 'gold' : 'red', font: 'small' });
+      }
+    });
+    if (hover(x, y, w, h)) {
+      const who = (p) => (p === this.me ? 'YOU' : this.s.nameOf(p));
+      const rows = its.map(it => { const lead = d.subs[it.target]?.lead(); return `${who(it.target)}${lead ? ` (${monName(lead)})` : ''}${!hidden && it.kind === 'attack' ? `: ${it.text} HP${it.eff !== 1 ? ` x${it.eff}` : ''}${it.lethal ? ' — could KO!' : ''}` : ''}`; });
+      tip(hidden ? 'INTENT HIDDEN' : `${mv.name} -> EVERY PLAYER`, `${hidden ? "Ascension 2+: you can't see the foe's move." : `${mv.type} · PWR ${mv.power || '-'} · ACC ${mv.accuracy || '-'}`}\n${speciesName(en.species)} attacks ALL of you this turn, each hit a bit weaker than a single-target one:\n${rows.join('\n')}\n(If it can't move, nobody is hit.)`, { width: 230 });
+    }
+  }
+
   drawIntent(ctx, slot) {
     const d = this.duo, f = this.foes[slot];
     if (!f || f.faint >= 1 || f.captured || d.result) return;
+    const sp = this.spreadIntents(slot);
+    if (sp) return this.drawSpreadIntent(ctx, slot, sp);
     const it = this.shownIntents()[slot];
     if (!it || it.ri !== f.ri) return;
     const x = INTENT_X, [, y] = FOE_BOX[slot], w = INTENT_W, h = FOE_BOX_H;
@@ -1291,6 +1336,8 @@ export class CoopBattleScene {
   drawIntentsN(ctx, slot) {
     const d = this.duo, f = this.foes[slot];
     if (!f || f.faint >= 1 || f.captured || d.result) return;
+    const sp = this.spreadIntents(slot);
+    if (sp) return this.drawSpreadIntent(ctx, slot, sp);
     const its = this.shownIntents().filter((it, i) => it && i % 2 === slot && it.ri === f.ri);
     if (!its.length) return;
     const x = INTENT_X, [, y] = FOE_BOX[slot], w = INTENT_W_N, rh = 19;
@@ -1462,12 +1509,14 @@ DECK: cards left in the draw pile / cards in your lead's deck.`, { width: 200 })
     if (this.cfg.kind === 'wild' && !d.result) {
       const bw = 92;
       const en = tgt;
-      const weak = en && (en.hp < en.maxHp * 0.5 || en.status === 'SLP' || en.status === 'FRZ' || (D.species[en.species]?.catchRate || 0) >= 190);
+      const weak = en && (en.hp < en.maxHp * 0.5 || en.status === 'SLP' || en.status === 'FRZ' || (D.species[en.species]?.catchRate || 0) * (this.cfg.catchMult || 1) >= 180);
       const ball = Object.keys(run.balls).find(k => run.balls[k] > 0);
-      const can = this.canAct() && !!ball && weak && !sub.caught && !en?.isBoss;
+      const blocked = !!en && sub.legendBlocked(en); // (ONE LEGENDARY PER RUN)
+      const can = this.canAct() && !!ball && weak && !sub.caught && !en?.isBoss && !blocked;
       const pct = can ? Math.round(d.catchChance(me, ball, this.target) * 100) : 0;
       if (button(ctx, can ? `BALL ${pct}%` : 'BALL', x, by, bw, 22, { color: '#d04040', font: 'small', disabled: !can })) this.chooseBall();
-      if (en && hover(x, by, bw, 22)) tip('CATCH', sub.caught ? 'You already caught one this battle.' : !ball ? 'You have no POKé BALLS.' : !weak ? `Weaken ${speciesName(en.species)} below 50% HP (or put it to sleep) first.` : `Throw at your TARGET ${speciesName(en.species)}: about ${Math.round(d.catchChance(me, ball, this.target) * 100)}% with ${D.items[ball]?.name}. Throwing is your action this turn (locks you in).`);
+      const legend = en && LEGENDARY.has(en.species) && !blocked ? ` ${run.legendRuleText()}` : '';
+      if (en && hover(x, by, bw, 22)) tip('CATCH', blocked ? 'You already have a legendary this run.' : sub.caught ? 'You already caught one this battle.' : !ball ? 'You have no POKé BALLS.' : !weak ? `Weaken ${speciesName(en.species)} below 50% HP (or put it to sleep) first.` : `Throw at your TARGET ${speciesName(en.species)}: about ${Math.round(d.catchChance(me, ball, this.target) * 100)}% with ${D.items[ball]?.name}. Throwing is your action this turn (locks you in).${legend}`);
     }
   }
 
