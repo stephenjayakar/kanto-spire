@@ -28,9 +28,10 @@ const state = {
   ctx: null, node: null, port: null, backend: null, master: null, meta: null, ready: null,
   nextTag: 1, pending: new Map(), currentBGM: null, unlocked: false,
   volumes: { master: 1, music: 1, sfx: 1 }, listenersInstalled: false, initPromise: null,
+  resolver: null, banks: new Map(),
 };
 
-function post(msg) { if (state.port) state.port.postMessage(msg); }
+function post(msg, transfer) { if (state.port) state.port.postMessage(msg, transfer || []); }
 // Calls made while init() is still loading are deferred until it completes. Sound must never break the
 // game: with no audio (init failed or never ran) every call is a silent no-op that resolves false.
 function deferred(fn) {
@@ -41,9 +42,15 @@ function deferred(fn) {
     return Promise.resolve(false);
   };
 }
-function songInfo(name) {
+function songInfo(name, ctx) {
   const songs = state.meta && state.meta.songs;
   if (!songs) throw new Error('Sound.init() has not finished');
+  // the resolver (Sound.setResolver) may swap in a song from an added bank (HOENN acts: Emerald's, audio/emerald.js)
+  if (state.resolver) {
+    let alt = null;
+    try { alt = state.resolver(name, ctx); } catch (err) { console.warn('[sound] resolver', err); }
+    if (alt && songs[alt]) return songs[alt];
+  }
   let s = songs[name];
   if (!s && songs['mus_' + name]) s = songs['mus_' + name];
   if (!s && songs['se_' + name]) s = songs['se_' + name];
@@ -73,7 +80,10 @@ function track(tag, player, maxMs) {
 }
 function onWorkletMessage(e) {
   const m = e.data;
-  if (m.type === 'end') {
+  if (m.type === 'bankAdded') {
+    if (!m.ok) console.warn('[sound] bank not added: ' + m.message);
+    settle(m.tag, !!m.ok);
+  } else if (m.type === 'end') {
     if (playerTags.get(m.player) === m.tag) playerTags.delete(m.player);
     settle(m.tag, true);
     if (m.player === PLAYER_BGM && state.currentBGM && state.currentBGM.tag === m.tag) state.currentBGM = null;
@@ -207,14 +217,47 @@ export const Sound = {
   get cryCount() { return state.meta ? state.meta.cryCount : 0; },
 
   /**
+   * Load a second song bank (another game's songs, relocated by its extractor to addresses the first bank doesn't
+   * use: tools/extract_emerald_sound.js) into the same engine. Its songs join under prefix + name ('em:mus_route101').
+   * Resolves true once playable, false if the bank is missing or broken (the game plays on without it).
+   */
+  addBank(baseUrl, prefix) {
+    if (state.banks.has(prefix)) return state.banks.get(prefix);
+    const p = (async () => {
+      const base = new URL(baseUrl, typeof document !== 'undefined' ? document.baseURI : import.meta.url);
+      let meta, bank;
+      try {
+        const [rj, rb] = await Promise.all([fetch(new URL('bank.json', base)), fetch(new URL('bank.bin', base))]);
+        if (!rj.ok || !rb.ok) return false;
+        [meta, bank] = await Promise.all([rj.json(), rb.arrayBuffer()]);
+      } catch { return false; }
+      const tag = state.nextTag++;
+      const done = new Promise((resolve) => state.pending.set(tag, resolve));
+      post({ type: 'addBank', bank, segments: meta.segments, tag }, [bank]);
+      if (!(await done)) return false;
+      for (const [n, s] of Object.entries(meta.songs || {})) state.meta.songs[prefix + n] = { ...s, name: prefix + n };
+      return true;
+    })().catch((err) => { console.warn('[sound] addBank', err); return false; });
+    state.banks.set(prefix, p);
+    return p;
+  },
+  /** True once the bank added under `prefix` is playable. */
+  hasBank(prefix) { return !!state.meta && Object.keys(state.meta.songs).some((k) => k.startsWith(prefix)); },
+  /**
+   * fn(name, ctx) -> the song to play instead of `name` (a full song name, e.g. 'em:mus_route101'), or null.
+   * ctx: whatever the caller passed as { ctx } to playBGM / playFanfare. A name the banks don't have is ignored.
+   */
+  setResolver(fn) { state.resolver = fn || null; },
+
+  /**
    * Play background music on the BGM player.
    * @param {string} name e.g. 'mus_route1' (the 'mus_' prefix may be omitted)
    * @param {object} [o] { fadeInFrames: frames (60 = 1 s), restart: restart even if already playing }
    */
   playBGM(name, o = {}) {
-    const s = songInfo(name);
+    const s = songInfo(name, o.ctx);
     if (!s) return;
-    const full = SONG_NAMES[s.index] || name;
+    const full = s.name || SONG_NAMES[s.index] || name;
     if (!o.restart && state.currentBGM && state.currentBGM.name === full && !o.fadeInFrames) return;
     const tag = state.nextTag++;
     state.currentBGM = { name: full, tag };
@@ -248,8 +291,8 @@ export const Sound = {
     for (const p of players) post({ type: 'stop', player: p });
   },
   /** Fanfare (mus_level_up, mus_obtain_item, ...): pauses the BGM, resumes it after. Resolves on end. */
-  playFanfare(name) {
-    const s = songInfo(name);
+  playFanfare(name, o = {}) {
+    const s = songInfo(name, o.ctx);
     if (!s) return Promise.resolve(false);
     const tag = state.nextTag++;
     const player = s.player === PLAYER_BGM ? 2 : s.player;
@@ -307,6 +350,6 @@ export const Sound = {
 };
 
 for (const k of ['playBGM', 'fadeOutBGM', 'stopBGM', 'pauseBGM', 'resumeBGM', 'playSE', 'stopSE', 'playFanfare',
-  'playCry', 'stopAll', 'setStereo', 'setInterpolation', 'setQuality']) Sound[k] = deferred(Sound[k]);
+  'playCry', 'stopAll', 'setStereo', 'setInterpolation', 'setQuality', 'addBank']) Sound[k] = deferred(Sound[k]);
 
 export default Sound;

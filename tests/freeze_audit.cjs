@@ -360,7 +360,8 @@ fs.mkdirSync(out, { recursive: true });
   // ---- v0.1.0 ONE SPIRE: every act variant (4 tiers x KANTO / HOENN) in a mixed spire, with its music running ----
   const K = 'kanto', Hn = 'hoenn', other = (r) => (r === K ? Hn : K);
   const mixed = (t, reg) => ({ acts: [0, 1, 2, 3].map(i => (i === t ? reg : other(reg))), summit: other(reg), post: reg });
-  const bgmOk = async () => ev(() => { const s = window.__sound; const act = G.run?.act; return { bgm: s?.currentBGM || null, want: act ? [...act.music, ...(act.areas || []).map(a => a.music).filter(Boolean)] : [] }; });
+  // (HOENN acts play Emerald's map music when the optional Emerald bank is there: audio/emerald.js)
+  const bgmOk = async () => ev(async () => { const s = window.__sound; const act = G.run?.act; const { HOENN_MAP_MUSIC, EM } = await import('/src/audio/emerald.js'); return { bgm: s?.currentBGM || null, want: act ? [...act.music, ...(act.areas || []).map(a => a.music).filter(Boolean), ...(act.region === 'hoenn' ? (HOENN_MAP_MUSIC[act.id] || []).map(x => EM + x) : [])] : [] }; });
   for (const t of [0, 1, 2, 3]) for (const reg of [K, Hn]) {
     const regions = mixed(t, reg), tag = `spire act${t + 1} ${reg.toUpperCase()} (${regions.acts.map(r => r[0].toUpperCase()).join('-')})`;
     await scenario(`${tag}: map music + trainer + wild`, async () => {

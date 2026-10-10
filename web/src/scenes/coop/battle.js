@@ -22,7 +22,7 @@ import { COOP_TUNING } from '../../game/coop/tuning.js';
 import { PCOL, PFONT, drawCoopOverlay, drawPartnerChip, playerStatus, coopToast } from './ui.js';
 import { MoveAnims } from '../../anim/player.js';
 import { pickHandAnim, ANIM_SPEED } from '../../anim/pick.js';
-import { opaqueBounds, monSprite } from '../common.js';
+import { opaqueBounds, monSprite, foeSprite, foeAnimFrame } from '../common.js';
 import { tinted } from '../../engine/assets.js';
 import { AUTO, autoKey, autoStopInput, manualKey, autoLowHp, drawAutoButton } from '../auto.js';
 
@@ -122,11 +122,11 @@ export class CoopBattleScene {
 
   async music(intro) {
     const cfg = this.cfg;
-    if (cfg.trainer?.encounterSong && cfg.kind !== 'wild' && intro) Sound.playBGM(cfg.trainer.encounterSong);
-    else Sound.playBGM(cfg.music || (cfg.kind === 'wild' ? 'mus_vs_wild' : 'mus_vs_trainer'));
+    if (cfg.trainer?.encounterSong && cfg.kind !== 'wild' && intro) Sound.playBGM(cfg.trainer.encounterSong, { ctx: cfg });
+    else Sound.playBGM(cfg.music || (cfg.kind === 'wild' ? 'mus_vs_wild' : 'mus_vs_trainer'), { ctx: cfg });
     if (!intro) return;
     await this.wait(0.3);
-    if (cfg.kind !== 'wild') Sound.playBGM(cfg.music || 'mus_vs_trainer');
+    if (cfg.kind !== 'wild') Sound.playBGM(cfg.music || 'mus_vs_trainer', { ctx: cfg });
   }
 
   exit() { if (this.lowHpOn) Sound.stopSE('se_low_health'); this.lowHpOn = false; }
@@ -309,7 +309,7 @@ export class CoopBattleScene {
     const [fx, fy] = this.foePos(slot);
     return [
       mk(!!L && L.faint < 1, L?.species, lx + 32 * sc, ly + 32 * sc, monSprite(L?.species || 'BULBASAUR', 'back', L?.shiny), sc / 2),
-      mk(!!f && f.faint < 1 && !f.captured && f.alpha > 0, f?.species, fx + 64, fy + 64, monSprite(f?.species || 'BULBASAUR', 'front', f?.shiny), 1),
+      mk(!!f && f.faint < 1 && !f.captured && f.alpha > 0, f?.species, fx + 64, fy + 64, this.foePath(f), 1),
     ];
   }
   async playCoopAnim(moveKey, p, slot, attacker, moveData) {
@@ -329,6 +329,8 @@ export class CoopBattleScene {
     } finally { this.animInv = null; }
     return true;
   }
+  // a foe's front sprite (HOENN acts: Emerald's, common.js foeSprite)
+  foePath(f, anim = false) { return foeSprite(f?.species || 'BULBASAUR', f?.shiny, this.g?.world?.act?.region, anim); }
   drawCoopAnimMon(c, battler, o) {
     const inv = this.animInv; if (!inv) return;
     const foe = battler === 1;
@@ -336,9 +338,9 @@ export class CoopBattleScene {
     if (!D2?.species) return;
     const k = foe ? 1 : this.leadScale(inv.p) / 2;
     const flash = D2.flash > 0 && Math.floor(this.t * 20) % 2 ? 0.9 : 0;
-    drawMon(c, D2.species, -32 * k, -32 * k, { back: !foe, scale: k, shiny: D2.shiny, flash, alpha: (o.alpha ?? 1) * (1 - (D2.faint || 0)) });
+    drawMon(c, D2.species, -32 * k, -32 * k, { back: !foe, scale: k, shiny: D2.shiny, flash, alpha: (o.alpha ?? 1) * (1 - (D2.faint || 0)), path: foe ? this.foePath(D2) : undefined });
     if (o.tint) {
-      const t = tinted(monSprite(D2.species, foe ? 'front' : 'back', D2.shiny), '#' + [o.tint.r, o.tint.g, o.tint.b].map(v => Math.round(v * 255).toString(16).padStart(2, '0')).join(''), 1);
+      const t = tinted(foe ? this.foePath(D2) : monSprite(D2.species, 'back', D2.shiny), '#' + [o.tint.r, o.tint.g, o.tint.b].map(v => Math.round(v * 255).toString(16).padStart(2, '0')).join(''), 1);
       if (t) { c.save(); c.globalAlpha *= o.tint.a; c.drawImage(t, 0, 0, 64, 64, -32 * k, -32 * k, 64 * k, 64 * k); c.restore(); }
     }
   }
@@ -362,7 +364,7 @@ export class CoopBattleScene {
       case 'enemyOut': {
         const en = d.enemies[e.ei];
         const slot = e.slot;
-        this.foes[slot] = { ...this.foeDisp(e.ei), hp: en.maxHp, x: 120 }; // fresh foe (the engine may already be further on)
+        this.foes[slot] = { ...this.foeDisp(e.ei), hp: en.maxHp, x: 120, outAt: this.t }; // fresh foe (the engine may already be further on)
         // the trainer lingers before throwing out its first POKéMON (display only; a click/tap cuts it short)
         if (this.isTrainer() && e.first && slot === 0) { this.introTrainer = false; this.trainerX = 0; await skippableWait(this, TRAINER_LINGER * this.speed); tween(this, { trainerX: 140 }, 0.5 * this.speed); }
         if (this.isTrainer()) { const [cx, cy] = this.foeCenter(slot); this.ballAnim = { x: cx, y: cy, t: 0 }; Sound.playSE('se_ball_open'); }
@@ -602,7 +604,7 @@ export class CoopBattleScene {
         this.clearPlayed();
         if (e.outcome === 'win') {
           const song = this.cfg.kind === 'boss' ? 'mus_victory_gym_leader' : this.cfg.kind === 'wild' ? 'mus_victory_wild' : 'mus_victory_trainer';
-          Sound.playBGM(song);
+          Sound.playBGM(song, { ctx: this.cfg });
           if (this.isTrainer()) { this.trainerX = 140; tween(this, { trainerX: 0 }, 0.5); }
           const sub = this.sub;
           const you = this.many ? 'Your team' : `You and ${this.s.nameOf(this.pa)}`;
@@ -1030,7 +1032,7 @@ export class CoopBattleScene {
       const x = Math.round(px + f.x * 2 + (f.shake > 0 ? Math.sin(this.t * 60) * 3 * f.shake : 0) - (f.lunge || 0) * 12);
       const y = Math.round(py + f.faint * 50 + Math.sin(this.t * 2 + slot) * 1.5);
       ctx.save(); ctx.beginPath(); ctx.rect(SCENE_X, SCENE_Y, SCENE_W, 124); ctx.clip();
-      drawMon(ctx, f.species, x, y, { scale: MON_S, shiny: f.shiny, flash: f.flash > 0 && Math.floor(this.t * 20) % 2 ? 0.9 : 0, alpha: (1 - f.faint) * f.alpha });
+      drawMon(ctx, f.species, x, y, { scale: MON_S, shiny: f.shiny, flash: f.flash > 0 && Math.floor(this.t * 20) % 2 ? 0.9 : 0, alpha: (1 - f.faint) * f.alpha, path: this.foePath(f, foeAnimFrame(this.t, f.outAt)) });
       ctx.restore();
       const e = d.enemies[f.ri];
       if (e?.status) draw(ctx, `gfx/ui/status/${e.status === 'TOX' ? 'psn' : e.status.toLowerCase()}.png`, px + 48, py + 112);

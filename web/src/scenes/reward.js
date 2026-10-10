@@ -63,7 +63,7 @@ export class RewardScene {
     const seenItems = new Set();
     this.rewards = this.rewards.filter(r => r.kind !== 'item' || (!seenItems.has(r.key) && seenItems.add(r.key)));
     for (const r of this.rewards) if (r.kind === 'item') r.label = (r.label ? r.label + ' ' : '') + (D.items[r.key]?.name || r.key) + (CONSUMABLES[r.key]?.combo ? ` (${CONSUMABLES[r.key].combo.replace('_', ' ')} +1 lvl)` : '');
-    Sound.playBGM(cfg.kind === 'boss' ? 'mus_victory_gym_leader' : cfg.kind === 'wild' ? 'mus_victory_wild' : 'mus_victory_trainer');
+    Sound.playBGM(cfg.kind === 'boss' ? 'mus_victory_gym_leader' : cfg.kind === 'wild' ? 'mus_victory_wild' : 'mus_victory_trainer', { ctx: cfg });
     // The battle is over and paid out: reloading now must not replay it (and pay again). Bosses keep
     // inNode so a reload re-enters the boss instead of a dead-end map node.
     if (cfg.kind !== 'boss') run.inNode = false;

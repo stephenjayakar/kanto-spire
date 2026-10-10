@@ -672,7 +672,7 @@ export class Run {
     const championRival = act.gauntlet[i] === 'CHAMPION_FIRST';
     const t = championRival ? { ...D.trainers[key], party: blueParty(D.trainers[key].party, this.starter) } : D.trainers[key];
     const lvl = act.gauntletLevels[i] + (this.ascension >= 3 ? 2 : 0) + (this.ascension >= 10 ? 1 : 0);
-    const rule = t.rule || (key === 'RS_CHAMPION' ? 'WALLACE_CHAMPION' : champion ? null : key.replace('ELITE_FOUR_', '')); // (v0.3.25: EMERALD's WALLACE; was STEVEN)
+    const rule = t.rule || (key === 'RS_CHAMPION' ? 'STEVEN' : champion ? null : key.replace('ELITE_FOUR_', ''));
     const rules = champion && !rule ? t.party.map(() => rng.pick(CHAMPION_RULE_POOL)) : null;
     const hp = TUNING.gauntletHp[i] * (TUNING.hpMult ?? 1) / this.hpScaleFor(act.floors, 'boss') * (act.summitHp ? act.summitHp[Math.min(i, act.summitHp.length - 1)] : regionOf(this.summitRegion).summit.hp);
     const enemies = this.makeTrainerEnemies(rng, t, lvl, 'boss', 6, { floor: act.floors, rule, rules, hpMult: hp * TUNING.kindHp.boss });

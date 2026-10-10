@@ -174,7 +174,7 @@ export function actsForRun(run) { return run.world === SPIRE ? spireActs(run.reg
 export const actBosses = (act) => (act?.bosses || []).filter(k => !k.startsWith('LEGEND_'));
 
 // ---- presentation helpers --------------------------------------------------------------------------------------
-const SHOWN_NAMES = { RS_CHAMPION: 'WALLACE', CHAMPION_FIRST: 'BLUE', LEADER_TATE_LIZA: 'TATE & LIZA', LEADER_WALLACE: 'JUAN' }; // (v0.3.25: EMERALD's 8th leader and CHAMPION)
+const SHOWN_NAMES = { RS_CHAMPION: 'STEVEN', CHAMPION_FIRST: 'BLUE', LEADER_TATE_LIZA: 'TATE & LIZA' };
 export const regionByLetter = (l) => REGIONS[REGION_IDS.find(id => REGIONS[id].letter === l)] || null;
 export const trainerName = (key) => SHOWN_NAMES[key] || D.trainers?.[key]?.name || String(key).replace(/^(LEADER|ELITE_FOUR)_/, '');
 export const trainerPic = (key) => D.trainers?.[key === 'CHAMPION_FIRST' ? 'CHAMPION_FIRST_SQUIRTLE' : key]?.pic || null;

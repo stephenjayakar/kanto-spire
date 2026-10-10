@@ -22,6 +22,9 @@ const NODE_SPRITE = {
   wild: null, trainer: 'youngster', elite: 'cooltrainer_m', center: 'nurse', mart: 'clerk', event: null, treasure: null,
 };
 const TRAINER_SPRITES = ['youngster', 'lass', 'bug_catcher', 'hiker', 'camper', 'picnicker', 'fisher', 'sailor', 'gentleman', 'poke_maniac', 'rocker', 'beauty', 'black_belt', 'biker'];
+// HOENN bosses' Emerald overworld walkers (gfx/overworld/people/emerald/, tools/extract_emerald.py)
+const EM_BOSS_WALKER = { LEADER_ROXANNE: 'roxanne', LEADER_BRAWLY: 'brawly', LEADER_WATTSON: 'wattson', LEADER_FLANNERY: 'flannery',
+  LEADER_NORMAN: 'norman', LEADER_WINONA: 'winona', LEADER_TATE_LIZA: 'tate', LEADER_WALLACE: 'juan' };
 const BOSS_SPRITE = {
   LEADER_BROCK: 'brock', LEADER_MISTY: 'misty', LEADER_LT_SURGE: 'lt_surge', LEADER_ERIKA: 'erika', LEADER_KOGA: 'koga',
   LEADER_SABRINA: 'sabrina', LEADER_BLAINE: 'blaine', LEADER_GIOVANNI: 'giovanni', ELITE_FOUR_LORELEI: 'lorelei',
@@ -48,7 +51,7 @@ export class MapScene {
     this.walk = null;
     const act = run.act;
     const prog = Math.max(0, run.floor) / act.floors;
-    Sound.playBGM(act.music[Math.min(act.music.length - 1, Math.floor(prog * act.music.length))]);
+    Sound.playBGM(act.music[Math.min(act.music.length - 1, Math.floor(prog * act.music.length))], { ctx: { map: prog } }); // (HOENN: Emerald's, audio/emerald.js)
     this.scroll = this.targetScroll();
     if (this.opts.intro) this.intro();
     else if (this.opts.actIntro) this.actIntro();
@@ -434,7 +437,10 @@ export class MapScene {
       case 'event': draw(ctx, 'gfx/misc/emotes/question.png', x - 8, y - 20 + bob + Math.sin(this.t * 4 + n.col) * 1.5, { sx: 32, sy: 0, sw: 16, sh: 16 }); break;
       case 'treasure': draw(ctx, 'gfx/overworld/misc/item_ball.png', x - 8, y - 14 + bob); break;
       case 'boss': {
-        const sp = run.act.gauntlet ? regionOf(run.summitRegion).summit.sprite : BOSS_SPRITE[run.boss];
+        let sp = run.act.gauntlet ? regionOf(run.summitRegion).summit.sprite : BOSS_SPRITE[run.boss];
+        // HOENN bosses: Emerald's walkers (optional 'emerald' pack) once loaded, else their pic as before
+        const em = !sp && (run.act.gauntlet ? (run.summitRegion === 'hoenn' ? 'wallace' : null) : EM_BOSS_WALKER[run.boss]);
+        if (em && ready(img(`gfx/overworld/people/emerald/${em}.png`))) sp = `emerald/${em}`;
         if (sp) draw(ctx, `gfx/overworld/people/${sp}.png`, x - 16, y - 58 + bob, { sx: 0, sy: 0, sw: 16, sh: 32, scale: 2 });
         else if (!LEGENDS[run.boss]) { const t = D.trainers[run.act.gauntlet ? run.act.gauntlet[0] : run.boss]; if (t) drawTrainer(ctx, t.pic, x - 32, y - 60 + bob); } // 1x, as tall as the Kanto bosses' 2x overworld sprites
         else if (LEGENDS[run.boss]) {

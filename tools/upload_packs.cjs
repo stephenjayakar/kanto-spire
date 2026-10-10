@@ -14,7 +14,7 @@
 //   are spread over buckets by a hash of their folder name, so adding one changes one bucket.
 // - Each pack is also uploaded gzipped (when that saves anything) for newer clients; the plain copy stays for
 //   clients from before (they ignore the new manifest fields and download every pack plain).
-// - lazy packs (sound, move animations, HGSS art) aren't needed to reach the title: newer clients fetch them in
+// - lazy packs (sound, move animations, HGSS art, Emerald music + art) aren't needed to reach the title: newer clients fetch them in
 //   the background, and anything that asks for one of their files waits for it.
 const fs = require('fs'), path = require('path'), crypto = require('crypto'), zlib = require('zlib'), os = require('os');
 const { execFileSync } = require('child_process');
@@ -27,12 +27,13 @@ const outDir = args.includes('--out') ? path.resolve(args[args.indexOf('--out') 
 if (!fs.existsSync(path.join(assets, 'data'))) { console.error('web/assets is missing; run the extract tools first.'); process.exit(1); }
 
 const POKEMON_BUCKETS = 8;
-const LAZY = new Set(['sound', 'anims', 'hgss', 'gen4']);
+const LAZY = new Set(['sound', 'anims', 'hgss', 'gen4', 'emerald']);
 function fnv1a(s) { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619) >>> 0; return h; }
 // Which pack a file goes in (each stays far under the 20 MB HTTP action response limit).
 function packOf(rel) {
   if (/^(data|gfx|sound)\/gen4\//.test(rel)) return 'gen4';
   if (rel.includes('/hgss/')) return 'hgss';
+  if (rel.includes('/emerald/')) return 'emerald'; // (optional Emerald music + art: tools/extract_emerald.py)
   if (rel.startsWith('anims/')) return 'anims';
   if (rel.startsWith('sound/')) return 'sound';
   const m = /^gfx\/pokemon\/([^/]+)\//.exec(rel);

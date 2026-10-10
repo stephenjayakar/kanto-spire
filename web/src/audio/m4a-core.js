@@ -91,6 +91,19 @@ export class SparseMemory {
     this.misses = 0;
     this.missSet = new Set();
   }
+  // A second bank (another game's songs, relocated by its extractor to addresses this one doesn't use, e.g. Emerald's
+  // at 0x0A000000+: tools/extract_emerald_sound.js): its segments join the address space with their own buffer.
+  addSegments(bytes, segments) {
+    const buf = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+    for (const s of segments) {
+      let i = 0;
+      while (i < this.addrs.length && this.addrs[i] < s.addr) i++;
+      if ((i > 0 && this.ends[i - 1] > s.addr) || (i < this.addrs.length && this.addrs[i] < s.addr + s.length)) throw new Error('bank segments overlap');
+      this.addrs.splice(i, 0, s.addr); this.ends.splice(i, 0, s.addr + s.length);
+      this.offs.splice(i, 0, s.offset); this.bufs.splice(i, 0, buf);
+    }
+    this.last = 0;
+  }
   addRam(addr, size) {
     const buf = new Uint8Array(size);
     let i = 0;
@@ -1639,6 +1652,10 @@ export class EngineHost {
     const e = this.engine;
     if (!e) return;
     switch (m.type) {
+      case 'addBank':        // { bank: ArrayBuffer, segments, tag }: a second (relocated) song bank
+        try { e.mem.addSegments(new Uint8Array(m.bank), m.segments); this.post({ type: 'bankAdded', tag: m.tag, ok: true }); }
+        catch (err) { this.post({ type: 'bankAdded', tag: m.tag, ok: false, message: String(err && err.message || err) }); }
+        break;
       case 'start':          // { player, header, tag, mode: 'start'|'change', fadeInSpeed }
         if (m.player === PLAYER_BGM) this.fanfare = null;
         if (m.fadeInSpeed) e.startSongFadeIn(m.player, m.header, m.fadeInSpeed, m.tag);

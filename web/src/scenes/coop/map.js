@@ -28,7 +28,7 @@ export class CoopMapScene extends MapScene {
     this.walk = null;
     const act = w.act;
     const prog = Math.max(0, w.floor) / act.floors;
-    Sound.playBGM(act.music[Math.min(act.music.length - 1, Math.floor(prog * act.music.length))]);
+    Sound.playBGM(act.music[Math.min(act.music.length - 1, Math.floor(prog * act.music.length))], { ctx: { map: prog } });
     this.scroll = this.targetScroll();
     coopStarterOffers(this.s); // an act was cleared: each player picks a new starter (local meta only)
   }
