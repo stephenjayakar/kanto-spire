@@ -47,6 +47,7 @@ node   tools/extract_sound.js    # music, sound effects, cries           -> web/
 python tools/extract_hgss.py path/to/heartgold.nds   # optional: Johto portraits
 git clone --depth 1 https://github.com/pret/pokeemerald          # optional: Emerald (Hoenn) music and art
 python tools/extract_emerald.py path/to/emerald.gba  # -> web/assets/sound/emerald, web/assets/gfx/**/emerald
+node tools/extract_retro_music.mjs --red pokered.gb --silver pokesilver.gbc  # optional: AUDIO STYLE RETRO -> web/assets/retro
 
 node serve.cjs 8080              # open http://localhost:8080
 ```

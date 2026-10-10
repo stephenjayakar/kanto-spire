@@ -13,6 +13,12 @@
 //
 // Players (like the real game's gMPlayTable): 0 = BGM, 1-3 = SE (the song table's `ms`
 // field picks the player), 4-5 = Pokemon cries. SFX/cries play over the music.
+//
+// AUDIO: HQ / GBA / RETRO (Sound.setQuality). HQ and GBA are the m4a mixer's two render modes; RETRO plays the music
+// (BGM and fanfares) on a second engine, the Game Boy one (gb-core.js in gb-worklet.js: Pokemon Red's and Silver's
+// own songs, the lazy 'retro' asset pack), picked per request by Sound.setRetroResolver (audio/retro.js). SFX and
+// cries stay on m4a. A song RETRO has no match for, or any song while the Game Boy bank is still loading, plays on
+// m4a as usual; switching modes restarts the current song in the new style.
 
 const PLAYER_BGM = 0;
 const SE_PLAYERS = [1, 2, 3];
@@ -31,6 +37,12 @@ const state = {
   volumes: { master: 1, music: 1, sfx: 1 }, listenersInstalled: false, initPromise: null,
   resolver: null, banks: new Map(),
   wavCry: null, wavCache: new Map(), ducks: 0,
+  lastBGM: null, stereo: true, // lastBGM: the last playBGM request { name, o }, replayed when the AUDIO mode switches
+};
+// RETRO: the Game Boy engine's node, its gain (music volume x cry ducking) and what it plays
+const gb = {
+  on: false, ready: null, loaded: false, port: null, node: null, gain: null, backend: null, meta: null,
+  resolver: null, current: null, ducks: 0, pausedM4a: new Set(), baseUrl: 'assets/retro/',
 };
 // Cries that aren't in the m4a bank (v0.4.0: the Gen 4 species' HGSS samples, sound/gen4/cries/*.wav) play as plain
 // WebAudio buffers through the same master volume and SFX level, ducking the music like a bank cry does.
@@ -62,8 +74,10 @@ async function playWavCry(url, o) {
   g.connect(state.master);
   const duck = o.duck !== false;
   if (duck && state.ducks++ === 0) post({ type: 'playerVolume', players: [PLAYER_BGM], volume: state.volumes.music * DUCK_VOLUME });
+  if (duck) gbDuck(1);
   return new Promise((resolve) => {
     src.onended = () => {
+      if (duck) gbDuck(-1);
       if (duck && --state.ducks === 0) post({ type: 'playerVolume', players: [PLAYER_BGM], volume: state.volumes.music });
       resolve(true);
     };
@@ -131,6 +145,81 @@ function onWorkletMessage(e) {
     console.error('[m4a worklet]', m.message);
   }
 }
+function onGbMessage(m) {
+  if (m.type === 'end') {
+    settle(m.tag, !m.missing);
+    if (m.fanfare) { if (gb.pausedM4a.delete(m.tag)) post({ type: 'continue', player: PLAYER_BGM }); }
+    else if (gb.current && gb.current.tag === m.tag && !gb.current.next) gb.current = null;
+  }
+}
+const gbPost = (msg, transfer) => { if (gb.port) gb.port.postMessage(msg, transfer || []); };
+function gbVolume() {
+  if (!gb.gain || !state.ctx) return;
+  gb.gain.gain.setTargetAtTime(state.volumes.music * (gb.ducks > 0 ? DUCK_VOLUME : 1), state.ctx.currentTime, 0.015);
+}
+function gbDuck(d) { gb.ducks = Math.max(0, gb.ducks + d); gbVolume(); }
+// The Game Boy song for a request, or null. The resolver may answer 'red:Routes1' or { song, next }.
+function gbSong(name, ctx) {
+  if (!gb.on || !gb.loaded || !gb.resolver) return null;
+  let r = null;
+  try { r = gb.resolver(name, ctx); } catch (err) { console.warn('[sound] retro resolver', err); }
+  if (!r) return null;
+  const song = typeof r === 'string' ? r : r.song;
+  return song && gb.meta.songs[song] ? { song, next: (typeof r === 'object' && r.next) || null } : null;
+}
+// Loads the Game Boy bank and starts its engine (once). Resolves true when RETRO can play.
+function ensureGb() {
+  if (gb.ready) return gb.ready;
+  gb.ready = (async () => {
+    const ctx = state.ctx;
+    if (!ctx) return false;
+    const base = new URL(gb.baseUrl, typeof document !== 'undefined' ? document.baseURI : import.meta.url);
+    let meta, red, silver;
+    try {
+      const [rj, rr, rs] = await Promise.all(['retro.json', 'red.bin', 'silver.bin'].map((f) => fetch(new URL(f, base))));
+      if (!rj.ok || !rr.ok || !rs.ok) { console.warn('[sound] retro music bank missing'); return false; }
+      [meta, red, silver] = await Promise.all([rj.json(), rr.arrayBuffer(), rs.arrayBuffer()]);
+    } catch (err) { console.warn('[sound] retro music bank', err?.message || err); return false; }
+    gb.meta = meta;
+    const gain = ctx.createGain();
+    gain.gain.value = state.volumes.music;
+    gain.connect(state.master);
+    gb.gain = gain;
+    let loaded;
+    const ready = new Promise((r) => { loaded = r; });
+    const onMsg = (m) => { if (m.type === 'loaded') loaded(m.ok); else onGbMessage(m); };
+    let useWorklet = state.backend === 'audioworklet';
+    if (useWorklet) {
+      try {
+        await ctx.audioWorklet.addModule(new URL('./gb-worklet.js', import.meta.url));
+        const node = new AudioWorkletNode(ctx, 'gb-processor', { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2] });
+        node.port.onmessage = (e) => onMsg(e.data);
+        node.connect(gain);
+        gb.node = node; gb.port = node.port; gb.backend = 'audioworklet';
+      } catch (err) { console.warn('[sound] retro worklet failed (' + err.message + '); using ScriptProcessor'); useWorklet = false; }
+    }
+    if (!useWorklet) {
+      const { GbPlayer } = await import('./gb-core.js');
+      const player = new GbPlayer(ctx.sampleRate, (m) => setTimeout(() => onMsg(m), 0));
+      const sp = ctx.createScriptProcessor(4096, 0, 2);
+      sp.onaudioprocess = (ev) => { const ob = ev.outputBuffer; player.process(ob.getChannelData(0), ob.getChannelData(1), ob.length); };
+      sp.connect(gain);
+      gb.node = sp; gb.port = { postMessage: (m) => player.onMessage(m) }; gb.backend = 'scriptprocessor';
+    }
+    gb.port.postMessage({ type: 'load', meta, binaries: { red, silver } }, [red, silver]);
+    if (!(await ready)) return false;
+    gbPost({ type: 'option', stereo: state.stereo !== false });
+    gb.loaded = true;
+    return true;
+  })().catch((err) => { console.warn('[sound] retro', err); return false; });
+  return gb.ready;
+}
+// Plays the current request again in the active style (after a mode switch, or once the Game Boy bank is in).
+function replayBGM() {
+  const r = state.lastBGM;
+  if (r) Sound.playBGM(r.name, { ...r.o, restart: true, fadeInFrames: 0 });
+}
+
 function installUnlockListeners() {
   if (state.listenersInstalled || typeof window === 'undefined') return;
   state.listenersInstalled = true;
@@ -225,6 +314,7 @@ export const Sound = {
         stereo: opts.stereo !== false, interpolation: opts.interpolation || 'hold', quality: opts.quality === 'gba' ? 'gba' : 'hq',
       }, [bank]);
       state.quality = opts.quality === 'gba' ? 'gba' : 'hq';
+      state.stereo = opts.stereo !== false;
       await ready;
       post({ type: 'playerVolume', players: [PLAYER_BGM], volume: state.volumes.music });
       post({ type: 'playerVolume', players: [...SE_PLAYERS, ...CRY_PLAYERS], volume: state.volumes.sfx });
@@ -295,6 +385,17 @@ export const Sound = {
    * @param {object} [o] { fadeInFrames: frames (60 = 1 s), restart: restart even if already playing }
    */
   playBGM(name, o = {}) {
+    state.lastBGM = { name, o };
+    const g = gbSong(name, o.ctx);
+    if (g) {                                         // RETRO: the Game Boy song, the m4a BGM stops
+      if (state.currentBGM) { post({ type: 'stop', player: PLAYER_BGM }); state.currentBGM = null; }
+      if (!o.restart && gb.current && gb.current.song === g.song && !o.fadeInFrames) return;
+      const tag = state.nextTag++;
+      gb.current = { song: g.song, tag, next: g.next };
+      gbPost({ type: 'bgm', name: g.song, tag, next: g.next, fadeInFrames: o.fadeInFrames || 0 });
+      return;
+    }
+    if (gb.current) { gbPost({ type: 'stop' }); gb.current = null; }
     const s = songInfo(name, o.ctx);
     if (!s) return;
     const full = s.name || SONG_NAMES[s.index] || name;
@@ -308,10 +409,12 @@ export const Sound = {
   fadeOutBGM(frames = 64) {
     post({ type: 'fadeOut', player: PLAYER_BGM, speed: Math.max(1, Math.round(frames / FADE_STEPS)) });
     state.currentBGM = null;
+    if (gb.current) { gbPost({ type: 'fadeOut', frames }); gb.current = null; }
+    state.lastBGM = null;
   },
-  stopBGM() { post({ type: 'stop', player: PLAYER_BGM }); state.currentBGM = null; },
-  pauseBGM() { post({ type: 'stop', player: PLAYER_BGM }); },
-  resumeBGM() { post({ type: 'continue', player: PLAYER_BGM }); },
+  stopBGM() { post({ type: 'stop', player: PLAYER_BGM }); state.currentBGM = null; gbPost({ type: 'stop' }); gb.current = null; state.lastBGM = null; },
+  pauseBGM() { post({ type: 'stop', player: PLAYER_BGM }); gbPost({ type: 'pause' }); },
+  resumeBGM() { if (!gb.current) post({ type: 'continue', player: PLAYER_BGM }); gbPost({ type: 'resume' }); },
 
   /**
    * Play a sound effect (or any song) on the player given by the song table (SE1-SE3 for se_*).
@@ -332,12 +435,28 @@ export const Sound = {
   },
   /** Fanfare (mus_level_up, mus_obtain_item, ...): pauses the BGM, resumes it after. Resolves on end. */
   playFanfare(name, o = {}) {
+    const g = gbSong(name, o.ctx);
+    if (g) {                                         // RETRO: on the Game Boy engine, pausing whichever BGM plays
+      const tag = state.nextTag++;
+      const p = track(tag, 'gb-fanfare', 8000);
+      if (state.currentBGM) { post({ type: 'stop', player: PLAYER_BGM }); gb.pausedM4a.add(tag); }
+      gbPost({ type: 'fanfare', name: g.song, tag });
+      // (if the end never comes, e.g. a suspended context, the m4a BGM still gets going again)
+      p.then(() => { if (gb.pausedM4a.delete(tag)) post({ type: 'continue', player: PLAYER_BGM }); });
+      return p;
+    }
     const s = songInfo(name, o.ctx);
     if (!s) return Promise.resolve(false);
     const tag = state.nextTag++;
     const player = s.player === PLAYER_BGM ? 2 : s.player;
     const p = track(tag, player, 8000);
     post({ type: 'fanfare', player, header: s.header, tag });
+    if (gb.current) {
+      // a Game Boy BGM waits too; and m4a must not resume its own (stopped, stale) BGM when the fanfare ends: a BGM
+      // 'stop' after 'fanfare' cancels that (EngineHost forgets the fanfare's resume, the fanfare itself plays on)
+      post({ type: 'stop', player: PLAYER_BGM });
+      gbPost({ type: 'pause' }); p.then(() => gbPost({ type: 'resume' }));
+    }
     return p;
   },
 
@@ -357,6 +476,7 @@ export const Sound = {
     if (cryIndex === undefined || cryIndex === null) return Promise.resolve(false);
     const tag = state.nextTag++;
     const p = track(tag, undefined, 4000);
+    if (o.duck !== false && gb.current) { gbDuck(1); p.then(() => gbDuck(-1)); }
     const opts = {};
     for (const k of ['mode', 'pitch', 'length', 'reverse', 'volume', 'pan', 'release', 'chorus', 'priority', 'duck']) {
       if (o[k] !== undefined) opts[k] = o[k];
@@ -368,7 +488,7 @@ export const Sound = {
   /** fn(species) -> URL of a WAV cry to play instead of the bank's (null: the bank's). Set once by the game (main.js). */
   setWavCries(fn) { state.wavCry = typeof fn === 'function' ? fn : null; },
 
-  stopAll() { post({ type: 'stopAll' }); state.currentBGM = null; },
+  stopAll() { post({ type: 'stopAll' }); state.currentBGM = null; gbPost({ type: 'stop' }); gb.current = null; state.lastBGM = null; },
 
   /** 0..1 (values > 1 amplify). */
   setMasterVolume(v) {
@@ -378,6 +498,7 @@ export const Sound = {
   setMusicVolume(v) {
     state.volumes.music = Math.max(0, v);
     post({ type: 'playerVolume', players: [PLAYER_BGM], volume: state.volumes.music });
+    gbVolume();
   },
   setSfxVolume(v) {
     state.volumes.sfx = Math.max(0, v);
@@ -385,13 +506,27 @@ export const Sound = {
   },
   get volumes() { return { ...state.volumes }; },
   /** Mono mixes like the GBA's "Mono" sound option (DMA A+B at 50% each, PSG centred). */
-  setStereo(on) { post({ type: 'option', stereo: !!on }); },
+  setStereo(on) { state.stereo = !!on; post({ type: 'option', stereo: !!on }); gbPost({ type: 'option', stereo: !!on }); },
   /** 'hold' = GBA DAC zero-order hold (authentic), 'linear' = smoother 13379 Hz -> output upsampling. */
   setInterpolation(mode) { post({ type: 'option', interpolation: mode === 'linear' ? 'linear' : 'hold' }); },
   /** 'hq' (default) = 12 voices mixed in full precision at 2x rate, smooth upsampling, low-pass, soft limiter;
    *  'gba' = the exact GBA mixer (8-bit 13379 Hz ring, 5 voices, zero-order hold). Switches live. */
-  setQuality(q) { state.quality = q === 'gba' ? 'gba' : 'hq'; post({ type: 'option', quality: state.quality }); },
-  get quality() { return state.quality || 'hq'; },
+  setQuality(q) {
+    const retro = q === 'retro';   // 'retro' = the music on the Game Boy engine (SFX and cries keep the 'hq' mixer)
+    state.quality = q === 'gba' ? 'gba' : 'hq';
+    post({ type: 'option', quality: state.quality });
+    if (retro === gb.on) return;
+    gb.on = retro;
+    if (retro) { if (gb.loaded) replayBGM(); else ensureGb().then((ok) => { if (ok && gb.on) replayBGM(); }); }
+    else if (gb.current) replayBGM();
+  },
+  get quality() { return gb.on ? 'retro' : state.quality || 'hq'; },
+  /** fn(name, ctx) -> the Game Boy song for FireRed song `name` ('red:Routes1' or { song, next }), or null (m4a). */
+  setRetroResolver(fn) { gb.resolver = fn || null; },
+  /** Where the Game Boy bank is (default 'assets/retro/'). */
+  setRetroBase(url) { gb.baseUrl = url; },
+  /** RETRO state, for tests and debugging. */
+  get retro() { return { on: gb.on, loaded: gb.loaded, backend: gb.backend, song: gb.current ? gb.current.song : null }; },
 };
 
 for (const k of ['playBGM', 'fadeOutBGM', 'stopBGM', 'pauseBGM', 'resumeBGM', 'playSE', 'stopSE', 'playFanfare',

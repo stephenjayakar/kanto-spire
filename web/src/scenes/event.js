@@ -30,7 +30,7 @@ export class EventScene {
     this.steps = null; // choices of a multi-step event's next step
     this.busy = false;
     this.t = 0;
-    Sound.playBGM(this.ev.music || MUSIC[this.ev.id] || run.act.townMusic);
+    Sound.playBGM(this.ev.music || MUSIC[this.ev.id] || run.act.townMusic, { ctx: { event: this.ev.id } }); // (ctx: RETRO's per-event songs, audio/retro.js)
     saveRun();
   }
   update(dt) { this.t += dt; }

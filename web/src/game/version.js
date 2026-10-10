@@ -2,9 +2,18 @@
 // Game version and patch notes (shown from the title screen). Versions are major.minor.patch: every production
 // deploy that changes the game bumps the patch (v0.2.0 -> v0.2.1); the owner calls minor bumps (v0.1.x -> v0.2.0);
 // no major bumps yet. Each one gets a new top PATCH_NOTES entry; see AGENTS.md.
-export const VERSION = 'v0.4.2';
+export const VERSION = 'v0.4.3';
 
 export const PATCH_NOTES = [
+  {
+    v: 'v0.4.3',
+    sections: [
+      ['NEW', [
+        'SETTINGS > AUDIO STYLE has a third choice, RETRO: the music becomes the original Game Boy chiptunes from Pokémon Red (KANTO) and Pokémon Silver (JOHTO, and HOENN by mood), played from their original song data',
+        'HQ (the default) and GBA work as before: HQ is the GBA soundtrack at full quality, GBA sounds like the real console. Hover each choice for a reminder',
+      ]],
+    ],
+  },
   {
     v: 'v0.4.2',
     sections: [

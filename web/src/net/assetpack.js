@@ -14,6 +14,9 @@ const MIME = { png: 'image/png', json: 'application/json', bin: 'application/oct
 const CACHE = 'kanto-spire-packs';
 const PARALLEL = 4;
 const pending = []; // lazy packs still loading: { dirs: ['sound/', ...], done: Promise }
+// Lazy packs that are NOT fetched in the background: only when something asks for one of their files (the RETRO music
+// bank: only players who pick AUDIO STYLE: RETRO download it).
+const ON_DEMAND = new Set(['retro']);
 
 // downloaded: bytes fetched from the server this session (0 when everything came from the cache)
 export const Packs = { active: false, downloaded: 0, background: null };
@@ -34,7 +37,9 @@ export function assetUrl(path) {
 // A promise for when the lazy pack holding `path` has loaded, or null when the file is here (or never will be).
 export function assetPending(path) {
   if (!Packs.active || files.has(path)) return null;
-  return pending.find(p => p.dirs.some(d => path.startsWith(d)))?.done || null;
+  const entry = pending.find(p => p.dirs.some(d => path.startsWith(d)));
+  if (entry?.start) entry.start(); // (an on-demand pack: asked for now)
+  return entry?.done || null;
 }
 // Resolves once no lazy pack that could hold `path` is still loading (a folder can match more than one pack's dirs:
 // 'sound/' holds the 'sound' pack and the 'emerald' pack's 'sound/emerald/', so it waits for each in turn).
@@ -151,23 +156,30 @@ export async function loadPacks({ siteUrl, token, list, onProgress }) {
     const entry = { dirs: p.dirs, done: new Promise(r => { resolve = r; }), p, resolve };
     pending.push(entry);
   }
+  const fetchLazy = async (entry) => {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        unpack(await getPack(entry.p, { ...opts, onBytes: (n, net) => { if (net) Packs.downloaded += n; } }));
+        break;
+      } catch (e) {
+        console.warn(`asset pack ${entry.p.name} failed (try ${attempt + 1})`, e);
+        if (e.status === 401 || e.status === 403) break;
+        await new Promise(r => setTimeout(r, 2000 * (attempt + 1)));
+      }
+    }
+    pending.splice(pending.indexOf(entry), 1);
+    entry.resolve();
+  };
+  // on-demand packs wait to be asked for (assetPending); their cached copy stays (keep) until then
+  const onDemand = pending.filter(e => ON_DEMAND.has(e.p.name));
+  for (const e of onDemand) {
+    keep.add(cacheKey(siteUrl, e.p.name, e.p.hash));
+    e.start = () => { e.start = null; fetchLazy(e); };
+  }
   Packs.active = true;
   installFetch();
   Packs.background = (async () => {
-    await pool(pending.slice(), PARALLEL, async (entry) => {
-      for (let attempt = 0; attempt < 3; attempt++) {
-        try {
-          unpack(await getPack(entry.p, { ...opts, onBytes: (n, net) => { if (net) Packs.downloaded += n; } }));
-          break;
-        } catch (e) {
-          console.warn(`asset pack ${entry.p.name} failed (try ${attempt + 1})`, e);
-          if (e.status === 401 || e.status === 403) break;
-          await new Promise(r => setTimeout(r, 2000 * (attempt + 1)));
-        }
-      }
-      pending.splice(pending.indexOf(entry), 1);
-      entry.resolve();
-    });
+    await pool(pending.filter(e => !onDemand.includes(e)), PARALLEL, fetchLazy);
     // drop cached packs that are no longer part of the game (only once every current one is in)
     if (cache) for (const req of await cache.keys().catch(() => [])) if (!keep.has(req.url)) cache.delete(req).catch(() => {});
   })();

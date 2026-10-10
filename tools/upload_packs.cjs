@@ -27,12 +27,15 @@ const outDir = args.includes('--out') ? path.resolve(args[args.indexOf('--out') 
 if (!fs.existsSync(path.join(assets, 'data'))) { console.error('web/assets is missing; run the extract tools first.'); process.exit(1); }
 
 const POKEMON_BUCKETS = 8;
-const LAZY = new Set(['sound', 'anims', 'hgss', 'emerald', 'pokemon-gen4']);
+// (retro: the AUDIO STYLE: RETRO Game Boy music bank, tools/extract_retro_music.mjs. Newer clients fetch it only when a
+// player picks RETRO: net/assetpack.js ON_DEMAND; older ones load it in the background like the other lazy packs.)
+const LAZY = new Set(['sound', 'anims', 'hgss', 'emerald', 'pokemon-gen4', 'retro']);
 function fnv1a(s) { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619) >>> 0; return h; }
 // Which pack a file goes in (each stays far under the 20 MB HTTP action response limit).
 function packOf(rel) {
   if (rel.startsWith('gfx/gen4/pokemon/')) return 'pokemon-gen4';
   if (rel.includes('/hgss/')) return 'hgss';
+  if (rel.startsWith('retro/')) return 'retro'; // (Pokemon Red + Silver music for AUDIO STYLE: RETRO)
   if (rel.includes('/emerald/')) return 'emerald'; // (optional Emerald music + art: tools/extract_emerald.py)
   if (rel.startsWith('anims/')) return 'anims';
   if (rel.startsWith('sound/')) return 'sound';

@@ -7,6 +7,7 @@ import { loadMeta, G, saveKeys, setSaveScope } from './game/state.js';
 import { GFX } from './scenes/common.js';
 import { Sound } from './audio/sound.js';
 import { EM, hoennSong } from './audio/emerald.js';
+import { retroSong, RETRO_NEXT } from './audio/retro.js';
 import { TitleScene } from './scenes/title.js';
 import { initCloud, Cloud, signedIn, signIn, authToken, packManifest, dropAuth, pendingInvite } from './net/cloud.js';
 import { loadPacks } from './net/assetpack.js';
@@ -65,6 +66,16 @@ async function boot() {
     Sound.addBank('assets/sound/emerald/', EM).then(ok => { if (ok) console.log('[sound] Emerald music bank loaded'); });
     // the Gen 4 species' cries (not in FireRed's bank): their HGSS samples (D.species[key].cryWav, game/gen4.js)
     Sound.setWavCries(key => { const w = D.species[key]?.cryWav; return w ? 'assets/' + w : null; });
+    // AUDIO: RETRO plays Pokemon Red's / Silver's own songs (audio/retro.js picks one per request; the lazy 'retro'
+    // pack, loaded only once someone picks RETRO). Display only, like the Emerald music.
+    Sound.setRetroResolver((name, ctx) => {
+      const act = G.coop?.game?.world?.act || G.run?.act || null;
+      let tod = null; // (JOHTO's time of day picks the night wild-battle theme; a read, no game state touched)
+      if (act?.region === 'johto' && !G.coop) { try { tod = G.run.timeOfDay(); } catch { tod = null; } }
+      const song = retroSong(act, name, ctx, { tod });
+      return song ? { song, next: RETRO_NEXT[song] || null } : null;
+    });
+    if (s.audioQuality === 'retro') Sound.setQuality('retro');
   }).catch(e => console.warn('audio init failed', e));
   await Promise.all([
     loadFonts(),

@@ -131,6 +131,13 @@ function newRun() {
   }));
 }
 
+// SETTINGS > AUDIO STYLE options: [settings.audioQuality value, label, hover text]
+export const AUDIO_STYLES = [
+  ['hq', 'HQ', 'The GBA soundtrack played at full quality: clean and smooth. (Default)'],
+  ['gba', 'GBA', 'Sounds like a real Game Boy Advance: lower sample rate and a bit of crunch.'],
+  ['retro', 'RETRO', 'The original Game Boy chiptunes from Pokémon Red and Silver.'],
+];
+
 export class SettingsModal extends Modal {
   draw(ctx) {
     this.dim(ctx);
@@ -150,11 +157,18 @@ export class SettingsModal extends Modal {
     if (button(ctx, s.fast ? 'ON' : 'OFF', x + 170, y + 84, 60, 20, { color: s.fast ? THEME.green : '#806060' })) { s.fast = !s.fast; saveMeta(); }
     text(ctx, 'STEREO', x + 14, y + 112, { color: 'white' });
     if (button(ctx, s.stereo ? 'ON' : 'OFF', x + 170, y + 108, 60, 20, { color: s.stereo ? THEME.green : '#806060' })) { s.stereo = !s.stereo; Sound.setStereo(s.stereo); saveMeta(); }
-    // HQ = smooth full-precision mixing (default); GBA = the original console's crunchy 8-bit mixer
-    const gba = s.audioQuality === 'gba';
-    text(ctx, 'AUDIO QUALITY', x + 14, y + 136, { color: 'white' });
-    if (button(ctx, gba ? 'GBA' : 'HQ', x + 170, y + 132, 60, 20, { color: gba ? '#806060' : THEME.green })) { s.audioQuality = gba ? 'hq' : 'gba'; Sound.setQuality(s.audioQuality); saveMeta(); }
-    if (hover(x + 10, y + 130, w - 20, 24)) tip('AUDIO QUALITY', 'HQ: smooth, full-precision mixing with more voices (default).\nGBA: the exact Game Boy Advance mixer, crunchy 8-bit sound and all.');
+    // AUDIO STYLE: HQ = the m4a songs mixed in full precision (default); GBA = the same songs through the console's own
+    // 8-bit mixer; RETRO = Pokemon Red's and Silver's Game Boy songs (audio/retro.js). Saved as settings.audioQuality.
+    const aq = AUDIO_STYLES.some(m => m[0] === s.audioQuality) ? s.audioQuality : 'hq';
+    text(ctx, 'AUDIO STYLE', x + 14, y + 136, { color: 'white' });
+    let bx = x + 110; // (HQ 34, GBA 34, RETRO 46 wide: the row ends at x + 230 like the others)
+    for (const [k, label, body] of AUDIO_STYLES) {
+      const bw = k === 'retro' ? 46 : 34;
+      if (button(ctx, label, bx, y + 132, bw, 20, { color: k === aq ? THEME.green : '#506080' }) && k !== aq) { s.audioQuality = k; Sound.setQuality(k); saveMeta(); }
+      if (hover(bx, y + 130, bw, 24)) tip(label, body);
+      bx += bw + 3;
+    }
+    if (hover(x + 10, y + 130, 98, 24)) tip('AUDIO STYLE', AUDIO_STYLES.map(([, l, b]) => `${l}: ${b}`).join('\n'), { width: 230 });
     // CRT: an old-TV post-process over the whole screen (engine/crt.js), off by default
     const crt = CRT_MODES.includes(s.crt) ? s.crt : 'off';
     text(ctx, 'CRT', x + 14, y + 160, { color: 'white' });
