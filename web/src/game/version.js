@@ -2,9 +2,27 @@
 // Game version and patch notes (shown from the title screen). Versions are major.minor.patch: every production
 // deploy that changes the game bumps the patch (v0.2.0 -> v0.2.1); the owner calls minor bumps (v0.1.x -> v0.2.0);
 // no major bumps yet. Each one gets a new top PATCH_NOTES entry; see AGENTS.md.
-export const VERSION = 'v0.3.24';
+export const VERSION = 'v0.4.0';
 
 export const PATCH_NOTES = [
+  {
+    v: 'v0.4.0',
+    sections: [
+      ['NEW', [
+        'All of Gen 4: 107 new POKéMON with their moves and evolutions; the Pokédex now goes to 493',
+        'New SHINY, DUSK, DAWN and ICE STONES, and cross-gen evolutions (MAGMORTAR, TOGEKISS, LEAFEON and more)',
+        'Every POKéMON in the Pokédex can now be caught somewhere; the rarest show up as rare finds',
+        'Rare legendary events: CERULEAN CAVE (MEWTWO), FARAWAY ISLAND (MEW), BIRTH ISLAND (DEOXYS), SKY PILLAR (RAYQUAZA)',
+        'Gen 4 legendaries appear as rare legendary elites in later acts',
+        'Emerald music, and Emerald trainers including JUAN, WALLACE and STEVEN',
+      ]],
+      ['CHANGES', [
+        "One legendary per run: once you have one, you can't catch another",
+        'Co-op: when there are two legendaries, each player picks one; for MEW and MEWTWO every player gets a copy',
+        'Co-op MEWTWO attacks every player at once',
+      ]],
+    ],
+  },
   {
     v: 'v0.3.24',
     sections: [
