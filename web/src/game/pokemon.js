@@ -1,5 +1,6 @@
 // Pokémon instances owned by the player or used as enemies.
 import { D, monStats, expForLevel } from './data.js';
+import { KNOWS_MOVE_LEVEL } from './gen4.js';
 
 let uidCounter = 1;
 export function setUidCounter(n) { uidCounter = n; }
@@ -42,8 +43,9 @@ export function replaceMoves(speciesKey, level, moves, bad) {
 }
 const noPlayerMove = (m) => NO_PLAYER_MOVES.has(m);
 
-// Legendary and mythical POKéMON (v0.3.25: ONE LEGENDARY PER RUN, see Run.hasLegendary). SNORLAX isn't one.
-export const LEGENDARY = new Set(['ARTICUNO', 'ZAPDOS', 'MOLTRES', 'MEWTWO', 'MEW', 'RAIKOU', 'ENTEI', 'SUICUNE', 'LUGIA', 'HO_OH', 'CELEBI', 'REGIROCK', 'REGICE', 'REGISTEEL', 'LATIAS', 'LATIOS', 'KYOGRE', 'GROUDON', 'RAYQUAZA', 'JIRACHI', 'DEOXYS']);
+// Legendary and mythical POKéMON (v0.3.25: ONE LEGENDARY PER RUN, see Run.hasLegendary; v0.4.0: + Gen 4's). SNORLAX isn't one.
+export const LEGENDARY = new Set(['ARTICUNO', 'ZAPDOS', 'MOLTRES', 'MEWTWO', 'MEW', 'RAIKOU', 'ENTEI', 'SUICUNE', 'LUGIA', 'HO_OH', 'CELEBI', 'REGIROCK', 'REGICE', 'REGISTEEL', 'LATIAS', 'LATIOS', 'KYOGRE', 'GROUDON', 'RAYQUAZA', 'JIRACHI', 'DEOXYS',
+  'UXIE', 'MESPRIT', 'AZELF', 'DIALGA', 'PALKIA', 'HEATRAN', 'REGIGIGAS', 'GIRATINA', 'CRESSELIA', 'PHIONE', 'MANAPHY', 'DARKRAI', 'SHAYMIN', 'ARCEUS']);
 export const isLegendary = (sp) => LEGENDARY.has(sp);
 
 export function makeMon(speciesKey, level, opts = {}) {
@@ -121,7 +123,9 @@ export function movesLearnedAt(speciesKey, level) {
 }
 
 // Level-based evolution. Friendship evolutions happen at level 22, and trade evolutions (no trading in a
-// roguelike) at 37, or 40 for the ones that needed a held item.
+// roguelike) at 37, or 40 for the ones that needed a held item. Gen 4's methods were turned into these rules when the
+// data loaded (gen4.js gameEvolution), but for KNOWS_MOVE (on a level-up while it knows, or just learned, the move;
+// at KNOWS_MOVE_LEVEL anyway) and BURMY's 50/50 LEVEL_FEMALE / LEVEL_MALE branch.
 export function levelEvolution(mon) {
   for (const e of speciesOf(mon).evolutions || []) {
     if (!D.species[e.into]) continue;
@@ -132,6 +136,8 @@ export function levelEvolution(mon) {
          e.method === 'LEVEL_SILCOON' || e.method === 'LEVEL_CASCOON' || e.method === 'LEVEL_NINJASK') && mon.level >= e.param) {
       return pickBranchEvo(mon, e);
     }
+    if ((e.method === 'LEVEL_FEMALE' || e.method === 'LEVEL_MALE') && mon.level >= e.param) return pickBranchEvo(mon, e);
+    if (e.method === 'KNOWS_MOVE' && (mon.level >= KNOWS_MOVE_LEVEL || knowsMove(mon, e.param) || movesLearnedAt(mon.species, mon.level).includes(e.param))) return e.into;
     if (e.method === 'BEAUTY' && mon.level >= 30) return e.into;
     if (e.method === 'TRADE' && mon.level >= 37) return e.into;
     if (e.method === 'TRADE_ITEM' && mon.level >= 40) return e.into;
@@ -149,6 +155,10 @@ function pickBranchEvo(mon, e) {
   if (e.method === 'LEVEL_SILCOON' || e.method === 'LEVEL_CASCOON') {
     const want = (mon.ivs.hp + mon.uid) % 2 ? 'LEVEL_SILCOON' : 'LEVEL_CASCOON';
     return (evos.find(x => x.method === want) || e).into;
+  }
+  if (e.method === 'LEVEL_FEMALE' || e.method === 'LEVEL_MALE') {
+    const want = (mon.ivs.hp + mon.uid) % 2 ? 'LEVEL_FEMALE' : 'LEVEL_MALE';
+    return (evos.find(x => x.method === want && D.species[x.into]) || e).into;
   }
   return e.into;
 }

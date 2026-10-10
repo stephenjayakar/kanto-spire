@@ -1,7 +1,7 @@
 // Poké Mart stock generation and purchasing.
 import { TUNING } from './run.js';
 import { D } from './data.js';
-import { CONSUMABLES, BALLS, RELICS, RELIC_PRICE, VITAMIN_COMBO, APRICORN_BALLS } from './items.js';
+import { CONSUMABLES, BALLS, RELICS, RELIC_PRICE, VITAMIN_COMBO, APRICORN_BALLS, EVO_STONES } from './items.js';
 import { regionIdOf } from './regions.js';
 import { canLearn, knowsMove, canUseStone } from './pokemon.js';
 
@@ -28,7 +28,7 @@ export function generateShop(run, rng, opts = {}) {
   if (rng.chance(0.5)) add('consumable', 'RARE_CANDY', CONSUMABLES.RARE_CANDY.price);
   if (rng.chance(0.5)) add('consumable', 'PP_UP', CONSUMABLES.PP_UP.price);
   // Evolution stone if anyone can use one
-  const stones = ['FIRE_STONE', 'WATER_STONE', 'THUNDER_STONE', 'LEAF_STONE', 'MOON_STONE', 'SUN_STONE'].filter(s => run.party.some(m => canUseStone(m.species, s)));
+  const stones = EVO_STONES.filter(s => run.party.some(m => canUseStone(m.species, s)));
   if (stones.length) add('consumable', rng.pick(stones), 2100);
   // TMs
   for (const t of tmChoices(run, rng, 2)) add('tm', t.item, t.price, { move: t.move });

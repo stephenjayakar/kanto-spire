@@ -3,7 +3,6 @@ import { initEngine, setScene } from './engine/core.js';
 import { loadFonts } from './engine/font.js';
 import { loadJSON, preload, setFallback, trainerPath } from './engine/assets.js';
 import { loadData, D } from './game/data.js';
-import { GEN4_ENABLED } from './game/gen4.js';
 import { loadMeta, G, saveKeys, setSaveScope } from './game/state.js';
 import { GFX } from './scenes/common.js';
 import { Sound } from './audio/sound.js';
@@ -45,8 +44,7 @@ async function boot() {
     const loading = document.getElementById('loading');
     try {
       await loadPacks({
-        // (the hidden Gen 4 art, game/gen4.js: never downloaded while the flag is off, even if the pack is up)
-        siteUrl: Cloud.siteUrl, token: authToken, list: (await packManifest()).filter(p => GEN4_ENABLED || p.name !== 'gen4'),
+        siteUrl: Cloud.siteUrl, token: authToken, list: await packManifest(),
         onProgress: (n, total) => { if (loading) loading.textContent = `Loading game data... ${(n / 1048576).toFixed(1)} / ${(total / 1048576).toFixed(1)} MB`; },
       });
     } catch (e) {
@@ -65,6 +63,8 @@ async function boot() {
     // pack), else FireRed's songs as before. Display only: the song never touches game state.
     Sound.setResolver((name, ctx) => { const s = hoennSong(G.coop?.game?.world?.act || G.run?.act, name, ctx); return s ? EM + s : null; });
     Sound.addBank('assets/sound/emerald/', EM).then(ok => { if (ok) console.log('[sound] Emerald music bank loaded'); });
+    // the Gen 4 species' cries (not in FireRed's bank): their HGSS samples (D.species[key].cryWav, game/gen4.js)
+    Sound.setWavCries(key => { const w = D.species[key]?.cryWav; return w ? 'assets/' + w : null; });
   }).catch(e => console.warn('audio init failed', e));
   await Promise.all([
     loadFonts(),

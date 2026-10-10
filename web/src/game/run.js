@@ -550,13 +550,13 @@ export class Run {
   eliteConfig(rng, floor) {
     const act = this.act;
     const options = act.elites.filter(k => !this.usedTrainers.includes(k));
-    let key = rng.pick(options.length ? options : act.elites);
+    let key = this.rareLegend(rng.fork('rareLegend')) || rng.pick(options.length ? options : act.elites);
     this.usedTrainers.push(key);
     const target = this.levelFor(floor) + 2;
     const asc9 = this.ascension >= 9 && this.actIndex >= 1;
     if (LEGENDS[key]) {
       const L = LEGENDS[key];
-      const e = makeEnemy(L.species, target + 3 + (L.levelOffset || 0), { rng, hpScale: this.hpScaleFor(floor, 'legend'), isBoss: false, legendary: true, bossRule: asc9 ? 'LEGEND' : null, ivs: ivsFrom(200) });
+      const e = makeEnemy(L.species, target + 3 + (L.levelOffset || 0), { rng, moves: L.moves || null, hpScale: this.hpScaleFor(floor, 'legend'), isBoss: false, legendary: true, bossRule: asc9 ? 'LEGEND' : null, ivs: ivsFrom(200) });
       e.legendary = true;
       return { kind: 'wild', elite: true, enemies: [e], terrain: L.terrain, music: L.music, dmgScale: this.dmgScale() * 1.05, rng, legend: L.title };
     }
@@ -573,6 +573,18 @@ export class Run {
     const info = this.trainerInfo(t);
     if (isRival) info.encounterSong = 'mus_encounter_rival';
     return { kind: 'elite', trainer: info, enemies, terrain: this.terrainForTrainer(t), music: info.battleSong, dmgScale: this.dmgScale() * 1.05, rng };
+  }
+
+  // v0.4.0: now and then an elite node is one of the act's RARE LEGENDARIES (act.rareLegends: [[key, chance]], the Gen 4
+  // legendaries, gen4.js) instead, once per run each. rng: its own fork, so the usual elite pick is drawn the same way.
+  rareLegend(rng) {
+    let x = rng.next();
+    for (const [key, p] of this.act.rareLegends || []) {
+      if (!LEGENDS[key] || this.usedTrainers.includes(key)) continue;
+      if (x < p) return key;
+      x -= p;
+    }
+    return null;
   }
 
   eliteConfigFromTrainer(rng, t) {
@@ -924,6 +936,7 @@ export class Run {
       ['X_DEFEND', 1], ['DIRE_HIT', 1], ['RARE_CANDY', 2], ['PP_UP', 1.5], ['HP_UP', 1.2], ['PROTEIN', 1.2], ['IRON', 1], ['CALCIUM', 0.8],
       ['ZINC', 0.6], ['CARBOS', 0.4], ['RED_SHARD', 1], ['BLUE_SHARD', 0.6], ['ORAN_BERRY', 2], ['SITRUS_BERRY', 1.5],
       ['LUM_BERRY', 1], ['NUGGET', 0.5], ['MOON_STONE', 0.5], ['FIRE_STONE', 0.4], ['WATER_STONE', 0.4], ['THUNDER_STONE', 0.4], ['LEAF_STONE', 0.4],
+      ['SHINY_STONE', 0.4], ['DUSK_STONE', 0.4], ['DAWN_STONE', 0.4], ['ICE_STONE', 0.4], // (v0.4.0: Gen 4's stones)
       ['ESCAPE_ROPE', 0.6], ['HEART_SCALE', 0.6], ['MAX_REVIVE', tier * 0.3], ['FULL_RESTORE', tier * 0.4],
     ].filter(([k]) => D.items[k])
       // evolution stones only when someone in the party can use one

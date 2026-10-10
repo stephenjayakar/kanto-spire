@@ -5,6 +5,7 @@
 // stay the game's authored 120 and held items are ignored, so the balance knobs (TUNING, worldScale) keep their meaning.
 // EMERALD's story: the 8th GYM LEADER is JUAN (the LEADER_WALLACE slot) and the CHAMPION is WALLACE (the RS_CHAMPION
 // slot); STEVEN is a post-game trainer (EM_STEVEN, SKY PILLAR act). The keys stay, so saved runs keep their bosses.
+import { RARE_LEGEND, ULTRA_RARE_LEGEND } from './gen4.js';
 
 const L = (species, level, moves) => ({ species, level, iv: 120, moves: moves || null, item: null });
 
@@ -126,6 +127,7 @@ export const HOENN_ACTS = [
     ],
     elites: ['AQUA_ADMIN_MATT', 'MAGMA_ADMIN_COURTNEY', 'MAGMA_LEADER', 'AQUA_LEADER'],
     rival: 'MAY_3', bird: 'LEGEND_REGICE', // REGICE: ISLAND CAVE
+    rareLegends: [['LEGEND_PHIONE', ULTRA_RARE_LEGEND]], // (v0.4.0: rare legendary elites, Run.eliteConfig)
     bosses: ['LEADER_WINONA', 'LEADER_TATE_LIZA', 'LEADER_WALLACE'],
   },
   {
@@ -137,6 +139,7 @@ export const HOENN_ACTS = [
     ],
     elites: ['LEGEND_LATIOS', 'LEGEND_LATIAS', 'RS_COOLTRAINER_M'],
     bird: 'LEGEND_REGISTEEL', // REGISTEEL: ANCIENT TOMB
+    rareLegends: [['LEGEND_HEATRAN', RARE_LEGEND]],
     gauntlet: ['ELITE_FOUR_SIDNEY', 'ELITE_FOUR_PHOEBE', 'ELITE_FOUR_GLACIA', 'ELITE_FOUR_DRAKE', 'RS_CHAMPION'],
     gauntletLevels: [44, 45, 46, 47, 50],
   },
@@ -149,6 +152,7 @@ export const HOENN_ACTS = [
       area('SEALED CHAMBER', 'cave', 0.6, ['ZUBAT', 'TENTACRUEL', 'WAILORD', 'RELICANTH', 'LANTURN']),
     ],
     elites: ['LEGEND_GROUDON', 'LEGEND_KYOGRE', 'LEGEND_JIRACHI', 'LEGEND_CELEBI', 'EM_STEVEN'],
+    rareLegends: [['LEGEND_REGIGIGAS', RARE_LEGEND], ['LEGEND_MANAPHY', ULTRA_RARE_LEGEND]], // (REGIGIGAS: the REGIS' master)
     bosses: ['LEGEND_RAYQUAZA'],
   },
 ];
@@ -156,41 +160,43 @@ export const HOENN_ACTS = [
 // v0.3.25: species the pools above leave out, added to HOENN's wild areas (act id -> area name) so every Pokédex species
 // can be caught somewhere (regions.js withFinds: extra = half as common as an average species there, rare = a rare find).
 // Strong and special species are rare finds, and late: the starters' final forms in act 4, SALAMENCE / METAGROSS /
-// SLAKING in the post-game.
+// SLAKING in the post-game. v0.4.0: + Gen 4 (the CHIMCHAR line, GIBLE ... GARCHOMP, the fossils' final forms...).
 export const HOENN_FINDS = {
   1: {
     'ROUTE 101': { rare: ['TORCHIC'] },
-    'ROUTE 102': { extra: ['SURSKIT'], rare: ['TREECKO'] },
+    'ROUTE 102': { extra: ['SURSKIT', 'HAPPINY'], rare: ['TREECKO'] },
     'ROUTE 104': { extra: ['AZURILL'], rare: ['MUDKIP'] },
     'PETALBURG WOODS': { extra: ['BEAUTIFLY', 'DUSTOX'] },
+    'ROUTE 116': { rare: ['CHIMCHAR'] },
     'RUSTURF TUNNEL': { extra: ['WYNAUT'] },
     'GRANITE CAVE': { extra: ['NOSEPASS'] },
   },
   2: {
-    'ROUTE 110': { extra: ['DELCATTY'], rare: ['COMBUSKEN'] },
-    'ROUTE 117': { extra: ['CORPHISH', 'KIRLIA'], rare: ['MARSHTOMP'] },
-    'ROUTE 111 DESERT': { extra: ['VIBRAVA'], rare: ['LILEEP', 'ANORITH', 'CACTURNE'] },
-    'FIERY PATH': { extra: ['MAGCARGO'], rare: ['CAMERUPT'] },
+    'ROUTE 110': { extra: ['DELCATTY', 'SHINX'], rare: ['COMBUSKEN'] },
+    'ROUTE 117': { extra: ['CORPHISH', 'KIRLIA', 'KRICKETOT'], rare: ['MARSHTOMP'] },
+    'ROUTE 111 DESERT': { extra: ['VIBRAVA', 'HIPPOPOTAS'], rare: ['LILEEP', 'ANORITH', 'CACTURNE'] },
+    'FIERY PATH': { extra: ['MAGCARGO'], rare: ['CAMERUPT', 'MONFERNO'] },
     'JAGGED PASS': { extra: ['MEDITITE'] },
-    'ROUTE 114': { extra: ['BARBOACH'], rare: ['GROVYLE'] },
-    'METEOR FALLS': { rare: ['BELDUM'] },
+    'ROUTE 114': { extra: ['BARBOACH', 'BIDOOF'], rare: ['GROVYLE'] },
+    'METEOR FALLS': { rare: ['BELDUM', 'GIBLE'] },
   },
   3: {
-    'ROUTE 119': { extra: ['CASTFORM', 'CARVANHA', 'WHISCASH', 'CRAWDAUNT'], rare: ['MILOTIC', 'LUDICOLO'] },
-    'ROUTE 120': { extra: ['MASQUERAIN', 'NINJASK', 'BRELOOM'], rare: ['SHIFTRY'] },
-    'MT. PYRE': { rare: ['SHEDINJA'] },
+    'ROUTE 119': { extra: ['CASTFORM', 'CARVANHA', 'WHISCASH', 'CRAWDAUNT'], rare: ['MILOTIC', 'LUDICOLO', 'ROSERADE'] },
+    'ROUTE 120': { extra: ['MASQUERAIN', 'NINJASK', 'BRELOOM'], rare: ['SHIFTRY', 'HONCHKROW', 'LUXRAY'] },
+    'MT. PYRE': { extra: ['CHINGLING', 'DRIFLOON'], rare: ['SHEDINJA', 'MISMAGIUS'] },
     'ROUTE 123': { extra: ['SWELLOW', 'GRUMPIG', 'SWALOT', 'VIGOROTH'] },
-    'SHOAL CAVE': { rare: ['GLALIE', 'WALREIN'] },
-    'ROUTE 124 SEA': { rare: ['HUNTAIL', 'GOREBYSS'] },
+    'SHOAL CAVE': { extra: ['SNOVER'], rare: ['GLALIE', 'WALREIN', 'FROSLASS'] },
+    'ROUTE 124 SEA': { extra: ['FINNEON', 'MANTYKE'], rare: ['HUNTAIL', 'GOREBYSS'] },
+    'ROUTE 128': { extra: ['SHELLOS', 'BUIZEL'] },
   },
   4: {
-    'VICTORY ROAD': { extra: ['EXPLOUD'], rare: ['AGGRON', 'CROBAT', 'METANG'] },
+    'VICTORY ROAD': { extra: ['EXPLOUD', 'BRONZOR'], rare: ['AGGRON', 'CROBAT', 'METANG', 'INFERNAPE'] },
     'EVER GRANDE CITY': { rare: ['SCEPTILE', 'BLAZIKEN', 'SWAMPERT', 'GARDEVOIR'] },
   },
   5: {
-    'SAFARI ZONE': { rare: ['FLYGON'] },
+    'SAFARI ZONE': { rare: ['FLYGON', 'GARCHOMP', 'DRAPION'] },
     'SKY PILLAR': { rare: ['SALAMENCE', 'METAGROSS', 'SLAKING'] },
-    'SEALED CHAMBER': { rare: ['CRADILY', 'ARMALDO'] },
+    'SEALED CHAMBER': { rare: ['CRADILY', 'ARMALDO', 'RAMPARDOS', 'BASTIODON'] },
   },
 };
 for (const a of HOENN_ACTS) for (const ar of a.areas) Object.assign(ar, HOENN_FINDS[a.id]?.[ar.name]);

@@ -1,4 +1,4 @@
-// Screenshots of the hidden Gen 4 species in the dev lab (web/gen4lab.html): muted Chrome, offline, own server.
+// Screenshots of the Gen 4 species in the dev lab (web/gen4lab.html): muted Chrome, offline, own server.
 //   node tests/gen4_shots.cjs [outdir=tests/out/gen4] [port=8171]
 // Writes lab_front.png (all 107 animated fronts at 2x + the cross-gen pairs, full page), lab_shiny.png, lab_back.png.
 const { spawn } = require('child_process');

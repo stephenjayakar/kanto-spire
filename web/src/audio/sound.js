@@ -5,6 +5,7 @@
 //   Sound.playBGM('mus_route1');        // starts (or keeps) the BGM; queued until the first gesture
 //   Sound.playSE('se_select');
 //   Sound.playCry('pikachu');           // or internal species id (25), or { national: true }
+//   Sound.setWavCries(sp => url|null);  // cries outside the bank, played from WAV files (the Gen 4 species)
 //
 // Audio only starts after a user gesture (browser autoplay policy). init() installs one-shot
 // pointer/key/touch listeners that call unlock(); you may also call Sound.unlock() yourself
@@ -29,7 +30,46 @@ const state = {
   nextTag: 1, pending: new Map(), currentBGM: null, unlocked: false,
   volumes: { master: 1, music: 1, sfx: 1 }, listenersInstalled: false, initPromise: null,
   resolver: null, banks: new Map(),
+  wavCry: null, wavCache: new Map(), ducks: 0,
 };
+// Cries that aren't in the m4a bank (v0.4.0: the Gen 4 species' HGSS samples, sound/gen4/cries/*.wav) play as plain
+// WebAudio buffers through the same master volume and SFX level, ducking the music like a bank cry does.
+// Level: the HGSS samples peak near full scale, the bank's cries near 0.35 (measured on the HQ mixer).
+const WAV_CRY_GAIN = 0.3, WAV_FAINT_RATE = 0.82, DUCK_VOLUME = 85 / 256;
+function decodeWav(url) {
+  let p = state.wavCache.get(url);
+  if (!p) {
+    p = fetch(url).then((r) => (r.ok ? r.arrayBuffer() : null))
+      .then((b) => (b ? new Promise((res, rej) => state.ctx.decodeAudioData(b, res, rej)) : null))
+      .catch((err) => { console.warn('[sound] wav cry', url, err?.message || err); return null; });
+    state.wavCache.set(url, p);
+  }
+  return p;
+}
+async function playWavCry(url, o) {
+  const ctx = state.ctx;
+  if (!ctx || !state.master) return false;
+  const buf = await decodeWav(url);
+  if (!buf || ctx.state !== 'running') return false;
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  let rate = o.mode === 'faint' ? WAV_FAINT_RATE : 1; // (FireRed's faint cry: lower and shorter)
+  if (o.pitch !== undefined) rate *= Math.pow(2, (o.pitch - 15360) / (256 * 12));
+  src.playbackRate.value = rate;
+  const g = ctx.createGain();
+  g.gain.value = state.volumes.sfx * ((o.volume ?? 120) / 127) * WAV_CRY_GAIN;
+  src.connect(g);
+  g.connect(state.master);
+  const duck = o.duck !== false;
+  if (duck && state.ducks++ === 0) post({ type: 'playerVolume', players: [PLAYER_BGM], volume: state.volumes.music * DUCK_VOLUME });
+  return new Promise((resolve) => {
+    src.onended = () => {
+      if (duck && --state.ducks === 0) post({ type: 'playerVolume', players: [PLAYER_BGM], volume: state.volumes.music });
+      resolve(true);
+    };
+    src.start();
+  });
+}
 
 function post(msg, transfer) { if (state.port) state.port.postMessage(msg, transfer || []); }
 // Calls made while init() is still loading are deferred until it completes. Sound must never break the
@@ -310,6 +350,8 @@ export const Sound = {
    * Resolves when the cry finishes.
    */
   playCry(species, o = {}) {
+    const wav = typeof species === 'string' && state.wavCry ? state.wavCry(species) : null;
+    if (wav) return playWavCry(wav, o).catch(() => false);
     let cryIndex;
     try { cryIndex = resolveCryIndex(species, o); } catch (err) { console.warn('[sound] ' + err.message); return Promise.resolve(false); }
     if (cryIndex === undefined || cryIndex === null) return Promise.resolve(false);
@@ -322,6 +364,9 @@ export const Sound = {
     post({ type: 'cry', cryIndex, opts, tag });
     return p;
   },
+
+  /** fn(species) -> URL of a WAV cry to play instead of the bank's (null: the bank's). Set once by the game (main.js). */
+  setWavCries(fn) { state.wavCry = typeof fn === 'function' ? fn : null; },
 
   stopAll() { post({ type: 'stopAll' }); state.currentBGM = null; },
 

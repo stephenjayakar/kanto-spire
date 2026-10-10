@@ -1,6 +1,6 @@
 // Image loading with a cache. img() returns an Image immediately; draw helpers skip it until loaded.
 import { assetUrl, assetPending, assetSettled } from '../net/assetpack.js';
-import { RELICS, BALLS } from '../game/items.js';
+import { RELICS, BALLS, CONSUMABLES } from '../game/items.js';
 const cache = new Map();
 export const BASE = 'assets/';
 
@@ -80,7 +80,7 @@ export const monPath = (folder, kind = 'front', shiny = false) => `gfx/pokemon/$
 // (KURT's APRICORN BALLS and other HGSS art: BALLS[key].icon = 'hgss/fast_ball'; until the art is extracted, a ball
 // draws the POKé BALL icon and anything else the item-ball sprite)
 export const itemPath = (key) => {
-  const p = `gfx/items/${(BALLS[key]?.icon || RELICS[key]?.icon || key).toLowerCase()}.png`;
+  const p = `gfx/items/${(BALLS[key]?.icon || RELICS[key]?.icon || CONSUMABLES[key]?.icon || key).toLowerCase()}.png`;
   if (p.includes('/hgss/') && !FALLBACK.has(p)) FALLBACK.set(p, BALLS[key] || p.endsWith('_ball.png') ? 'gfx/items/poke_ball.png' : 'gfx/overworld/misc/item_ball.png');
   return p;
 };

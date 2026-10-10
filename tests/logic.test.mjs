@@ -26,7 +26,7 @@ await loadData(async f => JSON.parse(fs.readFileSync('web/assets/data/' + f, 'ut
 let pass = 0, fail = 0;
 const t = (name, fn) => { try { fn(); pass++; } catch (e) { fail++; console.log('FAIL', name, '-', e.message, process.env.STACK ? e.stack : ''); } };
 
-t('data counts', () => { assert.equal(Object.keys(D.species).length, 386); assert.ok(Object.keys(D.moves).length >= 354); });
+t('data counts', () => { assert.equal(Object.keys(D.species).length, 493, 'FireRed 386 + Gen 4 107 (v0.4.0)'); assert.ok(Object.keys(D.moves).length >= 354); });
 t('type chart', () => { assert.equal(typeEffect('WATER', ['FIRE']), 2); assert.equal(typeEffect('ELECTRIC', ['GROUND']), 0); assert.equal(typeEffect('GRASS', ['FIRE', 'FLYING']), 0.25); assert.equal(typeEffect('NORMAL', ['GHOST']), 0); });
 t('stat formula', () => { assert.equal(calcStat(39, 31, 50, true), 39 * 2 + 31 > 0 ? Math.floor((78 + 31) * 50 / 100) + 60 : 0); });
 t('exp curves', () => { assert.equal(expForLevel('MEDIUM_FAST', 10), 1000); assert.equal(expForLevel('FAST', 10), 800); assert.equal(expForLevel('MEDIUM_SLOW', 100), 1059860); });
@@ -1659,10 +1659,11 @@ t('ascension: the shiny unlock (A5+) and Nuzlocke (A8) rules are unchanged', () 
   };
   // The levels act slot t's wild POKéMON can have (levelFor -1..+1, +2 at the top ascensions; the post-game keeps its own).
   const wildLevels = (t, act) => { const lv = t < RG.TIERS.length ? RG.TIERS[t].levels : act.levels; return [lv[0] - 1, lv[1] + 3]; };
-  const EV_LEGENDARY = ['ARTICUNO', 'ZAPDOS', 'MOLTRES', 'MEWTWO', 'MEW', 'RAIKOU', 'ENTEI', 'SUICUNE', 'LUGIA', 'HO_OH', 'CELEBI', 'REGIROCK', 'REGICE', 'REGISTEEL', 'LATIAS', 'LATIOS', 'KYOGRE', 'GROUDON', 'RAYQUAZA', 'JIRACHI', 'DEOXYS'];
+  const EV_LEGENDARY = ['ARTICUNO', 'ZAPDOS', 'MOLTRES', 'MEWTWO', 'MEW', 'RAIKOU', 'ENTEI', 'SUICUNE', 'LUGIA', 'HO_OH', 'CELEBI', 'REGIROCK', 'REGICE', 'REGISTEEL', 'LATIAS', 'LATIOS', 'KYOGRE', 'GROUDON', 'RAYQUAZA', 'JIRACHI', 'DEOXYS',
+    'UXIE', 'MESPRIT', 'AZELF', 'DIALGA', 'PALKIA', 'HEATRAN', 'REGIGIGAS', 'GIRATINA', 'CRESSELIA', 'PHIONE', 'MANAPHY', 'DARKRAI', 'SHAYMIN', 'ARCEUS']; // (v0.4.0: + Gen 4's)
   const bstOf = (sp) => Object.values(D.species[sp].stats).reduce((a, x) => a + x, 0);
 
-  t('v0.3.25 catch-all: every species #1-386 but the legendaries can be caught as itself on a wild node (or a legendary node)', async () => {
+  t('v0.3.25 catch-all (v0.4.0: #1-493): every species but the legendaries can be caught as itself on a wild node (or a legendary node / rare legendary elite)', async () => {
     const legendary = new Set((await import('../web/src/game/pokemon.js')).LEGENDARY);
     assert.deepEqual([...legendary].sort(), [...EV_LEGENDARY].sort(), 'pokemon.js LEGENDARY');
     const catchable = new Set();
@@ -1675,20 +1676,27 @@ t('ascension: the shiny unlock (A5+) and Nuzlocke (A8) rules are unchanged', () 
         if (!evo || !D.species[evo.into] || lo < evo.param + 6) catchable.add(species);
         if (evo && D.species[evo.into] && hi >= evo.param + 6) catchable.add(evo.into);
       }
-      for (const k of [act.bird, ...(act.elites || []), ...(act.bosses || [])]) if (LEGENDS[k]) catchable.add(LEGENDS[k].species);
+      for (const k of [act.bird, ...(act.elites || []), ...(act.bosses || []), ...(act.rareLegends || []).map(([key]) => key)]) if (LEGENDS[k]) catchable.add(LEGENDS[k].species);
     });
-    const missing = Object.values(D.species).filter(s => s.dex >= 1 && s.dex <= 386 && !legendary.has(s.key) && !catchable.has(s.key)).map(s => `#${s.dex} ${s.key}`);
+    const dex = Object.values(D.species).filter(s => s.dex >= 1 && s.dex <= 493);
+    assert.equal(dex.length, 493, 'the POKéDEX is #1-493');
+    const missing = dex.filter(s => !legendary.has(s.key) && !catchable.has(s.key)).map(s => `#${s.dex} ${s.key}`);
     assert.deepEqual(missing, [], 'no direct catch source');
+    // every legendary can be met somewhere too (MEW: the FARAWAY ISLAND mythic event only)
+    const noLegend = [...legendary].filter(sp => !catchable.has(sp) && sp !== 'MEW');
+    assert.deepEqual(noLegend, [], 'legendaries nobody can meet');
   });
 
-  t('v0.3.25 catch-all: every region\'s pools name real Gen 1-3 species; added species are new to their area, never legendary, and strong ones rare and late', () => {
+  t('v0.3.25 catch-all: every region\'s pools name real species (#1-493); added species are new to their area, never legendary, and strong ones rare and late', () => {
     for (const rid of RG.REGION_IDS) RG.REGIONS[rid].acts.forEach((act, t) => {
       for (const ar of act.areas) {
         const where = `${rid} act ${t + 1} ${ar.name}`;
         const all = wildEntries(ar);
         for (const { species } of all) {
           assert.ok(D.species[species], `${where}: unknown species ${species}`);
-          assert.ok(D.species[species].dex >= 1 && D.species[species].dex <= 386, `${where}: ${species} is not Gen 1-3`);
+          assert.ok(D.species[species].dex >= 1 && D.species[species].dex <= 493, `${where}: ${species} is not in the POKéDEX (#1-493)`);
+          // the games' own tables stay Gen 1-3: Gen 4 only comes in through extra / rare finds
+          if (D.species[species].dex > 386) assert.ok([...(ar.extra || []), ...(ar.rare || [])].includes(species), `${where}: ${species} (Gen 4) in a base pool`);
         }
         const added = [...(ar.extra || []), ...(ar.rare || [])];
         const base = new Set(all.slice(0, all.length - added.length).map(e => e.species));

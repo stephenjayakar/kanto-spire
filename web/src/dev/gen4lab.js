@@ -1,8 +1,9 @@
-// Dev-only viewer for the hidden Gen 4 species (game/gen4.js): a contact sheet of all 107 front sprites (animated,
-// 2x like in battle), icons, the cross-gen evolution pairs next to their FireRed pre-evolutions, cries on click.
+// Dev-only viewer for the Gen 4 species (game/gen4.js): a contact sheet of all 107 front sprites (animated, 2x like in
+// battle), icons, the cross-gen evolution pairs next to their FireRed pre-evolutions (HGSS method -> this game's rule),
+// cries on click. An art / data check, not part of the game.
 // Reads web/assets directly (local only; build_site.cjs leaves this page out of dist/). tests/gen4_shots.cjs
 // screenshots it. Window hooks: gen4Lab.ready, gen4Lab.count, gen4Lab.errors, gen4Lab.set({shiny, back, still}).
-import { GEN4_ENABLED, loadGen4, applyGen4 } from '../game/gen4.js';
+import { loadGen4, applyGen4 } from '../game/gen4.js';
 
 const A = 'assets/';
 const $ = (id) => document.getElementById(id);
@@ -12,9 +13,8 @@ const json = (f) => fetch(A + 'data/' + f).then(r => { if (!r.ok) throw new Erro
 const imgOk = (src) => new Promise(res => { const i = new Image(); i.onload = () => res(true); i.onerror = () => { lab.errors.push('missing ' + src); res(false); }; i.src = src; });
 
 async function main() {
-  $('flag').textContent = String(GEN4_ENABLED);
   const [g4, fr] = await Promise.all([loadGen4(json), json('species.json')]);
-  // check the merge on a throwaway copy (the game itself never calls it while the flag is off)
+  // the merge as data.js does it (on a copy of FireRed's species): how each cross-gen evolution works in the game
   const D = { species: structuredClone(fr) };
   const added = applyGen4(D, g4);
   const list = Object.values(g4.species).sort((a, b) => a.dex - b.dex);
@@ -51,10 +51,12 @@ async function main() {
     r.innerHTML = `<div><img src="${aSrc}"><div class="cap">${a}</div></div><div class="arrow">&rarr;<div class="cap">${how}</div></div><div><img src="${bSrc}"><div class="cap">${b}</div></div>`;
     $('cross').appendChild(r);
   };
-  const how = (e) => e.method.toLowerCase().replace(/_/g, ' ') + (e.param ? ' ' + String(e.param).toLowerCase().replace(/_/g, ' ') : '');
-  for (const [pre, evos] of Object.entries(g4.crossGen.evolutions)) for (const e of evos) pair(fr[pre].name, frFront(pre), g4.species[e.into].name, g4Front(e.into), how(e));
+  const word = (m, p) => m.toLowerCase().replace(/_/g, ' ') + (p ? ' ' + String(p).toLowerCase().replace(/_/g, ' ') : '');
+  const how = (e) => (e.gen4Method ? word(e.gen4Method, e.gen4Param) + ' &rArr; ' : '') + word(e.method, e.param);
+  const gameEvo = (from, into) => (D.species[from].evolutions || []).find(x => x.into === into);
+  for (const [pre, evos] of Object.entries(g4.crossGen.evolutions)) for (const e of evos) pair(fr[pre].name, frFront(pre), g4.species[e.into].name, g4Front(e.into), how(gameEvo(pre, e.into) || e));
   for (const [evo, baby] of Object.entries(g4.crossGen.preEvolutions)) {
-    const e = g4.species[baby].evolutions.find(x => x.into === evo);
+    const e = gameEvo(baby, evo);
     pair(g4.species[baby].name, g4Front(baby), fr[evo].name, frFront(evo), e ? how(e) : '');
   }
   const crossN = Object.values(g4.crossGen.evolutions).flat().length + Object.keys(g4.crossGen.preEvolutions).length;

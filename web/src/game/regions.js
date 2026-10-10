@@ -114,7 +114,7 @@ export function areaPool(area, tod = null) {
   if (tod) return p[tod] || p.day || [];
   return [...new Set(TIMES.flatMap(k => p[k] || []))];
 }
-// v0.3.25 "catch 'em all": every Pokédex species (#1-386) but the legendaries can be met on a wild node somewhere. An
+// v0.3.25 "catch 'em all": every Pokédex species (#1-386; v0.4.0: #1-493) but the legendaries can be met on a wild node somewhere. An
 // area may add species to its wild pool (only wild nodes use these; generic trainers keep drawing from area.pool):
 //   extra: [...]  more species, each EXTRA_WEIGHT as likely as an average species of the area's own pool;
 //   rare:  [...]  rare finds (strong or special species), each RARE_SHARE of the area's own encounters (about 1 in 33,

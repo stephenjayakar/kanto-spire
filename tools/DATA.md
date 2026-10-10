@@ -18,6 +18,12 @@ Attack-forme sprite, dex text comes from `pokedex_text_fr.h`, and only `_FireRed
 - Graphics paths are relative to `pokefirered/graphics/<category>/` and point at committed source files (`.png`
   and `.pal`), not build artefacts.
 
+## gen4/species.json (107 entries, v0.4.0)
+Written by `tools/extract_gen4.py` (the owner's HeartGold ROM + PokéAPI's CSVs): the Gen 4 species (#387-493) in
+species.json's format plus `gfxDir`, `cryWav`, `gen4`, `legendary` / `mythical`, and `crossGen` (the Gen 1-3 species'
+Gen 4 evolutions and babies). `web/src/game/gen4.js` merges it into the species at every load and turns the Gen 4
+evolution methods into this game's rules; species.json itself stays FireRed's 386 (the frozen co-op engines read it).
+
 ## species.json (386 entries)
 `{ id, dex, name, types[1-2], stats{hp,atk,def,spa,spd,spe}, evYield{...}, catchRate, expYield, growthRate,
 abilities[], genderRatio, eggGroups[], eggCycles, friendship, wildItems{common,rare}, safariZoneFleeRate,

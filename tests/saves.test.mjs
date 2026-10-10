@@ -250,18 +250,18 @@ t('resume: unverifiable rooms (no checksums) replay as before', async () => {
 
 // ------------------------------------------------------------------------------------- legacy engine
 t('engines: selection is explicit (stamp first, then the current code, then the other frozen copies)', () => {
-  assert.equal(LOGIC_ID, 'v0325', 'the next release changes game logic (EMERALD teams, every species catchable, one legendary per run, mythic events)');
+  assert.equal(LOGIC_ID, 'v040', 'v0.4.0 changes game logic (EMERALD teams, every species catchable, one legendary per run, mythic events, all of Gen 4)');
   assert.equal(UNSTAMPED, 'v035');
   assert.deepEqual(Object.keys(FROZEN), ['v0323', 'v0319', 'v0311', 'v037', 'v035', 'v031'], 'newest first');
   const ids = (l) => l.map(e => (e.current ? 'current:' : '') + e.id);
   // a room stamped by an older logic goes to its own frozen copy first, then the current code, then the rest
-  assert.deepEqual(ids(engineOrder('v0323')), ['v0323', 'current:v0325', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
-  assert.deepEqual(ids(engineOrder('v0319')), ['v0319', 'current:v0325', 'v0323', 'v0311', 'v037', 'v035', 'v031']);
-  assert.deepEqual(ids(engineOrder('v0311')), ['v0311', 'current:v0325', 'v0323', 'v0319', 'v037', 'v035', 'v031']);
-  assert.deepEqual(ids(engineOrder('v037')), ['v037', 'current:v0325', 'v0323', 'v0319', 'v0311', 'v035', 'v031']);
-  assert.deepEqual(ids(engineOrder('v035')), ['v035', 'current:v0325', 'v0323', 'v0319', 'v0311', 'v037', 'v031']);
-  assert.deepEqual(ids(engineOrder('v0325')), ['current:v0325', 'v0323', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
-  assert.deepEqual(ids(engineOrder('zzz')), ['current:v0325', 'v0323', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('v0323')), ['v0323', 'current:v040', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('v0319')), ['v0319', 'current:v040', 'v0323', 'v0311', 'v037', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('v0311')), ['v0311', 'current:v040', 'v0323', 'v0319', 'v037', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('v037')), ['v037', 'current:v040', 'v0323', 'v0319', 'v0311', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('v035')), ['v035', 'current:v040', 'v0323', 'v0319', 'v0311', 'v037', 'v031']);
+  assert.deepEqual(ids(engineOrder('v040')), ['current:v040', 'v0323', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('zzz')), ['current:v040', 'v0323', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
   // under the older ids (what those versions did)
   assert.deepEqual(ids(engineOrder('v0319', 'v0323')), ['v0319', 'current:v0323', 'v0323', 'v0311', 'v037', 'v035', 'v031']);
   assert.deepEqual(ids(engineOrder('v0311', 'v0319')), ['v0311', 'current:v0319', 'v0323', 'v0319', 'v037', 'v035', 'v031']);

@@ -9,7 +9,7 @@ browser-ready RGBA PNGs (palette index 0 = transparent) into web/assets/gfx:
     gfx/overworld/people/hgss/<name>.png  overworld walkers (a/0/8/1 mmodel BTX0 textures), 32x32 frames in
                                    FireRed's people order: down, up, left, down-walk x2, up-walk x2, left-walk x2;
                                    the figure is shrunk 0.8 like the portraits (~21 px tall, FireRed's walker height)
-    gfx/items/hgss/<key>.png       Apricorn balls + Apricorns (a/0/1/8 item icons; the art sits in the
+    gfx/items/hgss/<key>.png       Apricorn balls + Apricorns + the Gen 4 stones (a/0/1/8 item icons; the art sits in the
                                    top-left 24x24 of the 32x32 cell, cropped to 24x24 like FireRed icons)
 
 Trainer portraits are drawn natively in an 80x80 frame (figures up to 79 px
@@ -24,6 +24,7 @@ Usage (needs ndspy, Pillow: pip install ndspy pillow):
     python tools/extract_hgss.py [path/to/heartgold_usa.nds]   (default: rom/heartgold.nds)
     ... --sheet    also writes tests/out/johto/hgss_sheet.png (contact sheet for eyeballing)
     ... --native   keep trainer portraits (80x80) and walker figures at native DS size (no downscale)
+    ... --items    only the item icons (gfx/items/hgss/)
 
 Re-runnable: overwrites its outputs and prints every file written. Only the
 pinned USA dump (IPKE, sha1 below) is accepted. Outputs live under web/assets
@@ -67,6 +68,8 @@ ITEMS = {
     "red_apricorn": (733, 734), "blu_apricorn": (735, 736), "ylw_apricorn": (737, 738),
     "grn_apricorn": (739, 740), "pnk_apricorn": (741, 742), "wht_apricorn": (743, 744),
     "blk_apricorn": (745, 746),
+    # the Gen 4 evolution stones (v0.4.0: game/gen4.js, SHINY / DUSK / DAWN STONE evolutions)
+    "shiny_stone": (480, 481), "dusk_stone": (482, 483), "dawn_stone": (484, 485),
 }
 
 # overworld name -> MMODEL_* index in a/0/8/1 (pokeheartgold include/constants/mmodel.h)
@@ -282,9 +285,10 @@ def main() -> None:
     trf, icons, mmodel = narc("a/0/5/8"), narc("a/0/1/8"), narc("a/0/8/1")
 
     written = []
+    items_only = "--items" in sys.argv
     tdir = OUT / "trainers" / "hgss"
     tdir.mkdir(parents=True, exist_ok=True)
-    for name, cls in TRAINERS.items():
+    for name, cls in ({} if items_only else TRAINERS).items():
         img = trainer_pic(trf, cls)
         if "--native" not in sys.argv:
             img = downscale(img, 64)  # 80x80 -> FireRed's 64x64 scale
@@ -305,7 +309,7 @@ def main() -> None:
         print(f"wrote {f.relative_to(ROOT)}  {img.size[0]}x{img.size[1]}")
     odir = OUT / "overworld" / "people" / "hgss"
     odir.mkdir(parents=True, exist_ok=True)
-    for name, idx in OVERWORLD.items():
+    for name, idx in ({} if items_only else OVERWORLD).items():
         img = overworld(bytes(mmodel[idx]), shrink="--native" not in sys.argv)
         f = odir / f"{name}.png"
         img.save(f)

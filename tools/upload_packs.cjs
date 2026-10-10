@@ -1,11 +1,8 @@
 // Packs web/assets/ into files and uploads the changed ones to Convex file storage, where GET /pack serves them
 // to allowlisted accounts only (the hosted static site has no assets).
-// Usage: node tools/upload_packs.cjs [--prod] [--dry] [--out <dir>] [--gen4]
+// Usage: node tools/upload_packs.cjs [--prod] [--dry] [--out <dir>]
 //   --dry        build and print the packs, upload nothing
 //   --out <dir>  also write every pack as <dir>/<name>-<hash>.ksp (the test pack cache, tests/pack_cache.cjs)
-//   --gen4       include the 'gen4' pack (data/gfx/sound under gen4/: the hidden Gen 4 species, game/gen4.js).
-//                Without it those files are left out entirely, so nobody downloads them while GEN4_ENABLED is
-//                false; pass it with the release that turns the flag on.
 //
 // v0.3.21, to keep downloads small (Convex egress):
 // - PNGs are stored losslessly re-encoded (tools/pngopt.cjs: palette PNGs for the 16-colour sprites, about half
@@ -14,24 +11,27 @@
 //   are spread over buckets by a hash of their folder name, so adding one changes one bucket.
 // - Each pack is also uploaded gzipped (when that saves anything) for newer clients; the plain copy stays for
 //   clients from before (they ignore the new manifest fields and download every pack plain).
-// - lazy packs (sound, move animations, HGSS art, Emerald music + art) aren't needed to reach the title: newer clients fetch them in
-//   the background, and anything that asks for one of their files waits for it.
+// - lazy packs (sound, move animations, HGSS art, Emerald music + art, the Gen 4 sprites) aren't needed to reach the
+//   title: newer clients fetch them in the background, and anything that asks for one of their files waits for it.
+// v0.4.0 (Gen 4 is part of the game, game/gen4.js): data/gen4/species.json goes in 'data' (loaded at boot with the
+// rest), the cries (sound/gen4/) in the lazy 'sound' pack, the sprites (gfx/gen4/pokemon/) in the lazy 'pokemon-gen4'
+// pack: Gen 4 species are wild finds, not starters or menu art, so boot only grows by the species file.
 const fs = require('fs'), path = require('path'), crypto = require('crypto'), zlib = require('zlib'), os = require('os');
 const { execFileSync } = require('child_process');
 const { optimizePng } = require('./pngopt.cjs');
 
 const root = path.join(__dirname, '..'), assets = path.join(root, 'web', 'assets');
 const args = process.argv.slice(2);
-const prod = args.includes('--prod'), dry = args.includes('--dry'), withGen4 = args.includes('--gen4');
+const prod = args.includes('--prod'), dry = args.includes('--dry');
 const outDir = args.includes('--out') ? path.resolve(args[args.indexOf('--out') + 1]) : null;
 if (!fs.existsSync(path.join(assets, 'data'))) { console.error('web/assets is missing; run the extract tools first.'); process.exit(1); }
 
 const POKEMON_BUCKETS = 8;
-const LAZY = new Set(['sound', 'anims', 'hgss', 'gen4', 'emerald']);
+const LAZY = new Set(['sound', 'anims', 'hgss', 'emerald', 'pokemon-gen4']);
 function fnv1a(s) { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619) >>> 0; return h; }
 // Which pack a file goes in (each stays far under the 20 MB HTTP action response limit).
 function packOf(rel) {
-  if (/^(data|gfx|sound)\/gen4\//.test(rel)) return 'gen4';
+  if (rel.startsWith('gfx/gen4/pokemon/')) return 'pokemon-gen4';
   if (rel.includes('/hgss/')) return 'hgss';
   if (rel.includes('/emerald/')) return 'emerald'; // (optional Emerald music + art: tools/extract_emerald.py)
   if (rel.startsWith('anims/')) return 'anims';
@@ -69,7 +69,6 @@ function build() {
   for (const f of walk(assets).sort()) {
     const rel = path.relative(assets, f).split(path.sep).join('/');
     const pack = packOf(rel);
-    if (pack === 'gen4' && !withGen4) continue;
     (groups[pack] ||= []).push([rel, f]);
   }
   return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b)).map(([name, list]) => {

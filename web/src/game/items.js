@@ -265,6 +265,12 @@ export const CONSUMABLES = {
   THUNDER_STONE: { price: 2100, target: 'mon', evo: true },
   WATER_STONE: { price: 2100, target: 'mon', evo: true },
   LEAF_STONE: { price: 2100, target: 'mon', evo: true },
+  // Gen 4's stones (v0.4.0, game/gen4.js evolutions). FireRed has no such items: name / desc go into D.items (data.js),
+  // icon: HGSS art (tools/extract_hgss.py; the ICE STONE, from later games, borrows NEVER-MELTICE's), engine/assets.js itemPath.
+  SHINY_STONE: { price: 2100, target: 'mon', evo: true, name: 'SHINY STONE', icon: 'hgss/shiny_stone', desc: 'A peculiar stone that makes certain species of POKéMON evolve. It shines with a dazzling light.' },
+  DUSK_STONE: { price: 2100, target: 'mon', evo: true, name: 'DUSK STONE', icon: 'hgss/dusk_stone', desc: 'A peculiar stone that makes certain species of POKéMON evolve. It is as dark as dark can be.' },
+  DAWN_STONE: { price: 2100, target: 'mon', evo: true, name: 'DAWN STONE', icon: 'hgss/dawn_stone', desc: 'A peculiar stone that makes certain species of POKéMON evolve. It sparkles like eyes.' },
+  ICE_STONE: { price: 2100, target: 'mon', evo: true, name: 'ICE STONE', icon: 'never_melt_ice', desc: 'A peculiar stone that makes certain species of POKéMON evolve. It has an unmistakable snowflake pattern.' },
   NUGGET: { price: 0, target: 'none', sell: 5000 },
   STAR_PIECE: { price: 0, target: 'none', sell: 4900 },
   BIG_PEARL: { price: 0, target: 'none', sell: 3750 },
@@ -277,6 +283,8 @@ for (const [k, v] of Object.entries(VITAMIN_COMBO)) {
   CONSUMABLES[k] = { price: k.endsWith('SHARD') || k === 'SHOAL_SALT' ? 1600 : 2400, target: 'none', combo: v };
 }
 for (const [k, c] of Object.entries(CONSUMABLES)) c.key = k;
+// Every evolution stone: Marts stock one a party POKéMON can use (shop.js), reward picks too (Run.randomConsumable).
+export const EVO_STONES = ['FIRE_STONE', 'WATER_STONE', 'THUNDER_STONE', 'LEAF_STONE', 'MOON_STONE', 'SUN_STONE', 'SHINY_STONE', 'DUSK_STONE', 'DAWN_STONE', 'ICE_STONE'];
 
 export const BALLS = {
   POKE_BALL: { price: 200, rate: 1 },

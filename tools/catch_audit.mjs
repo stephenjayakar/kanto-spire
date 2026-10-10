@@ -1,4 +1,4 @@
-// Catch audit: which Pokédex species (#1-386) can be caught somewhere, and how.
+// Catch audit: which Pokédex species (#1-493) can be caught somewhere, and how.
 //   node tools/catch_audit.mjs            summary + the species that are evolution-only or unobtainable
 //   node tools/catch_audit.mjs --full     + every species' sources
 //   node tools/catch_audit.mjs --json     machine-readable
@@ -10,7 +10,7 @@
 //   rare    the same, from an area's rare list (low weight: regions.js RARE_SHARE).
 //   event   a "?" event that hands out / lets you catch / fight-and-catch that species (source scan of events.js:
 //           quoted species keys in an event block that gives POKéMON; the PC's random wonder trade is left out).
-//   legend  a legendary node (acts.js LEGENDS, used as act.bird / elites / bosses).
+//   legend  a legendary node (acts.js LEGENDS, used as act.bird / elites / bosses, or v0.4.0's act.rareLegends).
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -29,7 +29,8 @@ export async function ensureData() {
 }
 
 export const LEGENDARY = ['ARTICUNO', 'ZAPDOS', 'MOLTRES', 'MEWTWO', 'MEW', 'RAIKOU', 'ENTEI', 'SUICUNE', 'LUGIA', 'HO_OH', 'CELEBI',
-  'REGIROCK', 'REGICE', 'REGISTEEL', 'LATIAS', 'LATIOS', 'KYOGRE', 'GROUDON', 'RAYQUAZA', 'JIRACHI', 'DEOXYS'];
+  'REGIROCK', 'REGICE', 'REGISTEEL', 'LATIAS', 'LATIOS', 'KYOGRE', 'GROUDON', 'RAYQUAZA', 'JIRACHI', 'DEOXYS',
+  'UXIE', 'MESPRIT', 'AZELF', 'DIALGA', 'PALKIA', 'HEATRAN', 'REGIGIGAS', 'GIRATINA', 'CRESSELIA', 'PHIONE', 'MANAPHY', 'DARKRAI', 'SHAYMIN', 'ARCEUS'];
 
 // The levels a wild POKéMON of act slot t can have (levelFor +-1, +2 at the top ascensions).
 function actLevels(region, t, act) {
@@ -79,7 +80,7 @@ export function wildSources() {
 export function legendSources() {
   const out = {};
   for (const rid of RG.REGION_IDS) RG.REGIONS[rid].acts.forEach((act, t) => {
-    for (const k of [act.bird, ...(act.elites || []), ...(act.bosses || [])].filter(Boolean)) {
+    for (const k of [act.bird, ...(act.elites || []), ...(act.bosses || []), ...(act.rareLegends || []).map(([key]) => key)].filter(Boolean)) {
       const L = LEGENDS[k];
       if (L) (out[L.species] ||= []).push({ kind: 'legend', region: rid, act: t + 1, node: k });
     }
@@ -127,7 +128,7 @@ const preOf = (sp) => Object.keys(D.species).filter(k => (D.species[k].evolution
 export async function audit() {
   await ensureData();
   const wild = wildSources(), ev = eventSources(), leg = legendSources();
-  const dex = Object.values(D.species).filter(s => s.dex >= 1 && s.dex <= 386).sort((a, b) => a.dex - b.dex);
+  const dex = Object.values(D.species).filter(s => s.dex >= 1 && s.dex <= 493).sort((a, b) => a.dex - b.dex);
   const rows = dex.map(s => {
     const w = wild[s.key] || [];
     return {
@@ -154,7 +155,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   if (process.argv.includes('--json')) { console.log(JSON.stringify(rows, null, 1)); process.exit(0); }
   const n = (f) => rows.filter(f).length;
   const nonLeg = (r) => !r.legendary;
-  console.log(`Species #1-386: ${rows.length} (${n(r => r.legendary)} legendary/mythical)`);
+  console.log(`Species #1-493: ${rows.length} (${n(r => r.legendary)} legendary/mythical)`);
   console.log(`  wild pool (direct entry or level-evolved): ${n(r => r.wildDirect.length || r.wildEvolved.length)}`);
   console.log(`    of which only as a level-evolved pick: ${n(r => !r.wildDirect.length && r.wildEvolved.length)}`);
   console.log(`  rare finds: ${n(r => r.rare.length)}`);

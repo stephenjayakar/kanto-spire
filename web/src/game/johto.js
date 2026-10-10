@@ -8,6 +8,7 @@
 // third of an act is morning, then day, then night) or a plain list (same at every time of day).
 // Trainer pics: 'hgss/<name>' = an HGSS portrait extracted by tools/extract_hgss.py into web/assets/gfx/trainers/hgss/
 // (gitignored, gated 'hgss' asset pack); FireRed stand-ins until the extraction has run.
+import { RARE_LEGEND, ULTRA_RARE_LEGEND } from './gen4.js';
 
 const L = (species, level, moves) => ({ species, level, iv: 120, moves: moves || null, item: null });
 
@@ -150,6 +151,7 @@ export const JOHTO_ACTS = [
     ],
     elites: ['JOHTO_ROCKET_GRUNT_3', 'ROCKET_EXEC_PETREL', 'ROCKET_EXEC_PROTON', 'JOHTO_BLACK_BELT_KIYO', 'JOHTO_COOLTRAINER_LOLA'],
     rival: 'SILVER_3', bird: 'LEGEND_ENTEI', // ENTEI: roaming near the LAKE OF RAGE
+    rareLegends: [['LEGEND_AZELF', RARE_LEGEND]], // (v0.4.0: rare legendary elites, Run.eliteConfig; AZELF: a lake's guardian)
     bosses: ['LEADER_CHUCK', 'LEADER_JASMINE', 'LEADER_PRYCE', 'LEADER_CLAIR'],
   },
   {
@@ -163,6 +165,7 @@ export const JOHTO_ACTS = [
     ],
     elites: ['JOHTO_COOLTRAINER_GAVEN', 'JOHTO_COOLTRAINER_JOYCE', 'ROCKET_EXEC_ARIANA', 'ROCKET_EXEC_ARCHER'],
     bird: 'LEGEND_SUICUNE', // SUICUNE: the North Wind at the TIN TOWER's foot
+    rareLegends: [['LEGEND_CRESSELIA', RARE_LEGEND]],
     gauntlet: ['ELITE_FOUR_WILL', 'JOHTO_E4_KOGA', 'JOHTO_E4_BRUNO', 'ELITE_FOUR_KAREN', 'CHAMPION_LANCE'],
     gauntletLevels: [44, 45, 46, 47, 49],
   },
@@ -176,6 +179,8 @@ export const JOHTO_ACTS = [
       area('MT. SILVER SUMMIT', 'mountain', 0.6, { morn: ['GOLDUCK', 'SNEASEL', 'DONPHAN', 'QUAGSIRE', 'LARVITAR', 'GOLBAT'], day: ['GOLDUCK', 'SNEASEL', 'DONPHAN', 'QUAGSIRE', 'LARVITAR', 'GOLBAT'], nite: ['SNEASEL', 'GOLDUCK', 'DONPHAN', 'MISDREAVUS', 'QUAGSIRE', 'LARVITAR', 'GOLBAT'] }, 'mus_sevii_dungeon'),
     ],
     elites: ['LEGEND_LUGIA', 'LEGEND_HO_OH', 'LEGEND_CELEBI', 'JOHTO_KIMONO_GIRLS'],
+    // (HGSS's SINJOH RUINS, near MT. SILVER: DIALGA / PALKIA, and ARCEUS)
+    rareLegends: [['LEGEND_DIALGA', RARE_LEGEND / 2], ['LEGEND_PALKIA', RARE_LEGEND / 2], ['LEGEND_ARCEUS', ULTRA_RARE_LEGEND]],
     bosses: ['PKMN_TRAINER_RED'],
   },
 ];
@@ -183,39 +188,46 @@ export const JOHTO_ACTS = [
 // v0.3.25: species the pools above leave out, added to JOHTO's wild areas (act id -> area name; every time of day) so
 // every Pokédex species can be caught somewhere (regions.js withFinds: extra = half as common as an average species there,
 // rare = a rare find). Strong and special species are rare finds, and late: the starters' final forms in act 4.
+// v0.4.0: + Gen 4 (the PIPLUP line, MAGNEZONE, YANMEGA at the LAKE OF RAGE, MAMOSWINE in the ICE PATH...).
 export const JOHTO_FINDS = {
   1: {
     'ROUTE 29': { rare: ['CYNDAQUIL'] },
     'ROUTE 30': { extra: ['LEDYBA'], rare: ['CHIKORITA'] },
+    'ROUTE 31': { extra: ['KRICKETOT'] },
     'DARK CAVE': { extra: ['TEDDIURSA'] },
     'ROUTE 32': { extra: ['TOGEPI'], rare: ['TOTODILE'] },
     'RUINS OF ALPH': { extra: ['UNOWN'] },
+    'SLOWPOKE WELL': { rare: ['PIPLUP'] },
   },
   2: {
     'ILEX FOREST': { extra: ['PINECO'] },
-    'ROUTE 34': { rare: ['QUILAVA'] },
-    'ROUTE 35': { rare: ['BAYLEEF'] },
-    'NATIONAL PARK': { extra: ['SUNFLORA'], rare: ['TOGETIC'] },
-    'ROUTE 36': { extra: ['PHANPY'], rare: ['SUDOWOODO'] },
+    'ROUTE 34': { rare: ['QUILAVA', 'PRINPLUP'] },
+    'ROUTE 35': { extra: ['BUNEARY'], rare: ['BAYLEEF'] },
+    'NATIONAL PARK': { extra: ['SUNFLORA', 'COMBEE'], rare: ['TOGETIC'] },
+    'ROUTE 36': { extra: ['PHANPY', 'BONSLY'], rare: ['SUDOWOODO'] },
     'ROUTE 37': { rare: ['CROCONAW'] },
     'BURNED TOWER': { extra: ['HOUNDOUR'] },
   },
   3: {
-    'ROUTE 38': { rare: ['UMBREON', 'JUMPLUFF'] },
+    'ROUTE 38': { rare: ['UMBREON', 'JUMPLUFF', 'MAGNEZONE'] },
     'ROUTE 39': { rare: ['ESPEON'] },
-    'ROUTE 41 SEA': { extra: ['QWILFISH'] },
+    'ROUTE 41 SEA': { extra: ['QWILFISH', 'FINNEON'] },
     'MT. MORTAR': { extra: ['TYROGUE'], rare: ['HITMONTOP', 'LARVITAR'] },
-    'ROUTE 42': { extra: ['GLIGAR'] },
-    'ROUTE 44': { rare: ['POLITOED', 'BELLOSSOM', 'FORRETRESS'] },
+    'ROUTE 42': { extra: ['GLIGAR'], rare: ['GLISCOR'] },
+    'LAKE OF RAGE': { rare: ['YANMEGA'] },
+    'ROUTE 44': { rare: ['POLITOED', 'BELLOSSOM', 'FORRETRESS', 'LICKILICKY'] },
+    'ICE PATH': { extra: ['SNOVER'], rare: ['MAMOSWINE'] },
     "DRAGON'S DEN": { rare: ['KINGDRA'] },
   },
   4: {
     'ROUTE 27': { rare: ['TYPHLOSION', 'MEGANIUM'] },
-    'ROUTE 26': { rare: ['FERALIGATR', 'HOUNDOOM'] },
-    'TOHJO FALLS': { rare: ['SLOWKING'] },
+    'ROUTE 26': { extra: ['STARAPTOR'], rare: ['FERALIGATR', 'HOUNDOOM'] },
+    'TOHJO FALLS': { rare: ['SLOWKING', 'EMPOLEON'] },
+    'VICTORY ROAD': { rare: ['RHYPERIOR'] },
   },
   5: {
     'ROUTE 28': { extra: ['URSARING'] },
+    'MT. SILVER SUMMIT': { rare: ['WEAVILE'] },
   },
 };
 for (const a of JOHTO_ACTS) for (const ar of a.areas) Object.assign(ar, JOHTO_FINDS[a.id]?.[ar.name]);

@@ -20,7 +20,7 @@
 //   (pick one), noMoney (act 4 on), winFlags (story flags set on a win), chainNext(run) -> the next battle of a
 //   gauntlet (the RADIO TOWER: started right after a win, no heal; null after the last).
 // Labels and texts must be pure functions of the run (no rng): a reload shows the same event the same way.
-import { D, bst, speciesName, itemName, moveName } from './data.js';
+import { D, bst, speciesName, itemName, moveName, DEX_MAX } from './data.js';
 import { makeMon, addLevels, maxHp, isFainted, healFrac, monName, canLearn, knowsMove, defaultCopies, typesOf, defaultMoves, NO_PLAYER_MOVES, LEGENDARY } from './pokemon.js';
 import { makeEnemy } from './battle.js';
 import { RELICS, CONSUMABLES, BALLS, APRICORN_BALLS, isCurse } from './items.js';
@@ -225,8 +225,8 @@ const SHRINES = [
         tip: 'Give a POKéMON (not your last) for a random, stronger species at its level +1.',
         run: (r, rng, mon) => {
           const target = bst(mon.species) + [30, 40, 50, 50, 50][act(r)];
-          let pool = Object.values(D.species).filter(s => s.dex && s.dex <= 386 && Math.abs(bstAll(s) - target) < 40 && !LEGENDARY.has(s.key) && s.key !== mon.species);
-          if (!pool.length) pool = Object.values(D.species).filter(s => s.dex && s.dex <= 386 && bstAll(s) >= target - 60 && !LEGENDARY.has(s.key));
+          let pool = Object.values(D.species).filter(s => s.dex && s.dex <= DEX_MAX && Math.abs(bstAll(s) - target) < 40 && !LEGENDARY.has(s.key) && s.key !== mon.species);
+          if (!pool.length) pool = Object.values(D.species).filter(s => s.dex && s.dex <= DEX_MAX && bstAll(s) >= target - 60 && !LEGENDARY.has(s.key));
           const s = rng.pick(pool);
           const nm = makeMon(s.key, mon.level + 1, { rng, minIV: 10, caughtAct: act(r) });
           r.party.splice(r.party.indexOf(mon), 1, nm);

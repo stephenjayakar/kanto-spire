@@ -3,15 +3,16 @@ import { Engine, W, H, hover, clicked, keyPressed, pushOverlay, setScene } from 
 import { text, textFit, textBlock, measure } from '../engine/font.js';
 import { swirlBackground, button, closeButton, pixBox, rect, drawTips, tip, THEME } from '../engine/ui.js';
 import { draw, tinted } from '../engine/assets.js';
-import { D, byDex, TYPE_COLORS } from '../game/data.js';
+import { D, byDex, TYPE_COLORS, DEX_MAX, moveName } from '../game/data.js';
 import { G, shinyUnlocked } from '../game/state.js';
 import { familyOf } from '../game/run.js';
 import { NO_PLAYER_MOVES } from '../game/pokemon.js';
+import { KNOWS_MOVE_LEVEL } from '../game/gen4.js';
 import { Sound } from '../audio/sound.js';
 import { drawIcon, drawMon, drawTypeTags, monDir, Modal } from './common.js';
 import { TitleScene } from './title.js';
 
-const DEX_MAX = 386, PER_PAGE = 120, COLS = 15;
+const PER_PAGE = 120, COLS = 15; // (DEX_MAX: 493 since v0.4.0, 5 pages)
 
 export class DexScene {
   enter() { this.page = 0; this.t = 0; }
@@ -38,7 +39,7 @@ export class DexScene {
       if (seen && clicked(x, y, 38, 34)) open = n;
     }
     text(ctx, 'Click a POKéMON for its entry', W - 90, 14, { align: 'right', color: 'whiteSoft', font: 'small' });
-    text(ctx, `Page ${this.page + 1}/${Math.ceil(DEX_MAX / PER_PAGE)} (scroll)`, W / 2, H - 50, { align: 'center', color: 'gray', font: 'small' });
+    text(ctx, `Page ${this.page + 1}/${Math.ceil(DEX_MAX / PER_PAGE)} · No.${String(start + 1).padStart(3, '0')}-${String(Math.min(DEX_MAX, start + PER_PAGE)).padStart(3, '0')} (scroll)`, W / 2, 28, { align: 'center', color: 'gray', font: 'small' }); // (between the header and the grid: a full page's 8th row reaches y 326)
     if (button(ctx, '<', 10, H - 30, 30, 22, { color: '#806060', disabled: this.page === 0 })) this.page--;
     if (button(ctx, '>', 44, H - 30, 30, 22, { color: '#806060', disabled: (this.page + 1) * PER_PAGE >= DEX_MAX })) this.page++;
     // recent runs
@@ -98,6 +99,8 @@ export function evoLabel(e) {
     case 'ITEM': return D.items[p]?.name || String(p);
     case 'FRIENDSHIP_DAY': return D.items.SUN_STONE?.name || 'SUN STONE';
     case 'FRIENDSHIP_NIGHT': return D.items.MOON_STONE?.name || 'MOON STONE';
+    case 'LEVEL_FEMALE': case 'LEVEL_MALE': return `Lv${p} (50%)`;
+    case 'KNOWS_MOVE': return moveName(p);
     default: return '?';
   }
 }
@@ -111,7 +114,29 @@ const EVO_HELP = {
   BEAUTY: 'A beauty evolution in Hoenn: here it evolves at Lv30.', TRADE: 'A trade evolution: here it evolves at Lv37.',
   TRADE_ITEM: 'A trade evolution with a held item: here it evolves at Lv40.', ITEM: 'Use this evolution stone on it.',
   FRIENDSHIP_DAY: 'A daytime friendship evolution: here it uses a SUN STONE.', FRIENDSHIP_NIGHT: 'A night-time friendship evolution: here it uses a MOON STONE.',
+  LEVEL_FEMALE: 'Evolves at this level into WORMADAM or MOTHIM (an even chance).', LEVEL_MALE: 'Evolves at this level into WORMADAM or MOTHIM (an even chance).',
 };
+// What a Gen 4 evolution was in HGSS (gen4.js gameEvolution keeps it as gen4Method / gen4Param), said after the rule here.
+const GEN4_EVO_HELP = {
+  MAGNETIC_FIELD: 'In Gen 4 it evolved in a magnetic field.', MOSS_ROCK: 'In Gen 4 it evolved near a MOSS ROCK.',
+  ICE_ROCK: 'In Gen 4 it evolved near an ICE ROCK.', HOLD_ITEM_NIGHT: (p) => `In Gen 4 it evolved holding a ${itemLabel(p)} at night.`,
+  HOLD_ITEM_DAY: (p) => `In Gen 4 it evolved holding an ${itemLabel(p)} by day.`, ITEM_MALE: 'In Gen 4 only males evolved this way.',
+  ITEM_FEMALE: 'In Gen 4 only females evolved this way.', LEVEL_FEMALE: 'In Gen 4 only females evolved.',
+  FRIENDSHIP_DAY: 'In Gen 4 it evolved by friendship, by day.', FRIENDSHIP_NIGHT: 'In Gen 4 it evolved by friendship, at night.',
+  PARTY_SPECIES: (p) => `In Gen 4 it evolved with a ${D.species[p]?.name || p} in the party.`,
+};
+const itemLabel = (k) => D.items[k]?.name || String(k).replace(/_/g, ' ');
+export function evoHelp(e) {
+  let h = EVO_HELP[e.method] || '';
+  if (e.method === 'KNOWS_MOVE') {
+    const lv = (D.species[familyParentOf(e.into)]?.learnset || []).find(([, m]) => m === e.param)?.[0];
+    h = `Evolves on a level-up while it knows ${moveName(e.param)}${lv ? ` (it learns it at Lv${lv})` : ''}, or at Lv${KNOWS_MOVE_LEVEL} anyway.`;
+  }
+  const g = e.gen4Method && GEN4_EVO_HELP[e.gen4Method];
+  return g ? `${h} ${typeof g === 'function' ? g(e.gen4Param) : g}` : h;
+}
+// The species that evolves into `into` (the first one found).
+function familyParentOf(into) { return Object.keys(D.species).find(k => (D.species[k].evolutions || []).some(e => e.into === into)) || null; }
 
 // The whole family as stages: [[{ key }], [{ key, e }, ...], ...]; each stage keeps its parents' order.
 export function evoStages(key) {
@@ -298,13 +323,17 @@ export class DexEntry extends Modal {
     if (stages.length === 1) { text(ctx, 'It does not evolve.', x + w / 2, y + 32, { align: 'center', color: 'dark' }); return; }
     const top = y + 13, avail = h - 15;
     // Each stage is a column of "Lv16 → [icon]" entries; a stage with more than 3 (EEVEE) splits into sub-columns of 3.
-    const cols = stages.map((st, si) => {
+    // When that is too wide for the box (EEVEE's 7 since v0.4.0), the stones lose their " STONE" (the tip says it all).
+    const layout = (label) => stages.map((st, si) => {
       const rows = Math.min(3, st.length), sub = Math.ceil(st.length / rows);
-      const labelW = si === 0 ? 0 : Math.max(...st.map(n => measure(evoLabel(n.e), 'small')));
+      const labelW = si === 0 ? 0 : Math.max(...st.map(n => measure(label(n.e), 'small')));
       const ew = si === 0 ? 28 : labelW + 42;
-      return { st, rows, sub, labelW, ew, width: sub * ew + (sub - 1) * 6 };
+      return { st, rows, sub, labelW, ew, width: sub * ew + (sub - 1) * 6, label };
     });
-    const gap = 4, totalW = cols.reduce((a, c) => a + c.width, 0) + gap * (cols.length - 1);
+    const widthOf = (cs) => cs.reduce((a, c) => a + c.width, 0) + 4 * (cs.length - 1);
+    let cols = layout(evoLabel);
+    if (widthOf(cols) > w - 12) cols = layout(e => evoLabel(e).replace(/ ?STONE$/, ''));
+    const gap = 4, totalW = widthOf(cols);
     let cx = x + Math.max(6, Math.round((w - totalW) / 2));
     cols.forEach((c) => {
       const pitch = c.rows <= 2 ? 30 : Math.floor(avail / c.rows);
@@ -314,7 +343,7 @@ export class DexEntry extends Modal {
         const ix = ex + (n.e ? c.labelW + 14 : 0);
         const seen = m.dexSeen.includes(n.key) || m.dexCaught.includes(n.key), cur = n.key === s.key;
         if (n.e) {
-          text(ctx, evoLabel(n.e), ex + c.labelW, ey + 10, { font: 'small', color: 'black', align: 'right' });
+          text(ctx, c.label(n.e), ex + c.labelW, ey + 10, { font: 'small', color: 'black', align: 'right' });
           text(ctx, '→', ex + c.labelW + 3, ey + 8, { color: 'dark' });
         }
         if (cur) pixBox(ctx, ix - 1, ey + 2, 30, 28, '#f8f0d0', '#d0a030', 2);
@@ -325,7 +354,7 @@ export class DexEntry extends Modal {
         }
         if (hover(ex, ey + 2, c.ew, Math.min(26, pitch))) {
           const nm = seen ? D.species[n.key].name : '?????';
-          tip(nm, (n.e ? `${evoLabel(n.e)}: ${EVO_HELP[n.e.method] || ''}` : 'The first stage.') + (seen && !cur ? '\nClick to open its entry.' : ''), { width: 200 });
+          tip(nm, (n.e ? `${evoLabel(n.e)}: ${evoHelp(n.e)}` : 'The first stage.') + (seen && !cur ? '\nClick to open its entry.' : ''), { width: 200 });
           if (seen && !cur && Engine.mouse.clicked) this.go(D.species[n.key].dex, 0);
         }
       });

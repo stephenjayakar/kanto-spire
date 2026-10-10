@@ -6,9 +6,9 @@ import { JOHTO_TRAINERS } from './johto.js';
 import { SPECIAL_MOVES, PHYSICAL_MOVES } from './move_categories.js';
 import { MOVE_DESC, ABILITY_DESC } from './text_overrides.js';
 import { applyGen4Moves } from './gen4_moves.js';
-import { RELICS, BALLS } from './items.js';
+import { RELICS, BALLS, CONSUMABLES } from './items.js';
 import * as GEN4_DATA from './gen4_data.js';
-import { GEN4_ENABLED, loadGen4, applyGen4 } from './gen4.js';
+import { loadGen4, applyGen4 } from './gen4.js';
 
 export const D = {
   species: {}, moves: {}, types: { list: [], chart: {} }, items: {}, trainers: {},
@@ -26,14 +26,16 @@ export async function loadData(loader) {
   await Promise.all(Object.entries(FILES).map(async ([k, f]) => {
     try { D[k] = await loader(f); } catch (e) { console.warn('data load failed', f, e); }
   }));
-  // Gen 4 species (gen4.js): hidden, so with the flag off this file isn't even read.
-  if (GEN4_ENABLED) { try { applyGen4(D, await loadGen4(loader)); } catch (e) { console.warn('data load failed', 'gen4', e); } }
+  // Gen 4 species (v0.4.0, gen4.js): their own file next to FireRed's species.json, merged in on every load.
+  try { applyGen4(D, await loadGen4(loader)); } catch (e) { console.warn('data load failed', 'gen4', e); }
   indexData();
   return D;
 }
 
 export const byId = { species: [], moves: [] };
 export const byDex = [];
+// The national POKéDEX this game covers: #1-386 from FireRed's data, #387-493 from Gen 4 (gen4.js, v0.4.0).
+export const DEX_MAX = 493;
 
 function indexData() {
   // Gen 4 moves and learnsets (gen4_moves.js) on top of FireRed's data.
@@ -64,6 +66,7 @@ function indexData() {
   for (const [k, n] of Object.entries(COMBO_ITEM_NAMES)) if (D.items[k]) D.items[k].name = n;
   // Held items with no FireRed item behind them (the legendary items) get an entry of their own.
   for (const [key, r] of Object.entries(RELICS)) if (r.name && !D.items[key]) D.items[key] = { name: r.name, desc: r.desc, price: 0, pocket: 'KEY_ITEMS', custom: true };
+  for (const [key, c] of Object.entries(CONSUMABLES)) if (c.name && !D.items[key]) D.items[key] = { name: c.name, desc: c.desc, price: c.price, pocket: 'ITEMS', custom: true }; // (v0.4.0: the Gen 4 stones)
   for (const [key, b] of Object.entries(BALLS)) if (b.name && !D.items[key]) D.items[key] = { name: b.name, desc: b.desc, price: b.price, pocket: 'POKE_BALLS', custom: true }; // (KURT's APRICORN BALLS)
   for (const [key, it] of Object.entries(D.items)) it.key = key;
   for (const [key, t] of Object.entries(D.trainers)) t.key = key;

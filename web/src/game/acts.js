@@ -1,6 +1,7 @@
 import { HOENN_LEGENDS } from './hoenn.js';
 import { JOHTO_LEGENDS, JOHTO_BIRDS, SILVER_INTROS } from './johto.js';
 import { D, typeEffect } from './data.js';
+import { GEN4_LEGENDS, RARE_LEGEND, ULTRA_RARE_LEGEND } from './gen4.js';
 
 // Act definitions: which FireRed areas, trainers, bosses, music and levels each act draws from.
 
@@ -68,6 +69,7 @@ export const ACTS = [
       'MAP_ROUTE21_NORTH', 'MAP_POKEMON_MANSION_1F', 'MAP_POKEMON_MANSION_3F', 'MAP_CINNABAR_ISLAND_GYM'],
     elites: ['BOSS_GIOVANNI_2', 'TEAM_ROCKET_GRUNT_39', 'BLACK_BELT_KOICHI', 'LEGEND_SNORLAX'],
     rival: 'RIVAL_SILPH', bird: 'LEGEND_ARTICUNO', // ARTICUNO: SEAFOAM ISLANDS
+    rareLegends: [['LEGEND_MESPRIT', RARE_LEGEND]], // (v0.4.0: a rare legendary elite, Run.eliteConfig)
     bosses: ['LEADER_KOGA', 'LEADER_SABRINA', 'LEADER_BLAINE', 'LEADER_GIOVANNI'],
   },
   {
@@ -83,6 +85,7 @@ export const ACTS = [
     trainerMaps: ['MAP_VICTORY_ROAD_1F', 'MAP_VICTORY_ROAD_2F', 'MAP_VICTORY_ROAD_3F', 'MAP_VIRIDIAN_CITY_GYM'],
     elites: ['COOLTRAINER_COLBY', 'COOLTRAINER_NAOMI', 'COOLTRAINER_GEORGE'],
     bird: 'LEGEND_MOLTRES', // MOLTRES: VICTORY ROAD (as in RED/BLUE; the CHAMPION is the rival)
+    rareLegends: [['LEGEND_UXIE', RARE_LEGEND]],
     gauntlet: ['ELITE_FOUR_LORELEI', 'ELITE_FOUR_BRUNO', 'ELITE_FOUR_AGATHA', 'ELITE_FOUR_LANCE', 'CHAMPION_FIRST'],
     gauntletLevels: [44, 45, 46, 47, 49],
   },
@@ -104,6 +107,7 @@ export const ACTS = [
     trainerMaps: ['MAP_ONE_ISLAND_KINDLE_ROAD', 'MAP_THREE_ISLAND_BOND_BRIDGE', 'MAP_FIVE_ISLAND_RESORT_GORGEOUS', 'MAP_SIX_ISLAND_RUIN_VALLEY',
       'MAP_SEVEN_ISLAND_SEVAULT_CANYON', 'MAP_SIX_ISLAND_PATTERN_BUSH', 'MAP_FIVE_ISLAND_MEMORIAL_PILLAR', 'MAP_SEVEN_ISLAND_TANOBY_RUINS'],
     elites: ['TEAM_ROCKET_ADMIN', 'TEAM_ROCKET_ADMIN_2', 'LEGEND_ENTEI', 'LEGEND_RAIKOU', 'LEGEND_SUICUNE', 'LEGEND_LUGIA', 'LEGEND_HO_OH'],
+    rareLegends: [['LEGEND_GIRATINA', RARE_LEGEND / 2], ['LEGEND_DARKRAI', RARE_LEGEND / 2], ['LEGEND_SHAYMIN', RARE_LEGEND / 2], ['LEGEND_ARCEUS', ULTRA_RARE_LEGEND]],
     bosses: ['LEGEND_MEWTWO', 'LEGEND_DEOXYS'],
   },
 ];
@@ -111,35 +115,50 @@ export const ACTS = [
 // v0.3.25: species FireRed's tables leave out, added to KANTO's wild areas (by map) so every Pokédex species can be
 // caught somewhere (regions.js withFinds: extra = half as common as an average species there, rare = a rare find). Strong
 // and special species are rare finds, and late: the starters' final forms in act 4, DRAGONITE in the post-game.
+// v0.4.0: + Gen 4 (#387-493) the same way: its basic forms as extras where they fit, the strong ones (cross-gen
+// evolutions like MAGMORTAR, RIOLU / LUCARIO, the TURTWIG line, GABITE) rare and late.
 export const KANTO_FINDS = {
-  MAP_ROUTE2: { rare: ['BULBASAUR'] },
-  MAP_VIRIDIAN_FOREST: { extra: ['PICHU'] },
-  MAP_ROUTE22: { rare: ['SQUIRTLE'] },
-  MAP_ROUTE3: { extra: ['IGGLYBUFF'], rare: ['CHARMANDER'] },
-  MAP_MT_MOON_1F: { extra: ['CLEFFA'] },
-  MAP_MT_MOON_B2F: { rare: ['OMANYTE', 'KABUTO'] },
-  MAP_ROUTE24: { rare: ['CHARMELEON'] },
-  MAP_ROUTE25: { rare: ['IVYSAUR'] },
-  MAP_ROUTE6: { rare: ['WARTORTLE'] },
-  MAP_ROUTE7: { extra: ['EEVEE'] },
-  MAP_ROUTE11: { rare: ['MR_MIME'] },
-  MAP_ROUTE12: { rare: ['VICTREEBEL'] },
-  MAP_ROUTE15: { rare: ['VILEPLUME'] },
-  MAP_SAFARI_ZONE_CENTER: { rare: ['KANGASKHAN'] },
-  MAP_SAFARI_ZONE_NORTH: { rare: ['EXEGGUTOR', 'SCIZOR'] },
-  MAP_POWER_PLANT: { extra: ['ELEKID', 'PORYGON'], rare: ['RAICHU', 'JOLTEON', 'PORYGON2'] },
-  MAP_SEAFOAM_ISLANDS_B3F: { extra: ['STARYU', 'SMOOCHUM'], rare: ['LAPRAS', 'CLOYSTER', 'STARMIE', 'VAPOREON'] },
-  MAP_POKEMON_MANSION_1F: { extra: ['MAGBY'], rare: ['NINETALES', 'FLAREON'] },
-  MAP_POKEMON_MANSION_B1F: { rare: ['MUK', 'AERODACTYL'] },
-  MAP_ROUTE23: { extra: ['WIGGLYTUFF'], rare: ['VENUSAUR', 'CHARIZARD', 'BLASTOISE'] },
-  MAP_VICTORY_ROAD_1F: { rare: ['CLEFABLE', 'HITMONLEE', 'NIDOQUEEN'] },
-  MAP_VICTORY_ROAD_2F: { rare: ['GOLEM', 'HITMONCHAN', 'NIDOKING'] },
-  MAP_VICTORY_ROAD_3F: { rare: ['MACHAMP', 'POLIWRATH'] },
-  MAP_ONE_ISLAND_KINDLE_ROAD: { rare: ['ARCANINE'] },
-  MAP_SIX_ISLAND_RUIN_VALLEY: { rare: ['OMASTAR', 'KABUTOPS'] },
-  MAP_FIVE_ISLAND_LOST_CAVE_ROOM1: { rare: ['GENGAR'] },
-  MAP_SEVEN_ISLAND_SEVAULT_CANYON: { rare: ['DRAGONITE'] },
-  MAP_CERULEAN_CAVE_B1F: { rare: ['ALAKAZAM', 'RHYDON', 'BLISSEY'] },
+  MAP_ROUTE1: { extra: ['BIDOOF'], rare: ['TURTWIG'] },
+  MAP_ROUTE2: { extra: ['STARLY'], rare: ['BULBASAUR'] },
+  MAP_VIRIDIAN_FOREST: { extra: ['PICHU', 'KRICKETOT', 'BURMY'] },
+  MAP_ROUTE22: { extra: ['SHINX'], rare: ['SQUIRTLE'] },
+  MAP_ROUTE3: { extra: ['IGGLYBUFF', 'GLAMEOW'], rare: ['CHARMANDER'] },
+  MAP_MT_MOON_1F: { extra: ['CLEFFA', 'BRONZOR'] },
+  MAP_MT_MOON_B2F: { rare: ['OMANYTE', 'KABUTO', 'CRANIDOS', 'SHIELDON'] },
+  MAP_ROUTE24: { extra: ['BUDEW'], rare: ['CHARMELEON'] },
+  MAP_ROUTE25: { extra: ['COMBEE', 'WORMADAM'], rare: ['IVYSAUR'] },
+  MAP_ROUTE5: { extra: ['BUNEARY'], rare: ['GROTLE'] },
+  MAP_ROUTE6: { extra: ['BUIZEL'], rare: ['WARTORTLE'] },
+  MAP_DIGLETTS_CAVE_B1F: { extra: ['HIPPOPOTAS'] },
+  MAP_ROUTE9: { extra: ['STUNKY', 'MOTHIM'] },
+  MAP_ROCK_TUNNEL_1F: { extra: ['BONSLY'] },
+  MAP_ROUTE8: { extra: ['PACHIRISU'] },
+  MAP_ROUTE7: { extra: ['EEVEE', 'CHERUBI'] },
+  MAP_POKEMON_TOWER_3F: { extra: ['DRIFLOON'], rare: ['SPIRITOMB'] },
+  MAP_ROUTE11: { extra: ['MIME_JR'], rare: ['MR_MIME'] },
+  MAP_ROUTE12: { extra: ['MUNCHLAX', 'LOPUNNY'], rare: ['VICTREEBEL'] },
+  MAP_ROUTE13: { extra: ['CHATOT', 'AMBIPOM'] },
+  MAP_ROUTE16: { extra: ['STARAVIA'] },
+  MAP_ROUTE15: { extra: ['PURUGLY', 'VESPIQUEN'], rare: ['VILEPLUME', 'RIOLU'] },
+  MAP_SAFARI_ZONE_CENTER: { extra: ['CARNIVINE', 'CROAGUNK', 'SKORUPI'], rare: ['KANGASKHAN'] },
+  MAP_SAFARI_ZONE_NORTH: { extra: ['CHERRIM'], rare: ['EXEGGUTOR', 'SCIZOR', 'TANGROWTH'] },
+  MAP_POWER_PLANT: { extra: ['ELEKID', 'PORYGON', 'ROTOM'], rare: ['RAICHU', 'JOLTEON', 'PORYGON2', 'ELECTIVIRE'] },
+  MAP_SEAFOAM_ISLANDS_B3F: { extra: ['STARYU', 'SMOOCHUM', 'SNOVER'], rare: ['LAPRAS', 'CLOYSTER', 'STARMIE', 'VAPOREON'] },
+  MAP_POKEMON_MANSION_1F: { extra: ['MAGBY'], rare: ['NINETALES', 'FLAREON', 'MAGMORTAR'] },
+  MAP_POKEMON_MANSION_B1F: { extra: ['SKUNTANK'], rare: ['MUK', 'AERODACTYL', 'PORYGON_Z'] },
+  MAP_ROUTE23: { extra: ['WIGGLYTUFF', 'TOXICROAK', 'STARAPTOR'], rare: ['VENUSAUR', 'CHARIZARD', 'BLASTOISE'] },
+  MAP_VICTORY_ROAD_1F: { rare: ['CLEFABLE', 'HITMONLEE', 'NIDOQUEEN', 'LUCARIO'] },
+  MAP_VICTORY_ROAD_2F: { rare: ['GOLEM', 'HITMONCHAN', 'NIDOKING', 'GABITE'] },
+  MAP_VICTORY_ROAD_3F: { rare: ['MACHAMP', 'POLIWRATH', 'TORTERRA'] },
+  MAP_ONE_ISLAND_KINDLE_ROAD: { rare: ['ARCANINE', 'HIPPOWDON'] },
+  MAP_THREE_ISLAND_BERRY_FOREST: { rare: ['LEAFEON'] },
+  MAP_FIVE_ISLAND_MEADOW: { rare: ['TOGEKISS'] },
+  MAP_SIX_ISLAND_PATTERN_BUSH: { rare: ['GALLADE'] },
+  MAP_FOUR_ISLAND_ICEFALL_CAVE_1F: { extra: ['ABOMASNOW'], rare: ['GLACEON', 'MAMOSWINE', 'WEAVILE'] },
+  MAP_SIX_ISLAND_RUIN_VALLEY: { rare: ['OMASTAR', 'KABUTOPS', 'PROBOPASS'] },
+  MAP_FIVE_ISLAND_LOST_CAVE_ROOM1: { rare: ['GENGAR', 'DUSKNOIR'] },
+  MAP_SEVEN_ISLAND_SEVAULT_CANYON: { rare: ['DRAGONITE', 'GLISCOR'] },
+  MAP_CERULEAN_CAVE_B1F: { rare: ['ALAKAZAM', 'RHYDON', 'BLISSEY', 'RHYPERIOR'] },
 };
 for (const a of ACTS) for (const ar of a.areas) Object.assign(ar, KANTO_FINDS[ar.map]);
 
@@ -158,7 +177,7 @@ export const LEGENDS = {
   LEGEND_DEOXYS: { species: 'DEOXYS', title: 'DEOXYS', terrain: 'mountain', music: 'mus_vs_deoxys' },
 };
 
-Object.assign(LEGENDS, HOENN_LEGENDS, JOHTO_LEGENDS);
+Object.assign(LEGENDS, HOENN_LEGENDS, JOHTO_LEGENDS, GEN4_LEGENDS);
 // (a world's / run's act list: game/regions.js actsFor / actsForRun)
 
 // Starters. BULBASAUR / CHARMANDER / SQUIRTLE are open from the start (TREECKO / TORCHIC / MUDKIP in
