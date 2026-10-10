@@ -1,6 +1,6 @@
 // Rebuilds web/src/vendor/convex-browser.js: Convex's browser WebSocket client (ConvexClient, from the convex npm
-// package in node_modules) as ONE minified ES module, so the unbundled game can import it (co-op live updates,
-// web/src/net/coopnet.js). Run after upgrading the convex package:  node tools/vendor_convex.cjs
+// package in node_modules) as ONE minified ES module, so the unbundled game can import it (web/src/net/cloud.js: every
+// query, mutation and live subscription goes over it). Run after upgrading the convex package:  node tools/vendor_convex.cjs
 const path = require('path');
 const root = path.join(__dirname, '..');
 const version = require(path.join(root, 'node_modules/convex/package.json')).version;

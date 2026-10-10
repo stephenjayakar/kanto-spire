@@ -14,7 +14,7 @@ import { VERSION, PATCH_NOTES } from '../game/version.js';
 import { textBlock, measure } from '../engine/font.js';
 import { coopAvailable } from './coop/net.js';
 import { CRT } from '../engine/crt.js';
-import { nowPlaying } from '../net/presence.js';
+import { nowPlaying, stopNowPlaying } from '../net/presence.js';
 import { BasicsModal } from './tutorial.js';
 
 const CRT_MODES = ['off', 'subtle', 'strong'];
@@ -26,6 +26,7 @@ export class TitleScene {
     this.started = false;
     Sound.playBGM('mus_title');
   }
+  exit() { stopNowPlaying(); } // (the NOW PLAYING subscription lives while the title shows)
   update(dt) {
     this.t += dt;
     if (!this.started && (Engine.mouse.clicked || keyPressed('Enter') || keyPressed(' '))) {

@@ -11,10 +11,10 @@ import { cleanRun, normEmail, playerFor, recordCoopRun, requireUser, runInput } 
 // { seq, p, json }) so big Run snapshots never hit Convex value limits (8192-element arrays, "$" keys).
 // web/src/net/coopnet.js turns them back into { seq, p, type, ...payload, nonce }.
 //
-// Network cost: newer clients subscribe to coop:watch over Convex's WebSocket (it only re-runs when the room, its
-// members or its log change, and sends the room view only when it changed), heartbeat into coopPresence (which
-// coop:watch doesn't read) every 15 s, and sketches / checkpoint states live in their own tables, so the docs every
-// call reads stay small. Older clients keep polling coop:since: every function they call still works.
+// Network cost: newer clients read the room only through WebSocket subscriptions (coop:head, coop:feed, coop:presence,
+// coop:sketch, coop:mineLive: see "live reads" below), send a keepalive into coopPresence (which head / feed never read)
+// about twice a minute, and sketches / checkpoint states live in their own tables, so the docs every call reads stay
+// small. Older clients keep polling coop:since / coop:watch: every function they call still works.
 
 const CODE_ABC = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; // no I, L, O, 0, 1
 const CODE_LEN = 5;
@@ -107,7 +107,8 @@ async function presenceOf(ctx: QueryCtx, roomId: Id<"coopRooms">) {
 function seenOf(m: Member, pres: Presence[], now: number) {
   const p = pres.find((x) => x.memberId === m._id);
   if (!p) return { lastSeen: m.lastSeen, lastSeq: m.lastSeq };
-  const shift = p.hb && p.hb > HB_LEGACY ? p.hb - HB_LEGACY : 0;
+  // (a client that said goodbye, coop:alive gone, gets no allowance: older partners see it offline 20 s later)
+  const shift = p.hb && p.hb > HB_LEGACY && !p.gone ? p.hb - HB_LEGACY : 0;
   return { lastSeen: Math.max(m.lastSeen, Math.min(now, p.lastSeen + shift)), lastSeq: p.lastSeq };
 }
 
@@ -391,7 +392,7 @@ export const heartbeat = mutation({
     const pres = await presenceOf(ctx, roomId);
     const mine = pres.find((p) => p.memberId === me._id);
     if (mine) {
-      const row = { lastSeen: now, slot: me.slot, hb: hbMs, ...(lastSeq !== undefined ? { lastSeq } : {}) };
+      const row = { lastSeen: now, slot: me.slot, hb: hbMs, gone: undefined, ...(lastSeq !== undefined ? { lastSeq } : {}) };
       await ctx.db.patch(mine._id, row);
       Object.assign(mine, row);
     } else {
@@ -639,6 +640,142 @@ export const mine = query({
       });
     }
     return out.sort((a, b) => b.updatedAt - a.updatedAt);
+  },
+});
+
+// ---- live reads (staging-net): newer clients read everything through these, as Convex WebSocket subscriptions ----
+// A subscription re-runs when a document it read changes, and its client only hears about it when the result changed.
+// So each one reads as little as it can and returns only what its client needs:
+//   coop:head      the room and its members, without what changes per action (nextSeq, updatedAt) or per keepalive
+//                  (lastSeen): status, seats, starters, ready, left / saved, ascension, progress. Changes rarely.
+//   coop:feed      the actions after a cursor; never reads the room. The client subscribes again from its newest seq
+//                  after every delivery, so a result is just the new actions (usually none).
+//   coop:presence  everyone's keepalive row (coopPresence, written by coop:alive): about twice a minute per player,
+//                  and at once on a real change (tab hidden / shown, reconnect, goodbye).
+//   coop:sketch    one player's map sketch; for my own slot (wiped) only whether a partner's ERASE wiped mine.
+//   coop:mineLive  my REJOIN list, without the fields every action changes.
+// Older clients keep polling coop:since / coop:room and beating coop:heartbeat: all of those still work as before.
+const FEED_MAX = 200;
+const FEED_MAX_BYTES = 1_000_000; // a backlog (a reconnect, a long log) arrives in pages of this size
+
+// My membership without reading the room document (which every posted action rewrites).
+async function memberOrThrow(ctx: QueryCtx, roomId: Id<"coopRooms">) {
+  const user = await requireUser(ctx);
+  const email = normEmail(user.email);
+  const me = await ctx.db.query("coopMembers").withIndex("by_room_email", (q) => q.eq("roomId", roomId).eq("email", email)).first();
+  if (!me) throw new Error("Room not found");
+  return { user, email, me };
+}
+
+// The member fields coop:head shows (memberCore without sketchV: sketches come through coop:sketch).
+function memberHead(m: Member) {
+  const { sketchV: _v, ...rest } = memberCore(m);
+  return rest;
+}
+
+// -> { room: { _id, code, status, host (slot), ascension, world, seed, createdAt, gameVersion, progress, maxPlayers },
+//      members: [{ slot, name, starter, ascMax, ready, left, saved, maxPlayers, net }], me, isHost }
+export const head = query({
+  args: { roomId: v.id("coopRooms") },
+  handler: async (ctx, { roomId }) => {
+    const { room, me } = await myMembership(ctx, roomId);
+    const members = (await membersOf(ctx, roomId)).sort((a, b) => a.slot - b.slot);
+    return { room: roomCore(room, members), members: members.map(memberHead), me: me.slot, isHost: me.email === room.host };
+  },
+});
+
+// -> { actions: [{ seq, p, json }] (seq > after, in order), more } (more: a page limit was hit, ask again from the last seq)
+export const feed = query({
+  args: { roomId: v.id("coopRooms"), after: v.number() },
+  handler: async (ctx, { roomId, after }) => {
+    await memberOrThrow(ctx, roomId);
+    const from = Number.isFinite(after) ? Math.max(0, Math.floor(after)) : 0;
+    const actions: { seq: number; p: number; json: string }[] = [];
+    let bytes = 0, more = false;
+    for await (const a of ctx.db.query("coopActions").withIndex("by_room_seq", (q) => q.eq("roomId", roomId).gt("seq", from))) {
+      if (actions.length >= FEED_MAX || (actions.length && bytes + a.json.length > FEED_MAX_BYTES)) { more = true; break; }
+      actions.push({ seq: a.seq, p: a.p, json: a.json });
+      bytes += a.json.length;
+    }
+    return { actions, more };
+  },
+});
+
+// -> [{ slot, lastSeen, hb, gone? }] (lastSeen: server time of their last keepalive; hb: how often they send one)
+export const presence = query({
+  args: { roomId: v.id("coopRooms") },
+  handler: async (ctx, { roomId }) => {
+    await memberOrThrow(ctx, roomId);
+    return (await presenceOf(ctx, roomId)).sort((a, b) => a.slot - b.slot)
+      .map((p) => ({ slot: p.slot, lastSeen: p.lastSeen, hb: p.hb ?? HB_LEGACY, ...(p.gone ? { gone: true } : {}) }));
+  },
+});
+
+// The keepalive of newer clients: my coopPresence row only (coop:head and coop:feed never read it). hb: how often I
+// send one (longer in a hidden tab); net: the wire protocol I speak; gone: I am leaving (tab closed): offline at once.
+// Like a heartbeat it brings me back from "left" in a run in progress. -> { now } (the server clock, for presence ages)
+export const alive = mutation({
+  args: { roomId: v.id("coopRooms"), hb: v.optional(v.number()), net: v.optional(v.number()), gone: v.optional(v.boolean()), seq: v.optional(v.number()) },
+  handler: async (ctx, { roomId, hb, net, gone, seq }) => {
+    const { room, me } = await myMembership(ctx, roomId);
+    const now = Date.now();
+    const hbMs = !gone && hb !== undefined && Number.isFinite(hb) ? Math.max(1000, Math.min(120_000, Math.floor(hb))) : undefined;
+    const lastSeq = seq !== undefined && Number.isFinite(seq) ? Math.max(0, Math.min(Math.floor(seq), room.nextSeq - 1)) : undefined;
+    const mine = await ctx.db.query("coopPresence").withIndex("by_member", (q) => q.eq("memberId", me._id)).first();
+    if (mine) {
+      await ctx.db.patch(mine._id, { lastSeen: now, slot: me.slot, hb: hbMs, gone: gone ? true : undefined, ...(lastSeq !== undefined ? { lastSeq } : {}) });
+    } else {
+      await ctx.db.insert("coopPresence", {
+        roomId, memberId: me._id, slot: me.slot, lastSeen: now, lastSeq: lastSeq ?? me.lastSeq,
+        ...(hbMs !== undefined ? { hb: hbMs } : {}), ...(gone ? { gone: true } : {}),
+      });
+    }
+    const patch: Partial<Member> = {};
+    if (!gone && me.left && room.status === "playing") { patch.left = false; patch.savedAt = undefined; }
+    const netV = net !== undefined && Number.isInteger(net) && net >= 1 && net <= NET_MAX ? net : undefined;
+    if (netV !== undefined && me.net !== netV) patch.net = netV;
+    if (Object.keys(patch).length) await ctx.db.patch(me._id, patch);
+    return { now };
+  },
+});
+
+// -> { slot, sketch (JSON or null) }; with wiped: { slot, wiped } (true while a partner's ERASE left that sketch empty)
+export const sketch = query({
+  args: { roomId: v.id("coopRooms"), slot: v.number(), wiped: v.optional(v.boolean()) },
+  handler: async (ctx, { roomId, slot, wiped }) => {
+    await memberOrThrow(ctx, roomId);
+    const m = await ctx.db.query("coopMembers").withIndex("by_room", (q) => q.eq("roomId", roomId).eq("slot", slot)).first();
+    const row = m ? await ctx.db.query("coopSketches").withIndex("by_member", (q) => q.eq("memberId", m._id)).first() : null;
+    const sk = row ? row.sketch : m?.sketch;
+    if (wiped) return { slot, wiped: sk === "" };
+    return { slot, sketch: sk || null };
+  },
+});
+
+// My REJOIN list (coop:mine without nextSeq / updatedAt / createdAt, which every action changes), newest first.
+export const mineLive = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await requireUser(ctx);
+    const email = normEmail(user.email);
+    const now = Date.now();
+    const mems = await ctx.db.query("coopMembers").withIndex("by_email", (q) => q.eq("email", email).gt("joinedAt", now - KEEP_RUNS - 7 * DAY)).order("desc").take(50);
+    const out = [];
+    for (const me of mems) {
+      if (me.dismissed) continue;
+      const room = await ctx.db.get(me.roomId);
+      if (!room || room.status === "closed" || room.updatedAt < now - (room.status === "playing" ? KEEP_RUNS : DAY)) continue;
+      const members = await membersOf(ctx, room._id);
+      out.push({
+        at: room.updatedAt,
+        row: {
+          roomId: room._id, code: room.code, status: room.status, ascension: room.ascension, world: room.world,
+          slot: me.slot, isHost: room.host === email, progress: room.progress ?? null,
+          members: members.sort((a, b) => a.slot - b.slot).map((m) => ({ slot: m.slot, name: m.name, starter: m.starter ?? null, left: !!m.left, saved: !!m.left && !!m.savedAt })),
+        },
+      });
+    }
+    return out.sort((a, b) => b.at - a.at).map((x) => x.row);
   },
 });
 

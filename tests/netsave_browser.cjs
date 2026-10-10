@@ -52,6 +52,13 @@ const mb = (n) => (n / 1048576).toFixed(2) + ' MB';
       if (body.path === 'progress:save') net.saves++;
     }
   });
+  // (staging-net: the pushes go over the Convex WebSocket as Mutation messages; HTTP ones are a closing tab's keepalive)
+  cdp.on('Network.webSocketFrameSent', e => {
+    let msg; try { msg = JSON.parse(e.response.payloadData); } catch { return; }
+    if (msg.type !== 'Mutation') return;
+    if (msg.udfPath === 'progress:put') net.puts.push({ parts: Object.keys(msg.args?.[0] || {}), bytes: e.response.payloadData.length, ws: true });
+    if (msg.udfPath === 'progress:save') net.saves++;
+  });
   cdp.on('Network.responseReceived', e => { if (reqs.has(e.requestId) && (e.response.fromDiskCache || e.response.fromPrefetchCache)) net.diskCache++; });
   cdp.on('Network.loadingFinished', e => { if (reqs.has(e.requestId)) net.bytes += e.encodedDataLength; });
 
@@ -112,6 +119,7 @@ const mb = (n) => (n / 1048576).toFixed(2) + ' MB';
     ok(net.saves === 0, 'no whole-save progress:save calls');
     ok(net.puts.length >= 1 && net.puts.length <= nodes + 3, `about one push per node (${net.puts.length} for ${nodes} nodes, ${st.saves} local saves)`);
     ok(net.puts.slice(1).every(p => p.parts.length === 1 && p.parts[0] === 'run') || net.puts.length <= 1, 'after the first, pushes carry only the run');
+    ok(net.puts.every(p => p.ws), `the pushes went over the WebSocket (${net.puts.filter(p => p.ws).length}/${net.puts.length})`);
     // back on the map: the last checkpoint went up; the server holds exactly the local save
     await page.waitForFunction(() => window.__engine.Engine.scene?.constructor?.name === 'MapScene', null, { timeout: 60000 }).catch(() => {});
     await page.evaluate(() => window.__saveSync.flush());

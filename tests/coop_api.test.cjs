@@ -171,45 +171,27 @@ const CODE_RE = /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{5}$/;
     cloud.Cloud.url = A.CONVEX_URL;
     cloud.Cloud.auth = { token: t1, refreshToken: 'e2e' };
     const realFetch = globalThis.fetch;
-    let inflight = 0, maxInflight = 0, sinceCalls = 0;
-    globalThis.fetch = async (url, init) => {
-      const isSince = /"coop:(since|watch)"/.test(init?.body || ''); // (a poll: coop:watch, or coop:since on an older server)
-      if (isSince) { sinceCalls++; inflight++; maxInflight = Math.max(maxInflight, inflight); }
-      try { return await realFetch(url, init); } finally { if (isSince) inflight--; }
-    };
+    let httpCalls = 0;
+    globalThis.fetch = async (url, init) => { if (/\/api\/(query|mutation)/.test(String(url))) httpCalls++; return realFetch(url, init); };
+    // staging-net: CoopFeed over the WebSocket (coop:head / coop:feed / coop:presence subscriptions): every action in
+    // order, the room, and not a single HTTP call
     const got = [];
-    let roomSeen = null, errs = 0;
-    await new Promise((resolve, reject) => {
-      const poller = new net.CoopPoller(roomId, {
-        intervalMs: 50, live: false,
-        onActions: acts => { got.push(...acts); },
-        onRoom: (room, members) => { roomSeen = { room, members }; if (got.length >= total) { poller.stop(); resolve(); } },
-        onError: e => { errs++; if (errs > 5) { poller.stop(); reject(e); } },
-      });
-      poller.start();
-      for (let i = 0; i < 3; i++) poller.kick(); // must not start parallel requests
-      setTimeout(() => { poller.stop(); resolve(); }, 30000);
-    });
-    ok(got.length === total && got.every((a, i) => a.seq === i + 1) && got[0].type === 'init' && got[1].p === 0 && got[1].node === 4, `CoopPoller drained ${got.length}/${total} actions in order (parsed objects)`);
-    ok(maxInflight === 1 && sinceCalls >= 2, `CoopPoller never overlaps requests (max in flight ${maxInflight}, ${sinceCalls} calls)`);
-    ok(roomSeen && roomSeen.members.length === 2 && roomSeen.room.code === code && roomSeen.room.nextSeq === total + 1, 'CoopPoller onRoom(room, members)');
-    // the same over the WebSocket (a coop:watch subscription): everything arrives without a single poll
-    {
-      const before = sinceCalls, got2 = [];
-      let liveRoom = null, p2 = null;
-      await new Promise((resolve) => {
-        p2 = new net.CoopPoller(roomId, {
-          onActions: acts => { got2.push(...acts); },
-          onRoom: (room, members) => { liveRoom = { room, members }; if (got2.length >= total) resolve(); },
-        });
-        p2.start();
-        setTimeout(resolve, 20000);
-      });
-      const wasLive = p2.live;
-      p2.stop();
-      ok(got2.length === total && got2.every((a, i) => a.seq === i + 1) && wasLive && sinceCalls === before && liveRoom?.room.nextSeq === total + 1,
-        `live CoopPoller: ${got2.length}/${total} actions in order over the WebSocket, ${sinceCalls - before} polls (live ${wasLive})`);
-    }
+    let roomSeen = null, caught = 0;
+    const feed = new net.CoopFeed(roomId, {
+      after: 0,
+      onActions: acts => { got.push(...acts); },
+      onHead: v => { roomSeen = v; },
+      onCaughtUp: () => { caught++; },
+    }).start();
+    for (let i = 0; i < 100 && !(got.length >= total && roomSeen && caught); i++) await new Promise(r => setTimeout(r, 200));
+    feed.stop();
+    ok(got.length === total && got.every((a, i) => a.seq === i + 1) && got[0].type === 'init' && got[1].p === 0 && got[1].node === 4, `CoopFeed delivered ${got.length}/${total} actions in order (parsed objects)`);
+    ok(roomSeen && roomSeen.members.length === 2 && roomSeen.room.code === code && roomSeen.room.status === 'playing' && caught >= 1, 'CoopFeed onHead(view) and onCaughtUp');
+    ok(httpCalls === 0, `CoopFeed made no HTTP calls (${httpCalls})`);
+    // (the HTTP path, for a browser without WebSocket: the next calls go over plain HTTP)
+    await net.closeLive();
+    const RealWS = globalThis.WebSocket;
+    globalThis.WebSocket = undefined;
 
     // postAction: network error before the server sees it, then a lost response after it committed
     let mode = 'drop-before';
@@ -228,11 +210,13 @@ const CODE_RE = /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{5}$/;
     globalThis.fetch = realFetch;
     const fs2 = await net.fetchSince(roomId, total);
     ok(fs2.actions.length === 2 && fs2.actions[0].node === 9 && fs2.actions[1].node === 10 && fs2.actions[1].p === 0 && fs2.me === 0, 'fetchSince returns parsed actions');
-    await refused(net.joinRoom('QQQQQ'), /Room not found/, 'coopnet errors carry the server message');
-    await net.closeLive();
+    await refused(net.joinRoom('QQQQQ'), /Room not found/, 'coopnet errors carry the server message (HTTP)');
+    globalThis.WebSocket = RealWS;
+    await refused(net.joinRoom('QQQQQ'), /^Room not found$/, 'coopnet errors carry the same short message over the socket');
     const gr = await net.getRoom(roomId);
     const hbr = await net.heartbeat(roomId, total);
     ok(gr.room.status === 'playing' && typeof hbr.now === 'number' && (await net.myRooms()).some(r => r.roomId === roomId), 'getRoom / heartbeat / myRooms via coopnet');
+    await net.closeLive();
   } catch (e) {
     ok(false, 'unexpected error: ' + (e.stack || e.message));
   } finally {

@@ -41,8 +41,10 @@ async function mintDevToken(convexUrl) {
   }
   for (const [kind, fn] of [['query', 'runs:leaderboard'], ['query', 'runs:mine'], ['query', 'players:top'], ['query', 'progress:get'], ['query', 'packs:manifest'],
     ['mutation', 'players:me'], ['mutation', 'progress:save'], ['mutation', 'progress:put'], ['mutation', 'runs:submit'], ['mutation', 'runlogs:submit'], ['mutation', 'access:allow'], ['query', 'access:list'], ['mutation', 'packs:uploadUrl'],
-    ['mutation', 'coop:create'], ['mutation', 'coop:join'], ['query', 'coop:mine'], ['mutation', 'coopTest:ensureTestUser']]) {
+    ['mutation', 'coop:create'], ['mutation', 'coop:join'], ['query', 'coop:mine'], ['mutation', 'coopTest:ensureTestUser'],
+    ['query', 'coop:mineLive'], ['mutation', 'players:activity']]) {
     const args = fn === 'progress:save' ? { meta: '{}', run: null } : fn === 'access:allow' ? { email: 'x@example.com' } : fn === 'runlogs:submit' ? { clientRunId: 'x', log: '{}' }
+      : fn === 'players:activity' ? { activity: 'ACT 1' }
       : fn === 'coop:join' ? { code: 'ABCDE' } : fn === 'coopTest:ensureTestUser' ? { email: 'x@example.com', name: 'X' } : {};
     const r = await fetch(`${convexUrl}/api/${kind}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: fn, args, format: 'json' }) }).then(r => r.json());
     ok(r.status === 'error', `anonymous ${fn} is refused`);

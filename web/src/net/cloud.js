@@ -1,6 +1,12 @@
-// Cloud saves and records in Convex, over its plain HTTP API, behind Google sign-in (Convex Auth).
+// Cloud saves and records in Convex, behind Google sign-in (Convex Auth).
 // Save data (meta-progression + the run in progress) is synced per account; finished runs are queued
 // in localStorage first, so nothing is lost while offline.
+//
+// Transport (staging-net): every query and mutation goes over ONE Convex WebSocket client (ConvexClient, vendored in
+// web/src/vendor/convex-browser.js), and everything the game keeps up to date (co-op rooms, presence, NOW PLAYING,
+// RECORDS, the REJOIN list) is a subscription on it (subscribe() below): the server pushes changes, nothing polls.
+// Plain HTTP is left for what a socket can't do: the Convex Auth sign-in / token refresh (auth:signIn), the last
+// writes of a closing tab (fetch keepalive), the asset packs (net/assetpack.js), and a browser without WebSocket.
 import { spireCode } from '../game/regions.js';
 import { VERSION } from '../game/version.js';
 import { SaveSync } from './savesync.js';
@@ -33,10 +39,26 @@ function tokenExpiry(jwt) {
   try { return JSON.parse(atob(jwt.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).exp * 1000; } catch { return 0; }
 }
 
+// ---- traffic counters (debug console / tests: window.__net) ----------------------------------------------------
+export const traffic = { http: 0, httpBytes: 0, wsCalls: 0, subs: 0, updates: 0, updateBytes: 0, byPath: {} };
+const tally = (path, r, kind) => {
+  const b = (traffic.byPath[path] ||= { calls: 0, updates: 0, bytes: 0 });
+  let n = 0;
+  try { n = JSON.stringify(r ?? null).length; } catch {}
+  b.bytes += n;
+  if (kind === 'update') { b.updates++; traffic.updates++; traffic.updateBytes += n; }
+  else b.calls++;
+  return r;
+};
+if (typeof window !== 'undefined') window.__net = traffic;
+
+const isNetErr = (e) => e instanceof TypeError || /^HTTP (5\d\d|429|408)|Failed to fetch|NetworkError|Load failed/i.test(String(e?.message || ''));
+
 async function post(kind, path, args, token, keepalive = false) {
   if (!Cloud.url) throw new Error('Cloud saves are not configured.');
   const headers = { 'Content-Type': 'application/json' };
   if (token) headers.Authorization = `Bearer ${token}`;
+  traffic.http++;
   const res = await fetch(`${Cloud.url}/api/${kind}`, { method: 'POST', headers, keepalive, body: JSON.stringify({ path, args, format: 'json' }) });
   const body = await res.json().catch(() => ({ status: 'error', errorMessage: `HTTP ${res.status}` }));
   if (body.status !== 'success') {
@@ -53,22 +75,118 @@ function setAuth(tokens) {
   if (!tokens) Cloud.me = null;
 }
 
+// The current token, refreshed (auth:signIn over HTTP) when it has less than a minute left, or always with force.
+// A refresh the server refuses signs you out; one that never reached it (offline) throws and keeps the session.
 let refreshing = null;
-async function freshToken() {
+async function freshToken(force = false) {
   if (!Cloud.auth) return null;
-  if (tokenExpiry(Cloud.auth.token) - Date.now() > 60_000) return Cloud.auth.token;
+  if (!force && tokenExpiry(Cloud.auth.token) - Date.now() > 60_000) return Cloud.auth.token;
   refreshing ??= post('action', 'auth:signIn', { refreshToken: Cloud.auth.refreshToken })
     .then(r => { setAuth(r.tokens || null); return Cloud.auth?.token ?? null; })
-    .catch(e => { console.warn('token refresh failed', e); setAuth(null); return null; })
+    .catch(e => { if (isNetErr(e)) throw e; console.warn('token refresh failed', e); setAuth(null); return null; })
     .finally(() => { refreshing = null; });
   return refreshing;
 }
 
+// ---- the WebSocket client -------------------------------------------------------------------------------------
+// ?noLive in the URL (or no WebSocket in this browser): one-shot HTTP calls instead, and no live updates.
+const noLive = () => { try { return typeof WebSocket === 'undefined' || (typeof location !== 'undefined' && new URLSearchParams(location.search).has('noLive')); } catch { return true; } };
+let liveP = null, handed = null;
+// The token the socket uses. The client asks again (force) a minute before it expires, and when the server refuses
+// it; a token cloud.js already refreshed meanwhile (an HTTP call) is handed over as it is. Offline at that moment:
+// wait for the network rather than drop the socket's sign-in (the socket is down then anyway).
+async function socketToken({ forceRefreshToken } = {}) {
+  for (let i = 0; ; i++) {
+    try {
+      if (!Cloud.auth) return null;
+      const t = await freshToken(!!forceRefreshToken && Cloud.auth.token === handed);
+      handed = t;
+      return t;
+    } catch (e) {
+      if (i >= 40) return null;
+      await new Promise(r => setTimeout(r, Math.min(30_000, 1000 * 2 ** Math.min(i, 5))));
+    }
+  }
+}
+// -> Promise<ConvexClient | null>. Made once, after cloud.json (initCloud); every module shares it.
+export function liveClient() {
+  if (liveP) return liveP;
+  if (!Cloud.url || noLive()) return (liveP = Promise.resolve(null));
+  liveP = import('../vendor/convex-browser.js').then(({ ConvexClient }) => {
+    // initialAuthTokenReuse: the stored token is used until a minute before it expires (not swapped at once)
+    const c = new ConvexClient(Cloud.url, { unsavedChangesWarning: false, initialAuthTokenReuse: true, authRefreshTokenLeewaySeconds: 60 });
+    c.setAuth(socketToken);
+    return c;
+  }).catch(e => { console.warn('[net] no WebSocket client, using HTTP', e); return null; });
+  return liveP;
+}
+// Closes the socket (tests in Node: an open socket keeps the process alive).
+export async function closeLive() { const p = liveP; liveP = null; const c = await p?.catch(() => null); await c?.close?.().catch(() => {}); }
+
+// Convex errors over the socket read "[CONVEX M(coop:post)] [Request ID: …] Server Error\nUncaught Error: <message>\n at …":
+// the same short message as the HTTP path.
+function cleanError(e) {
+  const raw = String(e?.message || e || '');
+  const m = /Uncaught Error: ([^\n]*)/.exec(raw);
+  if (!m) return e instanceof Error ? e : new Error(raw);
+  const err = new Error(m[1]);
+  err.raw = raw;
+  return err;
+}
+
+// A socket that has connected once is used even while it reconnects (calls wait for it, like the subscriptions). One
+// that never got through (a network that blocks WebSockets): one-shot calls go over HTTP after FIRST_CONNECT_MS, so
+// signing in, saves and RECORDS still work there (the live parts, co-op, need the socket).
+const FIRST_CONNECT_MS = 6000;
+let socketBlocked = false;
+async function socketUsable(c) {
+  if (socketBlocked) { try { socketBlocked = !c.connectionState().hasEverConnected; } catch {} if (socketBlocked) return false; }
+  let st;
+  try { st = c.connectionState(); } catch { return true; }
+  if (st.hasEverConnected || st.isWebSocketConnected) return true;
+  const up = await new Promise((resolve) => {
+    let off = null;
+    const t = setTimeout(() => { try { off?.(); } catch {} resolve(false); }, FIRST_CONNECT_MS);
+    off = c.subscribeToConnectionState?.((x) => { if (x.isWebSocketConnected || x.hasEverConnected) { clearTimeout(t); try { off?.(); } catch {} resolve(true); } });
+  });
+  if (!up) { socketBlocked = true; console.warn('[net] the WebSocket did not connect: one-shot calls over HTTP'); }
+  return up;
+}
+
 async function call(kind, path, args, opts = {}) {
+  if (!Cloud.auth) throw new Error('Signed out. Sign in with Google again.');
+  if (!opts.keepalive) {
+    const c = await liveClient();
+    if (c && await socketUsable(c)) {
+      traffic.wsCalls++;
+      try { return tally(path, await c[kind](path, args || {})); } catch (e) { throw cleanError(e); }
+    }
+  }
   const token = await freshToken();
   if (!token) throw new Error('Signed out. Sign in with Google again.');
-  return post(kind, path, args, token, opts.keepalive);
+  return tally(path, await post(kind, path, args, token, opts.keepalive));
 }
+
+// A live query: onValue(result) now and after every change the server pushes (also after a reconnect: the client
+// subscribes again by itself), onError(e) when the query throws (it stays subscribed and may recover).
+// -> stop(). Without a WebSocket client: onError(Error('no live updates')), once.
+export function subscribe(path, args, onValue, onError) {
+  let stop = false, unsub = null;
+  traffic.subs++;
+  liveClient().then(c => {
+    if (stop) return;
+    if (!c) { onError?.(new Error('No live updates (no WebSocket).')); return; }
+    unsub = c.onUpdate(path, args || {}, (v) => { if (!stop) { tally(path, v, 'update'); onValue?.(v); } }, (e) => { if (!stop) onError?.(cleanError(e)); });
+  });
+  return () => { stop = true; try { unsub?.(); } catch {} unsub = null; };
+}
+// The socket's state: cb({ isWebSocketConnected, hasEverConnected, connectionCount, ... }) on every change. -> stop()
+export function onConnection(cb) {
+  let stop = false, unsub = null;
+  liveClient().then(c => { if (!stop && c?.subscribeToConnectionState) { unsub = c.subscribeToConnectionState(cb); try { cb(c.connectionState()); } catch {} } });
+  return () => { stop = true; try { unsub?.(); } catch {} };
+}
+export const liveConnected = async () => { const c = await liveClient(); try { return !!c?.connectionState().isWebSocketConnected; } catch { return false; } };
 
 export async function initCloud({ saveKeys, onAccount } = {}) {
   if (!hasStorage) return;
@@ -110,6 +228,7 @@ export async function initCloud({ saveKeys, onAccount } = {}) {
     store(VERIFIER_KEY, null);
   }
   if (!Cloud.auth) return;
+  liveClient(); // (connects while the rest of the sign-in runs)
   // Signed in with an invite link pending: join the allowlist first.
   const pending = load(INVITE_KEY, null);
   if (pending) {
@@ -152,7 +271,7 @@ export async function createInviteLink(note) {
   const r = await call('mutation', 'invites:create', { note: note || undefined });
   return `${location.origin}${location.pathname}?invite=${r.code}`;
 }
-export const authToken = () => freshToken();
+export const authToken = () => freshToken().catch(() => Cloud.auth?.token ?? null);
 // Authenticated Convex call for other client modules (co-op: web/src/net/coopnet.js).
 export const cloudCall = (kind, path, args, opts) => call(kind, path, args, opts);
 export const packManifest = () => call('query', 'packs:manifest', {});
@@ -367,3 +486,7 @@ export function flushQueue() {
 export const leaderboard = (world, version, sort) => call('query', 'runs:leaderboard', { world: world || undefined, version: version || undefined, sort: sort || undefined, limit: 50 });
 export const topTrainers = (version) => call('query', 'players:top', { version: version || undefined, limit: 50 });
 export const myRuns = (version) => (Cloud.me ? call('query', 'runs:mine', { version: version || undefined, limit: 50 }) : Promise.resolve(null));
+// The same lists, live while RECORDS shows them (a new run anywhere appears without a refresh). -> stop()
+export const watchLeaderboard = (world, version, sort, cb, err) => subscribe('runs:leaderboard', { world: world || undefined, version: version || undefined, sort: sort || undefined, limit: 50 }, cb, err);
+export const watchTopTrainers = (version, cb, err) => subscribe('players:top', { version: version || undefined, limit: 50 }, cb, err);
+export const watchMyRuns = (version, cb, err) => subscribe('runs:mine', { version: version || undefined, limit: 50 }, cb, err);

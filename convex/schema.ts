@@ -44,6 +44,19 @@ export default defineSchema({
     dirs: v.optional(v.array(v.string())), // lazy packs: the path prefixes of their files (what waits for them)
   }).index("by_name", ["name"]),
 
+  // NOW PLAYING for newer clients (players:activity / players:nowPlayingLive): one row per trainer while in a run, so the
+  // once-a-minute keepalive never rewrites the players row (which RECORDS subscriptions read). Older clients still
+  // write players.lastSeen / activity; both are listed.
+  playerActivity: defineTable({
+    playerId: v.id("players"),
+    name: v.string(), // the trainer name when it was written
+    activity: v.string(), // short label, e.g. "ACT 2 TORCHIC" or "CO-OP ACT 3"
+    room: v.optional(v.string()), // co-op room code (checked membership): groups partners, never sent out
+    lastSeen: v.number(),
+  })
+    .index("by_player", ["playerId"])
+    .index("by_lastSeen", ["lastSeen"]),
+
   // A trainer: one per signed-in Google account.
   players: defineTable({
     userId: v.id("users"),
@@ -218,6 +231,7 @@ export default defineSchema({
     lastSeen: v.number(),
     lastSeq: v.number(),
     hb: v.optional(v.number()), // the sender's heartbeat interval (ms); unset = an older client (every 5 s)
+    gone: v.optional(v.boolean()), // staging-net: the client said goodbye (tab closed / left): offline at once
   })
     .index("by_room", ["roomId"])
     .index("by_member", ["memberId"]),
