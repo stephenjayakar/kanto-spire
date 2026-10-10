@@ -41,7 +41,7 @@ export function drawToasts(ctx) {
 // ---- partner status ---------------------------------------------------------------------------
 const PRIVATE_WHAT = {
   reward: "they're picking rewards", center: "they're at the POKéMON CENTER", mart: "they're shopping",
-  plateau: "they're shopping", event: "they're at the event", treasure: "they're opening an item ball",
+  plateau: "they're getting ready", event: "they're at the event", treasure: "they're opening an item ball",
 };
 export function privateWhat(kind) { return PRIVATE_WHAT[kind] || "they're busy"; }
 

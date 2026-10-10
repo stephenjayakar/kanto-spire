@@ -171,3 +171,54 @@ export const finishCoopRoom = internalMutation({
     return { room: r.room, id: r.id, score: r.score, replaced: r.replaced };
   },
 });
+
+// Co-op Pokédex repair (co-op never wrote to the Pokédex before v0.3.21): merges species into one player's saved
+// meta.dexSeen / meta.dexCaught. Additive only: entries are never removed, and caught species count as seen too.
+// The lists come from tools/coop_dex.mjs (replays an exported room log). The player: email, or a room code + slot.
+// The player's game pulls the cloud save at sign-in, so they should reload the game after this runs (an old tab
+// that saves before reloading writes its own meta back over it).
+// Dry run (default: writes nothing): npx convex run migrations:mergeDex '{"email":"x@y.z","seen":[...],"caught":[...]}'
+// Apply: add "apply":true [--prod]
+export const mergeDex = internalMutation({
+  args: {
+    email: v.optional(v.string()),
+    code: v.optional(v.string()),
+    slot: v.optional(v.number()),
+    seen: v.optional(v.array(v.string())),
+    caught: v.optional(v.array(v.string())),
+    apply: v.optional(v.boolean()),
+  },
+  handler: async (ctx, { email, code, slot, seen = [], caught = [], apply }) => {
+    let who = normEmail(email);
+    if (!who && code) {
+      const room = await ctx.db.query("coopRooms").withIndex("by_code", (q) => q.eq("code", code.toUpperCase())).first();
+      if (!room) throw new Error("No room " + code);
+      const member = await ctx.db.query("coopMembers").withIndex("by_room", (q) => q.eq("roomId", room._id).eq("slot", slot ?? -1)).first();
+      if (!member) throw new Error(`No player in slot ${slot} of room ${code}`);
+      who = normEmail(member.email);
+    }
+    if (!who) throw new Error("Pass an email (or a room code and slot)");
+    const ok = (s: unknown): s is string => typeof s === "string" && /^[A-Z0-9_]{2,20}$/.test(s);
+    const bad = [...seen, ...caught].filter((s) => !ok(s));
+    if (bad.length) throw new Error("Not species keys: " + bad.slice(0, 5).join(", "));
+    const p = await ctx.db.query("progress").withIndex("by_email", (q) => q.eq("email", who)).first();
+    if (!p) throw new Error("No save for " + who);
+    const m = parseMeta(p.meta);
+    if (!m) throw new Error("Unreadable meta for " + who);
+    const dexSeen: string[] = Array.isArray(m.dexSeen) ? (m.dexSeen as string[]).slice() : [];
+    const dexCaught: string[] = Array.isArray(m.dexCaught) ? (m.dexCaught as string[]).slice() : [];
+    const before = { seen: dexSeen.length, caught: dexCaught.length };
+    const addedSeen: string[] = [], addedCaught: string[] = [];
+    for (const s of [...seen, ...caught]) if (!dexSeen.includes(s)) { dexSeen.push(s); addedSeen.push(s); }
+    for (const s of caught) if (!dexCaught.includes(s)) { dexCaught.push(s); addedCaught.push(s); }
+    const changed = addedSeen.length + addedCaught.length > 0;
+    if (apply && changed) {
+      m.dexSeen = dexSeen;
+      m.dexCaught = dexCaught;
+      await ctx.db.patch(p._id, { meta: JSON.stringify(m), updatedAt: Date.now() });
+    }
+    const after = { seen: dexSeen.length, caught: dexCaught.length };
+    console.log(`mergeDex ${who}: seen ${before.seen} -> ${after.seen}, caught ${before.caught} -> ${after.caught} (${apply ? (changed ? "applied" : "nothing to add") : "dry run"})`);
+    return { email: who, applied: !!apply && changed, dryRun: !apply, before, after, addedSeen, addedCaught };
+  },
+});

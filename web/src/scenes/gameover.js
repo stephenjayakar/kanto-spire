@@ -66,10 +66,18 @@ export class ActClearScene {
       drawTypeTags(ctx, ts, lx + lw + 8, 242);
       text(ctx, `Your team caught its breath (+50% HP).`, W / 2, 258, { align: 'center', color: 'whiteSoft', font: 'small' });
       this.drawReorder(ctx, run);
-      if (button(ctx, 'ENTER', W / 2 + 10, 290, 140, 30, { color: THEME.discard })) startGauntletBattle();
+      // Co-op (the 'plateau' private phase, scenes/coop/session.js): the game already healed both teams; READY hands
+      // this player's run (new order and purchases included) back with privateDone, and the next room starts once
+      // everyone is ready. The order travels in the run snapshot, so it needs no game-logic change.
+      const coop = this.opts.coop && G.coop;
+      if (button(ctx, coop ? 'READY' : 'ENTER', W / 2 + 10, 290, 140, 30, { color: THEME.discard })) {
+        if (coop) G.coop.privateDone(); else startGauntletBattle();
+      }
       if (button(ctx, 'PLATEAU MART', W / 2 - 150, 290, 140, 30, { color: '#f08830' })) {
-        const next = this.opts.next;
-        import('./shop.js').then(m => setScene(new m.ShopScene({ key: 'plateau' + next, onLeave: () => setScene(new ActClearScene({ gauntletBreak: true, next, noHeal: true })) })));
+        const next = this.opts.next, opts = this.opts;
+        const wrap = (sc) => (coop && G.coop?.wrap ? G.coop.wrap(sc) : sc); // (co-op: keep the partner banner)
+        const back = () => setScene(wrap(new ActClearScene({ ...opts, noHeal: true })));
+        import('./shop.js').then(m => setScene(wrap(new m.ShopScene({ key: opts.martKey || 'plateau' + next, onLeave: back }))));
       }
       drawFx(ctx, Engine.dt);
       return;
