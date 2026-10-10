@@ -36,6 +36,11 @@ export function assetPending(path) {
   if (!Packs.active || files.has(path)) return null;
   return pending.find(p => p.dirs.some(d => path.startsWith(d)))?.done || null;
 }
+// Resolves once no lazy pack that could hold `path` is still loading (a folder can match more than one pack's dirs:
+// 'sound/' holds the 'sound' pack and the 'emerald' pack's 'sound/emerald/', so it waits for each in turn).
+export async function assetSettled(path) {
+  for (let i = 0; i < 8; i++) { const w = assetPending(path); if (!w) return; await w; }
+}
 
 // 'https://site/…/assets/gfx/x.png' -> 'gfx/x.png' (same-origin asset URLs only), else null.
 function packedPath(url) {
@@ -176,7 +181,7 @@ function installFetch() {
     const p = packedPath(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url);
     if (p === null) return realFetch(input, init);
     let b = files.get(p);
-    if (!b) { const wait = assetPending(p); if (wait) { await wait; b = files.get(p); } }
+    if (!b && assetPending(p)) { await assetSettled(p); b = files.get(p); }
     return b ? new Response(b, { headers: { 'Content-Type': b.type } }) : new Response('missing asset ' + p, { status: 404 });
   };
 }

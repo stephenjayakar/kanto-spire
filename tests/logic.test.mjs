@@ -773,7 +773,7 @@ t('every song the game plays exists in the sound bank', () => {
   const walk = (dir) => { for (const f of fs.readdirSync(dir, { withFileTypes: true })) {
     const p = new URL(f.name + (f.isDirectory() ? '/' : ''), dir);
     if (f.isDirectory()) walk(p);
-    else if (f.name.endsWith('.js')) for (const m of fs.readFileSync(p, 'utf8').matchAll(/['"`]((?:mus|se)_[a-z0-9_]+)['"`]/g)) if (!songs.has(m[1])) missing.add(m[1]);
+    else if (f.name.endsWith('.js') && f.name !== 'emerald.js') for (const m of fs.readFileSync(p, 'utf8').matchAll(/['"`]((?:mus|se)_[a-z0-9_]+)['"`]/g)) if (!songs.has(m[1])) missing.add(m[1]);
   } };
   walk(new URL('../web/src/', import.meta.url));
   for (const world of ['kanto', 'hoenn', 'johto']) for (const starter of ['BULBASAUR', 'CHARMANDER', 'SQUIRTLE', 'PIKACHU', 'TREECKO', 'CHIKORITA']) {
@@ -786,6 +786,7 @@ t('every song the game plays exists in the sound bank', () => {
     }
   }
   assert.deepEqual([...missing], []);
+  // (audio/emerald.js names songs of the optional Emerald bank: tests/emerald_audio.mjs checks them against it)
 });
 
 // ---- ascension unlocks per starter (v0.0.6) ----
@@ -1827,7 +1828,7 @@ t('boss preferred types (map / act clear / E4 break)', () => {
   assert.equal(bossTypeLabel('CHAMPION_LANCE'), 'DRAGON');
   assert.equal(bossTypeLabel('CHAMPION_FIRST'), 'Mixed');
   assert.equal(bossTypeLabel('PKMN_TRAINER_RED'), 'Mixed');
-  assert.deepEqual(bossTypes('RS_CHAMPION'), ['STEEL', 'ROCK']);
+  assert.deepEqual(bossTypes('RS_CHAMPION'), ['WATER']); // (v0.3.25: EMERALD's CHAMPION WALLACE; STEVEN was STEEL/ROCK)
   assert.deepEqual(bossTypes('LEGEND_MEWTWO'), ['PSYCHIC']);
   for (const k of Object.keys(BOSS_TYPES)) assert.ok(D.trainers[k], 'boss key exists: ' + k);
   for (const a of [...ACTS, ...HOENN_ACTS]) for (const k of [...(a.bosses || []), ...(a.gauntlet || []).slice(0, 4)]) if (/^(LEADER|ELITE_FOUR)_/.test(k)) assert.ok(BOSS_TYPES[k], 'signature type for ' + k);
@@ -1929,6 +1930,65 @@ t('FLY: after a dodge the lead is LANDING for a turn: no FLY / DIG / PROTECT (v0
   const r2 = soloWith(fast, [], 'LAND2');
   r2.b.play(handOf(r2.b, ['FLY']));
   assert.notEqual(r2.b.ms(r2.lead.uid).landing, r2.b.turn, 'no landing when the foe already moved');
+});
+
+t('HOENN uses Pokemon EMERALD teams: JUAN, CHAMPION WALLACE, STEVEN post-game (v0.3.25)', async () => {
+  const T = D.trainers;
+  assert.deepEqual(T.LEADER_ROXANNE.party.map(p => p.species), ['GEODUDE', 'GEODUDE', 'NOSEPASS']);
+  assert.equal(T.LEADER_WALLACE.name, 'JUAN'); assert.equal(T.LEADER_WALLACE.party.at(-1).species, 'KINGDRA');
+  assert.equal(T.RS_CHAMPION.name, 'WALLACE'); assert.equal(T.RS_CHAMPION.party.at(-1).species, 'MILOTIC');
+  assert.equal(T.LEADER_WALLACE.pic, 'emerald/leader_juan'); assert.equal(T.LEADER_WALLACE.picFallback, 'rs_gentleman');
+  for (const k of Object.keys(T)) if (T[k].hoenn) for (const p of T[k].party) {
+    assert.ok(D.species[p.species], `${k}: ${p.species}`);
+    for (const m of p.moves || []) assert.ok(D.moves[m], `${k}: ${m}`);
+    assert.equal(p.iv, 120, "the game's authored IV, not Emerald's");
+  }
+  // the CHAMPION brings MARVEL SCALE (STEVEN's old rule, same numbers)
+  const r = Run.create({ starter: 'MUDKIP', world: 'hoenn', seed: 'EMCH' });
+  r.startAct(3);
+  const c = r.gauntletConfig(r.rng.fork('g'), 4);
+  assert.equal(c.trainer.title, 'CHAMPION WALLACE'); assert.equal(c.bossRule, 'WALLACE_CHAMPION'); assert.equal(c.music, 'mus_vs_champion');
+  assert.equal(c.enemies.length, 6); assert.equal(Math.max(...c.enemies.map(e => e.level)), r.act.gauntletLevels[4], "levels follow the act, not Emerald's");
+  // STEVEN: an elite of the SKY PILLAR act
+  r.startAct(4);
+  assert.ok(r.act.elites.includes('EM_STEVEN'));
+  const s = r.eliteConfigFromTrainer(r.rng.fork('s'), T.EM_STEVEN);
+  assert.equal(s.trainer.name, 'STEVEN'); assert.ok(s.enemies.some(e => e.species === 'METAGROSS'));
+});
+
+t('HOENN music (display only): Emerald songs by act / battle, FireRed elsewhere', async () => {
+  const { hoennSong, HOENN_MAP_MUSIC } = await import('../web/src/audio/emerald.js');
+  const h = { id: 1, region: 'hoenn', townMusic: 'mus_pallet' }, k = { id: 1, region: 'kanto', townMusic: 'mus_pallet' };
+  assert.equal(hoennSong(h, 'mus_route1', { map: 0 }), 'mus_route101');
+  assert.equal(hoennSong(h, 'mus_route3', { map: 0.99 }), HOENN_MAP_MUSIC[1].at(-1));
+  assert.equal(hoennSong(k, 'mus_route1', { map: 0 }), null);
+  assert.equal(hoennSong(h, 'mus_pallet'), 'mus_oldale');
+  assert.equal(hoennSong(h, 'mus_poke_center'), 'mus_poke_center');
+  assert.equal(hoennSong(k, 'mus_poke_center'), null);
+  assert.equal(hoennSong(h, 'mus_title'), null);
+  const boss = { kind: 'boss', music: 'mus_vs_gym_leader', trainer: { key: 'LEADER_ROXANNE' } };
+  assert.equal(hoennSong(h, 'mus_vs_gym_leader', boss), 'mus_vs_gym_leader');
+  assert.equal(hoennSong(h, 'mus_victory_gym_leader', boss), 'mus_victory_gym_leader');
+  const e4 = { kind: 'boss', gauntlet: 0, music: 'mus_vs_gym_leader', trainer: { key: 'ELITE_FOUR_SIDNEY' } };
+  const champ = { kind: 'boss', gauntlet: 4, music: 'mus_vs_champion', trainer: { key: 'RS_CHAMPION' } };
+  const a4 = { id: 4, region: 'kanto', summit: 'hoenn' };
+  assert.equal(hoennSong(a4, 'mus_vs_gym_leader', e4), 'mus_vs_elite_four', 'the summit region decides');
+  assert.equal(hoennSong(a4, 'mus_encounter_boy', e4), 'mus_encounter_elite_four');
+  assert.equal(hoennSong(a4, 'mus_vs_champion', champ), 'mus_vs_champion');
+  assert.equal(hoennSong(a4, 'mus_encounter_gym_leader', champ), 'mus_encounter_champion');
+  assert.equal(hoennSong(a4, 'mus_victory_gym_leader', champ), 'mus_victory_league');
+  assert.equal(hoennSong({ id: 4, region: 'hoenn', summit: 'kanto' }, 'mus_vs_champion', champ), null);
+  const aqua = { kind: 'elite', music: 'mus_vs_trainer', trainer: { key: 'AQUA_ADMIN_MATT' } };
+  assert.equal(hoennSong(h, 'mus_vs_trainer', aqua), 'mus_vs_aqua_magma');
+  assert.equal(hoennSong(h, 'mus_encounter_rocket', aqua), 'mus_encounter_aqua');
+  assert.equal(hoennSong(h, 'mus_vs_trainer', { kind: 'elite', trainer: { key: 'AQUA_LEADER' } }), 'mus_vs_aqua_magma_leader');
+  assert.equal(hoennSong(h, 'mus_vs_trainer', { kind: 'elite', rival: true, trainer: { key: 'MAY_2' } }), 'mus_vs_rival');
+  assert.equal(hoennSong(h, 'mus_encounter_girl', { kind: 'elite', rival: true, trainer: { key: 'MAY_2' } }), 'mus_encounter_may');
+  assert.equal(hoennSong(h, 'mus_encounter_rival', { kind: 'elite', rival: true, trainer: { key: 'RIVAL_CERULEAN_SQUIRTLE' } }), null);
+  assert.equal(hoennSong(h, 'mus_encounter_boy', { kind: 'trainer', trainer: { key: 'RS_HIKER:12' } }), 'mus_encounter_hiker');
+  assert.equal(hoennSong(h, 'mus_vs_legend', { kind: 'elite', legend: 'REGICE' }), 'mus_vs_regi');
+  assert.equal(hoennSong(h, 'mus_vs_legend', { kind: 'wild', legend: 'LATIOS' }), null);
+  assert.equal(hoennSong(k, 'mus_vs_trainer', aqua), null);
 });
 
 console.log(`${pass} passed, ${fail} failed`);

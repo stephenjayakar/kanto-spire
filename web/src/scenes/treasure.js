@@ -23,7 +23,7 @@ export class TreasureScene {
     this.relics = rng.chance(TUNING.relicOdds.treasure) ? run.relicChoices(rng, 2, { common: 40, uncommon: 45, rare: 15 }) : [];
     this.relics = this.relics.filter(k => !run.hasRelic(k));
     this.opened = false; this.taken = false; this.relicTaken = false; this.t = 0;
-    Sound.playBGM(run.act.music[0]);
+    Sound.playBGM(run.act.music[0], { ctx: { map: Math.max(0, run.floor) / run.act.floors } });
   }
   update(dt) { this.t += dt; }
   // Bag-full picker for the item ball's item (use it now / use or sell a bag item / leave it).

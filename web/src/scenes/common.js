@@ -1,6 +1,6 @@
 // Shared drawing: cards, mon sprites, HUD, party panel, modals.
 import { Engine, W, H, hover, clicked, inRect, pushOverlay, popOverlay, keyPressed } from '../engine/core.js';
-import { img, ready, draw, itemPath, typePath, trainerPath, tinted } from '../engine/assets.js';
+import { img, ready, draw, itemPath, typePath, trainerPath, tinted, setFallback } from '../engine/assets.js';
 import { text, measure, textFit, wrap, textBlock, COLORS } from '../engine/font.js';
 import { panel, pixBox, rect, button, tip, hpBar, THEME, shade, windowFrame, drawTips, closeButton } from '../engine/ui.js';
 import { D, TYPE_COLORS, isSpecialMove, typeEffect } from '../game/data.js';
@@ -22,6 +22,17 @@ export function monFolder(species) {
   return g.replace('/', '_');
 }
 export function monSprite(species, kind = 'front', shiny = false) { return `gfx/pokemon/${monFolder(species)}/${kind}${shiny ? '_shiny' : ''}.png`; }
+// A foe's front sprite: in a HOENN act Emerald's (the optional 'emerald' pack: tools/extract_emerald.py), whose 2nd
+// animation frame (anim) plays as it comes out; FireRed's when that art isn't there.
+export function foeSprite(species, shiny = false, region = null, anim = false) {
+  const fr = monSprite(species, 'front', shiny);
+  if (region !== 'hoenn') return fr;
+  const p = `gfx/pokemon/emerald/${monFolder(species)}/${anim ? 'anim' : 'front'}${shiny ? '_shiny' : ''}.png`;
+  setFallback(p, fr);
+  return p;
+}
+// Emerald's send-out animation, roughly: the 2nd frame for a moment just after the foe appears (outAt: its time)
+export const foeAnimFrame = (t, outAt) => outAt !== undefined && t - outAt > 0.12 && t - outAt < 0.42;
 
 // 32x32 party icon (2 frames stacked vertically), animated.
 export function drawIcon(ctx, species, x, y, opts = {}) {
@@ -38,7 +49,7 @@ export function drawIcon(ctx, species, x, y, opts = {}) {
 }
 
 export function drawMon(ctx, species, x, y, opts = {}) {
-  const path = monSprite(species, opts.back ? 'back' : 'front', opts.shiny);
+  const path = opts.path || monSprite(species, opts.back ? 'back' : 'front', opts.shiny); // (path: e.g. foeSprite's)
   const im = img(path);
   if (!ready(im)) return;
   const s = opts.scale || 1;

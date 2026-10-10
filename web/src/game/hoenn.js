@@ -1,35 +1,66 @@
-// World 2: HOENN. FireRed's data keeps the Ruby/Sapphire trainer pics, classes and every Gen 3
-// species, but the Hoenn trainers' parties are dummies — so their teams are authored here (from R/S).
+// World 2: HOENN. FireRed's data keeps the Ruby/Sapphire trainer pics, classes and every Gen 3 species, but the Hoenn
+// trainers' parties are dummies, so their teams are authored here. v0.3.25: Pokemon EMERALD's teams (generated from the
+// pokeemerald decomp by tools/emerald_parties.mjs; they used to be Ruby/Sapphire's). Only species, movesets and each
+// team's level spread are Emerald's: run.js rescales the levels to the act (boss level, floor level, ascension), IVs
+// stay the game's authored 120 and held items are ignored, so the balance knobs (TUNING, worldScale) keep their meaning.
+// EMERALD's story: the 8th GYM LEADER is JUAN (the LEADER_WALLACE slot) and the CHAMPION is WALLACE (the RS_CHAMPION
+// slot); STEVEN is a post-game trainer (EM_STEVEN, SKY PILLAR act). The keys stay, so saved runs keep their bosses.
 
 const L = (species, level, moves) => ({ species, level, iv: 120, moves: moves || null, item: null });
 
 export const HOENN_PARTIES = {
-  LEADER_ROXANNE: [L('GEODUDE', 12, ['TACKLE', 'DEFENSE_CURL', 'ROCK_THROW', 'ROCK_TOMB']), L('NOSEPASS', 15, ['TACKLE', 'HARDEN', 'ROCK_THROW', 'ROCK_TOMB'])],
-  LEADER_BRAWLY: [L('MACHOP', 16, ['KARATE_CHOP', 'LOW_KICK', 'SEISMIC_TOSS', 'BULK_UP']), L('MAKUHITA', 19, ['ARM_THRUST', 'VITAL_THROW', 'REVERSAL', 'BULK_UP'])],
-  LEADER_WATTSON: [L('MAGNEMITE', 22, ['SUPERSONIC', 'THUNDER_WAVE', 'SONIC_BOOM', 'SHOCK_WAVE']), L('VOLTORB', 20, ['ROLLOUT', 'SPARK', 'SELF_DESTRUCT', 'SHOCK_WAVE']), L('MAGNETON', 23, ['SUPERSONIC', 'SONIC_BOOM', 'THUNDER_WAVE', 'SHOCK_WAVE'])],
-  LEADER_FLANNERY: [L('SLUGMA', 26, ['OVERHEAT', 'SMOG', 'LIGHT_SCREEN', 'SUNNY_DAY']), L('SLUGMA', 26, ['OVERHEAT', 'SMOG', 'LIGHT_SCREEN', 'SUNNY_DAY']), L('TORKOAL', 28, ['OVERHEAT', 'SUNNY_DAY', 'BODY_SLAM', 'ATTRACT'])],
-  LEADER_NORMAN: [L('SPINDA', 27, ['TEETER_DANCE', 'PSYBEAM', 'FACADE', 'ENCORE']), L('VIGOROTH', 27, ['SLASH', 'FACADE', 'ENCORE', 'FAINT_ATTACK']), L('SLAKING', 31, ['FACADE', 'YAWN', 'ENCORE', 'SLACK_OFF'])],
-  LEADER_WINONA: [L('SWELLOW', 29, ['QUICK_ATTACK', 'AERIAL_ACE', 'DOUBLE_TEAM', 'ENDEAVOR']), L('PELIPPER', 30, ['WATER_GUN', 'SUPERSONIC', 'PROTECT', 'AERIAL_ACE']), L('SKARMORY', 32, ['SAND_ATTACK', 'FURY_ATTACK', 'STEEL_WING', 'AERIAL_ACE']), L('ALTARIA', 33, ['EARTHQUAKE', 'DRAGON_BREATH', 'DRAGON_DANCE', 'AERIAL_ACE'])],
-  LEADER_TATE_LIZA: [L('CLAYDOL', 41), L('XATU', 41), L('LUNATONE', 42), L('SOLROCK', 42)],
-  LEADER_WALLACE: [L('LUVDISC', 40), L('WHISCASH', 40), L('SEALEO', 40), L('SEAKING', 42), L('MILOTIC', 43, ['WATER_PULSE', 'TWISTER', 'RECOVER', 'RAIN_DANCE'])],
-  // (v0.1.0: the ELITE FOUR and STEVEN use their Ruby/Sapphire movesets; their default level-up moves were mostly status)
-  ELITE_FOUR_SIDNEY: [L('MIGHTYENA', 46, ['ROAR', 'DOUBLE_EDGE', 'SAND_ATTACK', 'CRUNCH']), L('SHIFTRY', 48, ['TORMENT', 'DOUBLE_TEAM', 'SWAGGER', 'EXTRASENSORY']), L('CACTURNE', 46, ['LEECH_SEED', 'FAINT_ATTACK', 'NEEDLE_ARM', 'COTTON_SPORE']), L('CRAWDAUNT', 48, ['SURF', 'SWORDS_DANCE', 'STRENGTH', 'FACADE']), L('ABSOL', 49, ['AERIAL_ACE', 'ROCK_SLIDE', 'SWORDS_DANCE', 'SLASH'])],
-  ELITE_FOUR_PHOEBE: [L('DUSCLOPS', 48, ['SHADOW_PUNCH', 'CONFUSE_RAY', 'CURSE', 'PROTECT']), L('BANETTE', 49, ['SHADOW_BALL', 'GRUDGE', 'WILL_O_WISP', 'FAINT_ATTACK']), L('SABLEYE', 50, ['NIGHT_SHADE', 'PSYCHIC', 'FAINT_ATTACK', 'SHADOW_BALL']), L('BANETTE', 49, ['SHADOW_BALL', 'PSYCHIC', 'THUNDERBOLT', 'FACADE']), L('DUSCLOPS', 51, ['SHADOW_BALL', 'ICE_BEAM', 'ROCK_SLIDE', 'EARTHQUAKE'])],
-  ELITE_FOUR_GLACIA: [L('SEALEO', 50, ['ENCORE', 'BODY_SLAM', 'HAIL', 'ICE_BALL']), L('GLALIE', 50, ['LIGHT_SCREEN', 'CRUNCH', 'ICY_WIND', 'ICE_BEAM']), L('SEALEO', 52, ['ATTRACT', 'DOUBLE_EDGE', 'HAIL', 'BLIZZARD']), L('GLALIE', 52, ['SHADOW_BALL', 'ICY_WIND', 'EXPLOSION', 'HAIL']), L('WALREIN', 53, ['SURF', 'BODY_SLAM', 'ICE_BEAM', 'SHEER_COLD'])],
-  ELITE_FOUR_DRAKE: [L('SHELGON', 52, ['ROCK_TOMB', 'DRAGON_CLAW', 'PROTECT', 'DOUBLE_EDGE']), L('ALTARIA', 54, ['DOUBLE_EDGE', 'DRAGON_DANCE', 'EARTHQUAKE', 'AERIAL_ACE']), L('FLYGON', 53, ['FLAMETHROWER', 'CRUNCH', 'DRAGON_BREATH', 'EARTHQUAKE']), L('FLYGON', 53, ['FLAMETHROWER', 'CRUNCH', 'DRAGON_BREATH', 'EARTHQUAKE']), L('SALAMENCE', 55, ['FLAMETHROWER', 'DRAGON_CLAW', 'ROCK_SLIDE', 'CRUNCH'])],
-  RS_CHAMPION: [L('SKARMORY', 57, ['TOXIC', 'AERIAL_ACE', 'SPIKES', 'STEEL_WING']), L('CLAYDOL', 55, ['REFLECT', 'LIGHT_SCREEN', 'ANCIENT_POWER', 'EARTHQUAKE']), L('AGGRON', 56, ['THUNDER', 'EARTHQUAKE', 'SOLAR_BEAM', 'DRAGON_CLAW']), L('CRADILY', 56, ['GIGA_DRAIN', 'ANCIENT_POWER', 'INGRAIN', 'CONFUSE_RAY']), L('ARMALDO', 56, ['WATER_PULSE', 'ANCIENT_POWER', 'AERIAL_ACE', 'SLASH']), L('METAGROSS', 58, ['METEOR_MASH', 'PSYCHIC', 'EARTHQUAKE', 'HYPER_BEAM'])],
-  AQUA_GRUNT_M: [L('POOCHYENA', 14), L('CARVANHA', 15)],
-  AQUA_GRUNT_F: [L('CARVANHA', 22), L('ZUBAT', 22)],
-  MAGMA_GRUNT_M: [L('NUMEL', 18), L('POOCHYENA', 18)],
-  AQUA_ADMIN_MATT: [L('MIGHTYENA', 34), L('GOLBAT', 34), L('SHARPEDO', 36)],
-  AQUA_ADMIN_SHELLY: [L('CARVANHA', 28), L('MIGHTYENA', 28)],
-  MAGMA_ADMIN_TABITHA: [L('NUMEL', 26), L('MIGHTYENA', 28), L('ZUBAT', 28)],
-  MAGMA_ADMIN_COURTNEY: [L('CAMERUPT', 38), L('MIGHTYENA', 38)],
-  MAGMA_LEADER: [L('MIGHTYENA', 41), L('CROBAT', 41), L('CAMERUPT', 43)],
-  AQUA_LEADER: [L('MIGHTYENA', 41), L('CROBAT', 41), L('SHARPEDO', 43)],
-  MAY: [L('WINGULL', 13), L('TORCHIC', 15)],
-  MAY_2: [L('PELIPPER', 29), L('LOMBRE', 29), L('COMBUSKEN', 31)],
-  MAY_3: [L('TROPIUS', 37), L('PELIPPER', 38), L('LUDICOLO', 38), L('BLAZIKEN', 40)],
+  LEADER_ROXANNE: [L('GEODUDE', 12, ['TACKLE', 'DEFENSE_CURL', 'ROCK_THROW', 'ROCK_TOMB']), L('GEODUDE', 12, ['TACKLE', 'DEFENSE_CURL', 'ROCK_THROW', 'ROCK_TOMB']), L('NOSEPASS', 15, ['BLOCK', 'HARDEN', 'TACKLE', 'ROCK_TOMB'])], // Roxanne1
+  LEADER_BRAWLY: [L('MACHOP', 16, ['KARATE_CHOP', 'LOW_KICK', 'SEISMIC_TOSS', 'BULK_UP']), L('MEDITITE', 16, ['FOCUS_PUNCH', 'LIGHT_SCREEN', 'REFLECT', 'BULK_UP']), L('MAKUHITA', 19, ['ARM_THRUST', 'VITAL_THROW', 'REVERSAL', 'BULK_UP'])], // Brawly1
+  LEADER_WATTSON: [L('VOLTORB', 20, ['ROLLOUT', 'SPARK', 'SELF_DESTRUCT', 'SHOCK_WAVE']), L('ELECTRIKE', 20, ['SHOCK_WAVE', 'LEER', 'QUICK_ATTACK', 'HOWL']), L('MAGNETON', 22, ['SUPERSONIC', 'SHOCK_WAVE', 'THUNDER_WAVE', 'SONIC_BOOM']), L('MANECTRIC', 24, ['QUICK_ATTACK', 'THUNDER_WAVE', 'SHOCK_WAVE', 'HOWL'])], // Wattson1
+  LEADER_FLANNERY: [L('NUMEL', 24, ['OVERHEAT', 'TAKE_DOWN', 'MAGNITUDE', 'SUNNY_DAY']), L('SLUGMA', 24, ['OVERHEAT', 'SMOG', 'LIGHT_SCREEN', 'SUNNY_DAY']), L('CAMERUPT', 26, ['OVERHEAT', 'TACKLE', 'SUNNY_DAY', 'ATTRACT']), L('TORKOAL', 29, ['OVERHEAT', 'SUNNY_DAY', 'BODY_SLAM', 'ATTRACT'])], // Flannery1
+  LEADER_NORMAN: [L('SPINDA', 27, ['TEETER_DANCE', 'PSYBEAM', 'FACADE', 'ENCORE']), L('VIGOROTH', 27, ['SLASH', 'FACADE', 'ENCORE', 'FAINT_ATTACK']), L('LINOONE', 29, ['SLASH', 'BELLY_DRUM', 'FACADE', 'HEADBUTT']), L('SLAKING', 31, ['COUNTER', 'YAWN', 'FACADE', 'FAINT_ATTACK'])], // Norman1
+  LEADER_WINONA: [L('SWABLU', 29, ['PERISH_SONG', 'MIRROR_MOVE', 'SAFEGUARD', 'AERIAL_ACE']), L('TROPIUS', 29, ['SUNNY_DAY', 'AERIAL_ACE', 'SOLAR_BEAM', 'SYNTHESIS']), L('PELIPPER', 30, ['WATER_GUN', 'SUPERSONIC', 'PROTECT', 'AERIAL_ACE']), L('SKARMORY', 31, ['SAND_ATTACK', 'FURY_ATTACK', 'STEEL_WING', 'AERIAL_ACE']), L('ALTARIA', 33, ['EARTHQUAKE', 'DRAGON_BREATH', 'DRAGON_DANCE', 'AERIAL_ACE'])], // Winona1
+  LEADER_TATE_LIZA: [L('CLAYDOL', 41, ['EARTHQUAKE', 'ANCIENT_POWER', 'PSYCHIC', 'LIGHT_SCREEN']), L('XATU', 41, ['PSYCHIC', 'SUNNY_DAY', 'CONFUSE_RAY', 'CALM_MIND']), L('LUNATONE', 42, ['LIGHT_SCREEN', 'PSYCHIC', 'HYPNOSIS', 'CALM_MIND']), L('SOLROCK', 42, ['SUNNY_DAY', 'SOLAR_BEAM', 'PSYCHIC', 'FLAMETHROWER'])], // TateAndLiza1
+  LEADER_WALLACE: [L('LUVDISC', 41, ['WATER_PULSE', 'ATTRACT', 'SWEET_KISS', 'FLAIL']), L('WHISCASH', 41, ['RAIN_DANCE', 'WATER_PULSE', 'AMNESIA', 'EARTHQUAKE']), L('SEALEO', 43, ['ENCORE', 'BODY_SLAM', 'AURORA_BEAM', 'WATER_PULSE']), L('CRAWDAUNT', 43, ['WATER_PULSE', 'CRABHAMMER', 'TAUNT', 'LEER']), L('KINGDRA', 46, ['WATER_PULSE', 'DOUBLE_TEAM', 'ICE_BEAM', 'REST'])], // Juan1
+  ELITE_FOUR_SIDNEY: [L('MIGHTYENA', 46, ['ROAR', 'DOUBLE_EDGE', 'SAND_ATTACK', 'CRUNCH']), L('SHIFTRY', 48, ['TORMENT', 'DOUBLE_TEAM', 'SWAGGER', 'EXTRASENSORY']), L('CACTURNE', 46, ['LEECH_SEED', 'FAINT_ATTACK', 'NEEDLE_ARM', 'COTTON_SPORE']), L('CRAWDAUNT', 48, ['SURF', 'SWORDS_DANCE', 'STRENGTH', 'FACADE']), L('ABSOL', 49, ['AERIAL_ACE', 'ROCK_SLIDE', 'SWORDS_DANCE', 'SLASH'])], // Sidney
+  ELITE_FOUR_PHOEBE: [L('DUSCLOPS', 48, ['SHADOW_PUNCH', 'CONFUSE_RAY', 'CURSE', 'PROTECT']), L('BANETTE', 49, ['SHADOW_BALL', 'GRUDGE', 'WILL_O_WISP', 'FAINT_ATTACK']), L('SABLEYE', 50, ['SHADOW_BALL', 'DOUBLE_TEAM', 'NIGHT_SHADE', 'FAINT_ATTACK']), L('BANETTE', 49, ['SHADOW_BALL', 'PSYCHIC', 'THUNDERBOLT', 'FACADE']), L('DUSCLOPS', 51, ['SHADOW_BALL', 'ICE_BEAM', 'ROCK_SLIDE', 'EARTHQUAKE'])], // Phoebe
+  ELITE_FOUR_GLACIA: [L('SEALEO', 50, ['ENCORE', 'BODY_SLAM', 'HAIL', 'ICE_BALL']), L('GLALIE', 50, ['LIGHT_SCREEN', 'CRUNCH', 'ICY_WIND', 'ICE_BEAM']), L('SEALEO', 52, ['ATTRACT', 'DOUBLE_EDGE', 'HAIL', 'BLIZZARD']), L('GLALIE', 52, ['SHADOW_BALL', 'EXPLOSION', 'HAIL', 'ICE_BEAM']), L('WALREIN', 53, ['SURF', 'BODY_SLAM', 'ICE_BEAM', 'SHEER_COLD'])], // Glacia
+  ELITE_FOUR_DRAKE: [L('SHELGON', 52, ['ROCK_TOMB', 'DRAGON_CLAW', 'PROTECT', 'DOUBLE_EDGE']), L('ALTARIA', 54, ['DOUBLE_EDGE', 'DRAGON_BREATH', 'DRAGON_DANCE', 'AERIAL_ACE']), L('KINGDRA', 53, ['SMOKESCREEN', 'DRAGON_DANCE', 'SURF', 'BODY_SLAM']), L('FLYGON', 53, ['FLAMETHROWER', 'CRUNCH', 'DRAGON_BREATH', 'EARTHQUAKE']), L('SALAMENCE', 55, ['FLAMETHROWER', 'DRAGON_CLAW', 'ROCK_SLIDE', 'CRUNCH'])], // Drake
+  RS_CHAMPION: [L('WAILORD', 57, ['RAIN_DANCE', 'WATER_SPOUT', 'DOUBLE_EDGE', 'BLIZZARD']), L('TENTACRUEL', 55, ['TOXIC', 'HYDRO_PUMP', 'SLUDGE_BOMB', 'ICE_BEAM']), L('LUDICOLO', 56, ['GIGA_DRAIN', 'SURF', 'LEECH_SEED', 'DOUBLE_TEAM']), L('WHISCASH', 56, ['EARTHQUAKE', 'SURF', 'AMNESIA', 'HYPER_BEAM']), L('GYARADOS', 56, ['DRAGON_DANCE', 'EARTHQUAKE', 'HYPER_BEAM', 'SURF']), L('MILOTIC', 58, ['RECOVER', 'SURF', 'ICE_BEAM', 'TOXIC'])], // Wallace
+  AQUA_GRUNT_M: [L('ZUBAT', 14), L('CARVANHA', 14)], // GruntMuseum2
+  AQUA_GRUNT_F: [L('ZUBAT', 27), L('POOCHYENA', 27)], // GruntWeatherInst5
+  MAGMA_GRUNT_M: [L('POOCHYENA', 22), L('NUMEL', 22)], // GruntJaggedPass
+  AQUA_ADMIN_MATT: [L('MIGHTYENA', 34), L('GOLBAT', 34)], // Matt
+  AQUA_ADMIN_SHELLY: [L('CARVANHA', 28), L('MIGHTYENA', 28)], // ShellyWeatherInstitute
+  MAGMA_ADMIN_TABITHA: [L('NUMEL', 18), L('POOCHYENA', 20), L('NUMEL', 22), L('ZUBAT', 22)], // TabithaMtChimney
+  MAGMA_ADMIN_COURTNEY: [L('CAMERUPT', 38), L('MIGHTYENA', 38)], // (not fought in Emerald: her Ruby/Sapphire team)
+  MAGMA_LEADER: [L('MIGHTYENA', 37), L('CROBAT', 38), L('CAMERUPT', 39)], // MaxieMagmaHideout
+  AQUA_LEADER: [L('MIGHTYENA', 41), L('CROBAT', 41), L('SHARPEDO', 43)], // Archie
+  MAY: [L('LOTAD', 13), L('TORCHIC', 15)], // MayRustboroTreecko
+  MAY_2: [L('WINGULL', 18), L('LOMBRE', 18), L('COMBUSKEN', 20)], // MayRoute110Treecko
+  MAY_3: [L('TROPIUS', 31), L('PELIPPER', 32), L('LUDICOLO', 32), L('COMBUSKEN', 34)], // MayLilycoveTreecko
+};
+
+// Display for the trainers above (data.js applies it): the shown name, Emerald's portrait (gfx/trainers/emerald/, the
+// optional 'emerald' asset pack: tools/extract_emerald.py) and the FireRed pic shown without it (picFallback).
+const em = (pic, picFallback, name) => ({ pic: 'emerald/' + pic, picFallback, ...(name ? { name } : {}) });
+export const HOENN_TRAINER_INFO = {
+  LEADER_ROXANNE: em('leader_roxanne', 'leader_roxanne'), LEADER_BRAWLY: em('leader_brawly', 'leader_brawly'),
+  LEADER_WATTSON: em('leader_wattson', 'leader_wattson'), LEADER_FLANNERY: em('leader_flannery', 'leader_flannery'),
+  LEADER_NORMAN: em('leader_norman', 'leader_norman'), LEADER_WINONA: em('leader_winona', 'leader_winona'),
+  LEADER_TATE_LIZA: em('leader_tate_and_liza', 'leader_tate_and_liza', 'TATE & LIZA'),
+  LEADER_WALLACE: em('leader_juan', 'rs_gentleman', 'JUAN'),
+  ELITE_FOUR_SIDNEY: em('elite_four_sidney', 'elite_four_sidney'), ELITE_FOUR_PHOEBE: em('elite_four_phoebe', 'elite_four_phoebe'),
+  ELITE_FOUR_GLACIA: em('elite_four_glacia', 'elite_four_glacia'), ELITE_FOUR_DRAKE: em('elite_four_drake', 'elite_four_drake'),
+  RS_CHAMPION: em('champion_wallace', 'leader_wallace', 'WALLACE'),
+  AQUA_GRUNT_M: em('aqua_grunt_m', 'aqua_grunt_m'), AQUA_GRUNT_F: em('aqua_grunt_f', 'aqua_grunt_f'),
+  MAGMA_GRUNT_M: em('magma_grunt_m', 'magma_grunt_m'), AQUA_ADMIN_MATT: em('aqua_admin_m', 'aqua_admin_m'),
+  AQUA_ADMIN_SHELLY: em('aqua_admin_f', 'aqua_admin_f'), MAGMA_ADMIN_TABITHA: em('magma_admin', 'magma_admin_m'),
+  MAGMA_LEADER: em('magma_leader_maxie', 'magma_leader_maxie'), AQUA_LEADER: em('aqua_leader_archie', 'aqua_leader_archie'),
+  MAY: em('may', 'ruby_sapphire_may', 'MAY'), MAY_2: em('may', 'ruby_sapphire_may', 'MAY'), MAY_3: em('may', 'ruby_sapphire_may', 'MAY'),
+};
+
+// HOENN trainers FireRed's data doesn't have at all (whole trainer objects, like johto.js's).
+export const HOENN_TRAINERS = {
+  // Emerald's post-game STEVEN (METEOR FALLS): an elite of the SKY PILLAR act
+  EM_STEVEN: { class: 'RS_CHAMPION', className: 'PKMN TRAINER', name: 'STEVEN', pic: 'emerald/steven', picFallback: 'champion_steven',
+    battleSong: 'MUS_VS_CHAMPION', encounterSong: 'MUS_ENCOUNTER_GYM_LEADER', terrain: 'cave',
+    party: [L('SKARMORY', 77, ['TOXIC', 'AERIAL_ACE', 'SPIKES', 'STEEL_WING']), L('CLAYDOL', 75, ['REFLECT', 'LIGHT_SCREEN', 'ANCIENT_POWER', 'EARTHQUAKE']), L('AGGRON', 76, ['THUNDER', 'EARTHQUAKE', 'SOLAR_BEAM', 'DRAGON_CLAW']), L('CRADILY', 76, ['GIGA_DRAIN', 'ANCIENT_POWER', 'INGRAIN', 'CONFUSE_RAY']), L('ARMALDO', 76, ['WATER_PULSE', 'ANCIENT_POWER', 'AERIAL_ACE', 'SLASH']), L('METAGROSS', 78, ['EARTHQUAKE', 'PSYCHIC', 'METEOR_MASH', 'SHADOW_BALL'])] },
 };
 
 // Generic Hoenn trainers: RS trainer classes (real pics/classes in FireRed's data) with names.
@@ -117,7 +148,7 @@ export const HOENN_ACTS = [
       area('SKY PILLAR', 'mountain', 0.3, ['GOLBAT', 'SABLEYE', 'CLAYDOL', 'BANETTE', 'MAWILE', 'ALTARIA']),
       area('SEALED CHAMBER', 'cave', 0.6, ['ZUBAT', 'TENTACRUEL', 'WAILORD', 'RELICANTH', 'LANTURN']),
     ],
-    elites: ['LEGEND_GROUDON', 'LEGEND_KYOGRE', 'LEGEND_JIRACHI', 'LEGEND_CELEBI'],
+    elites: ['LEGEND_GROUDON', 'LEGEND_KYOGRE', 'LEGEND_JIRACHI', 'LEGEND_CELEBI', 'EM_STEVEN'],
     bosses: ['LEGEND_RAYQUAZA'],
   },
 ];

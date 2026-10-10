@@ -248,20 +248,22 @@ t('resume: unverifiable rooms (no checksums) replay as before', async () => {
 
 // ------------------------------------------------------------------------------------- legacy engine
 t('engines: selection is explicit (stamp first, then the current code, then the other frozen copies)', () => {
-  assert.equal(LOGIC_ID, 'v0323', 'v0.3.23 changed game logic (FLY-family dodges are followed by a LANDING turn)');
+  assert.equal(LOGIC_ID, 'v0325', 'v0.3.25 changes game logic (HOENN trainers use their Pokemon EMERALD teams)');
   assert.equal(UNSTAMPED, 'v035');
-  assert.deepEqual(Object.keys(FROZEN), ['v0319', 'v0311', 'v037', 'v035', 'v031'], 'newest first');
+  assert.deepEqual(Object.keys(FROZEN), ['v0323', 'v0319', 'v0311', 'v037', 'v035', 'v031'], 'newest first');
   const ids = (l) => l.map(e => (e.current ? 'current:' : '') + e.id);
   // a room stamped by an older logic goes to its own frozen copy first, then the current code, then the rest
-  assert.deepEqual(ids(engineOrder('v0319')), ['v0319', 'current:v0323', 'v0311', 'v037', 'v035', 'v031']);
-  assert.deepEqual(ids(engineOrder('v0311')), ['v0311', 'current:v0323', 'v0319', 'v037', 'v035', 'v031']);
-  assert.deepEqual(ids(engineOrder('v037')), ['v037', 'current:v0323', 'v0319', 'v0311', 'v035', 'v031']);
-  assert.deepEqual(ids(engineOrder('v035')), ['v035', 'current:v0323', 'v0319', 'v0311', 'v037', 'v031']);
-  assert.deepEqual(ids(engineOrder('v0323')), ['current:v0323', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
-  assert.deepEqual(ids(engineOrder('zzz')), ['current:v0323', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('v0323')), ['v0323', 'current:v0325', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('v0319')), ['v0319', 'current:v0325', 'v0323', 'v0311', 'v037', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('v0311')), ['v0311', 'current:v0325', 'v0323', 'v0319', 'v037', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('v037')), ['v037', 'current:v0325', 'v0323', 'v0319', 'v0311', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('v035')), ['v035', 'current:v0325', 'v0323', 'v0319', 'v0311', 'v037', 'v031']);
+  assert.deepEqual(ids(engineOrder('v0325')), ['current:v0325', 'v0323', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('zzz')), ['current:v0325', 'v0323', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
   // under the older ids (what those versions did)
-  assert.deepEqual(ids(engineOrder('v0311', 'v0319')), ['v0311', 'current:v0319', 'v0319', 'v037', 'v035', 'v031']);
-  assert.deepEqual(ids(engineOrder('v037', 'v0311')), ['v037', 'current:v0311', 'v0319', 'v0311', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('v0319', 'v0323')), ['v0319', 'current:v0323', 'v0323', 'v0311', 'v037', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('v0311', 'v0319')), ['v0311', 'current:v0319', 'v0323', 'v0319', 'v037', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('v037', 'v0311')), ['v037', 'current:v0311', 'v0323', 'v0319', 'v0311', 'v035', 'v031']);
   assert.equal(segmentStamp([{ p: -1, type: 'init' }, { p: 0, type: 'vote' }]), 'v035', 'unstamped = v0.3.5');
   assert.equal(segmentStamp([{ p: 0, type: 'vote', eng: 'v037' }, { p: 1, type: 'vote', eng: 'v037' }, { p: 1, eng: 'v035' }]), 'v037');
   for (const id of Object.keys(FROZEN)) assert.ok(fs.existsSync(`web/src/legacy/${id}/engine.js`), id);
@@ -323,6 +325,23 @@ t('legacy: frozen v031 brings back rooms played on v0.3.1 (PIKACHU starter chang
   // snapshot from the old engine, restored on the current one
   const g = restoreGame(snapshotGame(old), CURRENT);
   assert.ok(g instanceof CoopGame && g.phase === 'map' && g.runs[0].party[0].species === 'PIKACHU');
+});
+
+t('legacy: frozen v0323 is v0.3.24 (Ruby/Sapphire HOENN teams); its rooms replay there and hand over to this code', async () => {
+  const eng = await getEngine('v0323', dataLoader);
+  const m = await import('../web/src/legacy/v0323/engine.js');
+  const { D: now } = await import('../web/src/game/data.js');
+  assert.equal(m.D.trainers.LEADER_ROXANNE.party.length, 2, 'v0.3.24: R/S ROXANNE (GEODUDE, NOSEPASS)');
+  assert.equal(now.trainers.LEADER_ROXANNE.party.length, 3, 'v0.3.25: EMERALD ROXANNE (GEODUDE x2, NOSEPASS)');
+  assert.equal(m.D.trainers.RS_CHAMPION.name, 'STEVEN'); assert.equal(now.trainers.RS_CHAMPION.name, 'WALLACE');
+  // a room played on v0.3.24 logic replays exactly on the frozen copy, and its map checkpoint loads into this code
+  const stamp = { v: '0.3.24', eng: 'v0323' };
+  const { game, log, cks } = botGame('FRZ323', { stop: (g) => g.world.actIndex >= 1 && g.phase === 'map', stamp, Game: eng.CoopGame });
+  const g2 = new eng.CoopGame();
+  for (const a of log) { g2.apply(clone(a)); if (cks.has(g2.seq)) assert.equal(g2.checksum() >>> 0, cks.get(g2.seq)); }
+  assert.equal(g2.checksum() >>> 0, game.checksum() >>> 0);
+  const g = restoreGame(snapshotGame(game), CURRENT);
+  assert.ok(g instanceof CoopGame && g.phase === 'map' && g.world.actIndex === game.world.actIndex);
 });
 
 // ------------------------------------------------------------------------------------- SAVE & QUIT

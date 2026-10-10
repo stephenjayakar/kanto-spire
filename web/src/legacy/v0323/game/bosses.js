@@ -113,8 +113,6 @@ export const BOSS_RULES = {
   GLACIA: { name: 'HAIL', desc: 'Hail all battle; 1 card in hand freezes each turn.', onBattleStart(b) { b.setWeather('HAIL', true); }, onTurnStart(b) { const p = b.deck.hand.filter(c => !c.frozen); if (p.length) b.rng.pick(p).frozen = true; } },
   DRAKE: { name: 'DRAGON DANCE', desc: 'His POKéMON gain +1 SPEED and +1 ATTACK every other turn.', onTurnEnd(b) { if (b.turn % 2 === 0) { b.addStage('enemy', 'atk', 1, 'DRAKE'); b.addStage('enemy', 'spe', 1, 'DRAKE'); } } },
   STEVEN: { name: 'METAL BODY', desc: 'Hands below PAIR deal no damage; his team hits 10% harder.', enemyDamageMult: 1.1, onScore(b, S) { if (S.comboRank < 1) S.times(0, 'METAL BODY'); } },
-  // v0.3.25: EMERALD's CHAMPION WALLACE (the RS_CHAMPION slot) brings STEVEN's rule under MILOTIC's ability
-  WALLACE_CHAMPION: { name: 'MARVEL SCALE', desc: 'Hands below PAIR deal no damage; his team hits 10% harder.', enemyDamageMult: 1.1, onScore(b, S) { if (S.comboRank < 1) S.times(0, 'MARVEL SCALE'); } },
   // Johto (v0.1.1): the 8 HGSS leaders, WILL, KAREN, CHAMPION LANCE and RED (JOHTO's KOGA and BRUNO bring their KANTO
   // rules: their trainers carry rule: 'KOGA' / 'BRUNO', see regions.js ruleKeyOf)
   FALKNER: { name: 'ROOST', desc: 'His POKéMON heal 6% of their max HP every turn.', onTurnEnd(b) { b.healEnemy(0.06); } },

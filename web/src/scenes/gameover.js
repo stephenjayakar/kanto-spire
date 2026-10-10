@@ -56,7 +56,7 @@ export class ActClearScene {
     if (this.opts.gauntletBreak) {
       const key = run.act.gauntlet[this.opts.next];
       const tk = key === 'CHAMPION_FIRST' ? 'CHAMPION_FIRST_SQUIRTLE' : key;
-      const names = { [key]: key === 'CHAMPION_FIRST' ? (run.rivalRegion === 'kanto' ? 'YOUR RIVAL' : 'CHAMPION BLUE') : key === 'RS_CHAMPION' ? 'CHAMPION STEVEN' : bossTitle(tk) };
+      const names = { [key]: key === 'CHAMPION_FIRST' ? (run.rivalRegion === 'kanto' ? 'YOUR RIVAL' : 'CHAMPION BLUE') : key === 'RS_CHAMPION' ? 'CHAMPION WALLACE' : bossTitle(tk) };
       const pics = { [key]: D.trainers[tk]?.pic };
       text(ctx, 'ON TO THE NEXT ROOM', W / 2, 50, { align: 'center', color: 'gold', scale: 2 });
       drawTrainer(ctx, pics[key], W / 2 - 64, 100, { scale: 2, minTop: 70 });
@@ -155,7 +155,7 @@ export class ActClearScene {
       if (!ts.length) rect(ctx, x, y0 + ph + 1, pw, 3, '#808890');
       ts.forEach((t, j) => rect(ctx, x + Math.round(j * pw / ts.length), y0 + ph + 1, Math.round(pw / ts.length), 3, TYPE_COLORS[t] || '#888'));
       if (hover(x, y0, pw, ph)) {
-        const r = BOSS_RULES[ruleKeyOf(k)] || (k === 'RS_CHAMPION' ? BOSS_RULES.STEVEN : null);
+        const r = BOSS_RULES[ruleKeyOf(k)] || (k === 'RS_CHAMPION' ? BOSS_RULES.WALLACE_CHAMPION : null);
         tip(bossTitle(k), `${r ? `${r.name}: ${r.desc}` : 'The CHAMPION.'}\nType: ${bossTypeLabel(k)}`, { accent: TYPE_COLORS[ts[0]] });
       }
     });

@@ -21,6 +21,12 @@ Player-facing rules: [docs/GAME.md](docs/GAME.md).
 - Optional:
   - **Pokémon HeartGold ROM** (USA, SHA1 `4fcded0e2713dc03929845de631d0932ea2b5a37`) plus
     `pip install ndspy`, for the Johto trainer portraits. Without it, Johto trainers have no portrait.
+  - **Pokémon Emerald ROM** (USA, SHA1 `f3ae088181bf583e55daf962a92bb46f4f1d07b7`) plus the
+    [pret/pokeemerald](https://github.com/pret/pokeemerald) decomp cloned into `pokeemerald/`, for Hoenn's music
+    (Emerald's soundtrack in Hoenn acts), Emerald's trainer portraits, front sprites and Hoenn boss walkers. Without
+    them, Hoenn acts play FireRed's songs and show FireRed's art. Hoenn's trainer teams are Emerald's either way
+    (they are part of the game code). A ROM that doesn't match the SHA1 (a patched or re-dumped copy) is refused;
+    building the decomp with `make compare` produces a matching one.
   - **Google Chrome**, for the Playwright browser tests.
   - **A [Convex](https://convex.dev) account**, for sign-in, cloud saves, records and online co-op, run locally.
     The game runs fully offline without it.
@@ -39,6 +45,8 @@ python tools/legend_icons.py     # legendary held-item icons (after extract_gfx)
 python tools/extract_anims.py    # FireRed move animations               -> web/assets/anims
 node   tools/extract_sound.js    # music, sound effects, cries           -> web/assets/sound
 python tools/extract_hgss.py path/to/heartgold.nds   # optional: Johto portraits
+git clone --depth 1 https://github.com/pret/pokeemerald          # optional: Emerald (Hoenn) music and art
+python tools/extract_emerald.py path/to/emerald.gba  # -> web/assets/sound/emerald, web/assets/gfx/**/emerald
 
 node serve.cjs 8080              # open http://localhost:8080
 ```

@@ -20,15 +20,17 @@ import { RNG } from '../rng.js';
 // The logic generation of THIS code (v0.3.6 changed no game logic; v0.3.7 did: move rewards, REST, KING'S ROCK, item damage;
 // v0.3.8-v0.3.10 didn't; v0.3.11 did: foes stop self-KO moves, two legendaries at a co-op legendary node, shipped as
 // v0.3.14; v0.3.15-v0.3.18 didn't; v0.3.19 did: PROTECT / DETECT / ENDURE only move a hand first when they succeed;
-// v0.3.20-v0.3.22 didn't; v0.3.23 did: after a FLY / DIG / DIVE / BOUNCE dodge the lead is LANDING for a turn).
+// v0.3.20-v0.3.22 didn't; v0.3.23 did: after a FLY / DIG / DIVE / BOUNCE dodge the lead is LANDING for a turn; v0.3.24
+// didn't; the next release does: HOENN trainers use Pokemon EMERALD's teams, CHAMPION WALLACE's rule, STEVEN in the SKY PILLAR act).
 // (Further logic changes for the same release fold into this id; once it ships, the next change needs a new one.)
-export const LOGIC_ID = 'v0323';
+export const LOGIC_ID = 'v0325';
 // Actions from before v0.3.6 carry no stamp: they were played on v0.3.5 (or, for older rooms, earlier; the
 // replay checks the clients' logged checksums and tries every frozen engine, see resume.js).
 export const UNSTAMPED = 'v035';
 // Frozen copies, newest first: id -> the versions it covers and its loader (dynamic import: only fetched when a
 // room needs it).
 export const FROZEN = {
+  v0323: { versions: 'v0.3.23-v0.3.24', load: () => import('../../legacy/v0323/engine.js') },
   v0319: { versions: 'v0.3.19-v0.3.22', load: () => import('../../legacy/v0319/engine.js') },
   v0311: { versions: 'v0.3.14-v0.3.18', load: () => import('../../legacy/v0311/engine.js') },
   v037: { versions: 'v0.3.7-v0.3.10', load: () => import('../../legacy/v037/engine.js') },

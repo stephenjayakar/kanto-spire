@@ -1,5 +1,5 @@
 // Image loading with a cache. img() returns an Image immediately; draw helpers skip it until loaded.
-import { assetUrl, assetPending } from '../net/assetpack.js';
+import { assetUrl, assetPending, assetSettled } from '../net/assetpack.js';
 import { RELICS, BALLS } from '../game/items.js';
 const cache = new Map();
 export const BASE = 'assets/';
@@ -8,11 +8,13 @@ export function img(path) {
   let im = cache.get(path);
   if (!im) {
     im = new Image();
-    im.onerror = () => { im._failed = true; };
+    // (optional art, e.g. the Emerald pack's: a path with a fallback (setFallback) shows the fallback instead)
+    im.onerror = () => {
+      if (!im._fb && FALLBACK.has(path)) { im._fb = true; im.src = assetUrl(FALLBACK.get(path)); } else im._failed = true;
+    };
     cache.set(path, im);
     // (art in a pack that is still loading in the background: the image gets its source once the pack is in)
-    const wait = assetPending(path);
-    if (wait) wait.then(() => { im.src = assetUrl(path); });
+    if (assetPending(path)) assetSettled(path).then(() => { im.src = assetUrl(path); });
     else im.src = assetUrl(path);
   }
   return im;
@@ -30,6 +32,7 @@ export function preload(paths) {
 
 // Art that may not exist yet (HGSS icons before tools/ extraction has run): the path drawn instead when it fails.
 const FALLBACK = new Map();
+export const setFallback = (path, alt) => { if (path !== alt) FALLBACK.set(path, alt); };
 export function draw(ctx, path, x, y, opts = {}) {
   let im = typeof path === 'string' ? img(path) : path;
   if (im?._failed && FALLBACK.has(path)) im = img(FALLBACK.get(path));

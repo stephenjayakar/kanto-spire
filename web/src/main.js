@@ -1,11 +1,12 @@
 // Boot: engine, fonts, data, audio, then the title screen.
 import { initEngine, setScene } from './engine/core.js';
 import { loadFonts } from './engine/font.js';
-import { loadJSON, preload } from './engine/assets.js';
-import { loadData } from './game/data.js';
+import { loadJSON, preload, setFallback, trainerPath } from './engine/assets.js';
+import { loadData, D } from './game/data.js';
 import { loadMeta, G, saveKeys, setSaveScope } from './game/state.js';
 import { GFX } from './scenes/common.js';
 import { Sound } from './audio/sound.js';
+import { EM, hoennSong } from './audio/emerald.js';
 import { TitleScene } from './scenes/title.js';
 import { initCloud, Cloud, signedIn, signIn, authToken, packManifest, dropAuth, pendingInvite } from './net/cloud.js';
 import { loadPacks } from './net/assetpack.js';
@@ -58,10 +59,17 @@ async function boot() {
   const soundP = Sound.init('assets/sound/', { quality: G.meta.settings.audioQuality === 'gba' ? 'gba' : 'hq', stereo: G.meta.settings.stereo !== false }).then(() => {
     const s = G.meta.settings;
     Sound.setMusicVolume(s.music); Sound.setSfxVolume(s.sfx);
+    // HOENN acts play Emerald's music when its optional bank is there (tools/extract_emerald.py; the lazy 'emerald'
+    // pack), else FireRed's songs as before. Display only: the song never touches game state.
+    Sound.setResolver((name, ctx) => { const s = hoennSong(G.coop?.game?.world?.act || G.run?.act, name, ctx); return s ? EM + s : null; });
+    Sound.addBank('assets/sound/emerald/', EM).then(ok => { if (ok) console.log('[sound] Emerald music bank loaded'); });
   }).catch(e => console.warn('audio init failed', e));
   await Promise.all([
     loadFonts(),
-    loadData(f => loadJSON('data/' + f)),
+    loadData(f => loadJSON('data/' + f)).then(() => {
+      // trainer pics from optional art (HOENN's Emerald portraits): the FireRed pic when it isn't there
+      for (const t of Object.values(D.trainers)) if (t.picFallback && t.pic) setFallback(trainerPath(t.pic), trainerPath(t.picFallback));
+    }),
     loadJSON('gfx/manifest.json').then(m => { GFX.manifest = m; }).catch(() => {}),
     preload(['gfx/ui/title/title_screen.png', 'gfx/ui/title/logo.png', 'gfx/ui/title/charizard.png', 'gfx/ui/text_window/type1.png', 'gfx/ui/text_window/std.png']),
   ]);
