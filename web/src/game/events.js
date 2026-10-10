@@ -1525,7 +1525,7 @@ const FALLBACKS = [
 //   SKY PILLAR     RAYQUAZA  holding the RED ORB or BLUE ORB, or met GROUDON / KYOGRE this run; HOENN act 3+
 // MYTHIC_ODDS: the chance per eligible act (MEW: per act, MEW_FUNDED once the research was funded). With "?" rooms on
 // most paths about this many eligible runs meet them: MEWTWO ~15%, MEW ~3% of all runs, DEOXYS / RAYQUAZA ~1 in 4.
-export const MYTHIC_ODDS = { MEWTWO: 0.2, MEW: 0.01, MEW_FUNDED: 0.05, DEOXYS: 0.3, RAYQUAZA: 0.3 };
+export const MYTHIC_ODDS = { MEWTWO: 0.18, MEW: 0.013, MEW_FUNDED: 0.06, DEOXYS: 0.3, RAYQUAZA: 0.3 };
 export const mythicRoll = (p, salt) => new RNG(`${p.seed}:mythic:${salt}`).next();
 const hasAny = (p, keys) => keys.some(k => has(p, k));
 const metAny = (p, sps) => sps.some(sp => (p.seen || []).includes(sp));

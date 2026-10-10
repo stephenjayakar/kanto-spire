@@ -2101,7 +2101,7 @@ t('FLY: after a dodge the lead is LANDING for a turn: no FLY / DIG / PROTECT (v0
     assert.ok(due(spireRun(mSeed, ['johto', 'kanto', 'kanto', 'kanto'], 'kanto', 0), 'MEW'), 'JOHTO act 1 too');
     let plain = 0, funded = 0;
     for (let i = 0; i < 4000; i++) { const p = { seed: 'MW' + i, actIndex: 1, flags: {} }; if (EVM.MYTHIC_ROLL.MEW(p)) plain++; p.flags.mewJournal = 'funded'; if (EVM.MYTHIC_ROLL.MEW(p)) funded++; }
-    assert.ok(plain > 15 && plain < 70 && funded > plain * 3, `${plain} ${funded}`);
+    assert.ok(plain > 4000 * EVM.MYTHIC_ODDS.MEW * 0.6 && plain < 4000 * EVM.MYTHIC_ODDS.MEW * 1.4 && funded > plain * 3, `${plain} ${funded}`);
     const journal = EVENTS.find(e => e.id === 'mansion');
     const fr = strong(spireRun('MJ1', undefined, 'kanto', 2)); fr.money = 5000;
     journal.choices[0].run(fr, new RNG('j'));
@@ -2113,7 +2113,7 @@ t('FLY: after a dodge the lead is LANDING for a turn: no FLY / DIG / PROTECT (v0
     for (let i = 0; i < 60; i++) assert.ok(!EVM.pickEvent(Object.assign(Object.create(Object.getPrototypeOf(noRoll)), noRoll, { seenEvents: [] }), new RNG('pool' + i)).mythic || false);
     // the rough odds per eligible act (MEWTWO ~20% roll), checked on the rolls themselves
     let mt = 0; for (let i = 0; i < 2000; i++) if (EVM.MYTHIC_ROLL.MEWTWO({ seed: 'R' + i, actIndex: 2, flags: {} })) mt++;
-    assert.ok(mt > 320 && mt < 480, 'MEWTWO roll ' + mt);
+    assert.ok(mt > 2000 * EVM.MYTHIC_ODDS.MEWTWO * 0.8 && mt < 2000 * EVM.MYTHIC_ODDS.MEWTWO * 1.2, 'MEWTWO roll ' + mt);
   });
 
   t('v0.3.25 boss swap: nobody fights their own MEWTWO / DEOXYS / RAYQUAZA', () => {

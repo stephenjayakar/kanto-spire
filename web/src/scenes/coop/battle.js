@@ -380,6 +380,7 @@ export class CoopBattleScene {
         if (e.why === 'caught') { this.ballAnim = null; }
         break;
       }
+      case 'forme': this.bossBanner = { name: `${e.forme} FORME`, a: 1 }; break; // (DEOXYS, v0.3.25: emitted once per turn change)
       case 'bossRule': {
         this.bossBanner = { name: e.name, desc: e.desc, a: 1 };
         Sound.playSE('se_m_screech');
@@ -609,7 +610,8 @@ export class CoopBattleScene {
           await this.say(sub.caught ? `${speciesName(sub.caught.species)} joins your team!` : this.isTrainer() ? `${you} defeated ${this.cfg.trainer?.title || 'the foes'}!` : `${you} won the battle!`);
         } else {
           Sound.fadeOutBGM?.(60);
-          await this.say(this.many ? 'Every team is out of usable POKéMON... You blacked out!' : 'Both teams are out of usable POKéMON... You blacked out!');
+          if (this.cfg.softLose) await this.say(`${this.cfg.legend || 'The mythic'} threw every team out! Everyone lost 30% HP, but the run goes on.`); // (v0.3.25)
+          else await this.say(this.many ? 'Every team is out of usable POKéMON... You blacked out!' : 'Both teams are out of usable POKéMON... You blacked out!');
         }
         break;
       }
@@ -1099,7 +1101,7 @@ export class CoopBattleScene {
     if (this.bossBanner && this.bossBanner.a > 0.05 && d.bossRule) {
       ctx.save(); ctx.globalAlpha = Math.min(1, this.bossBanner.a * 2);
       pixBox(ctx, SCENE_X + 290, SCENE_Y + 104, 180, 14, '#5a1018', '#f8d038', 3);
-      text(ctx, d.bossRule.name, SCENE_X + 380, SCENE_Y + 104, { align: 'center', color: 'gold', font: 'small' });
+      text(ctx, this.bossBanner.name || d.bossRule.name, SCENE_X + 380, SCENE_Y + 104, { align: 'center', color: 'gold', font: 'small' });
       ctx.restore();
     }
     this.msg.draw(ctx, ...MSG_BOX, 'battle');
@@ -1162,7 +1164,9 @@ export class CoopBattleScene {
     if (!o) return 0;
     const pos = who.p !== undefined ? [this.orderPosOfPlayer(who.p)].filter(Boolean) : o.filter(a => a.kind === 'enemy' && a.slot === who.slot).map(a => a.pos);
     if (!pos.length) return 0;
-    const label = pos.map(ordinal).join('/'), w = orderTagWidth(label);
+    // (an all-target foe's run of actions, v0.3.25: "1st-4th")
+    const run = pos.length > 2 && pos.every((x, i) => !i || x === pos[i - 1] + 1);
+    const label = run ? `${ordinal(pos[0])}-${ordinal(pos[pos.length - 1])}` : pos.map(ordinal).join('/'), w = orderTagWidth(label);
     drawOrderTag(ctx, label, x, y, pos[0] === 1);
     this.orderTagBoxes.push({ x, y, w, h: 11 });
     return w + 3;
@@ -1430,7 +1434,7 @@ export class CoopBattleScene {
   enemyTooltip(e) {
     const st = e.stats;
     const ab = e.ability ? (D.abilities[e.ability]?.name || e.ability) : '';
-    const rule = e.bossRule && BOSS_RULES[e.bossRule] ? `\n\n${BOSS_RULES[e.bossRule].name}: ${BOSS_RULES[e.bossRule].desc}` : '';
+    const rule = (e.bossRule && BOSS_RULES[e.bossRule] ? `\n\n${BOSS_RULES[e.bossRule].name}: ${BOSS_RULES[e.bossRule].desc}` : '') + (e.forme ? `\nNow in its ${e.forme} FORME.` : '');
     const coopHp = e.coopHp && e.coopHp !== 1 ? `\nCO-OP: x${e.coopHp} HP (your hands deal full damage)` : '';
     const all = Object.keys(TYPE_COLORS).filter(t => D.types.chart[t]);
     const by = f => all.filter(t => f(typeEffect(t, e.types)));

@@ -466,6 +466,7 @@ export class CoopSession {
       for (const e of g.events.slice(before.events)) {
         if (e?.t === 'away') coopToast(e.p === this.mySlot ? 'You were sat out (offline).' : `${this.nameOf(e.p)} sits out: carrying on without them`, { t: 4 });
         else if (e?.t === 'back') coopToast(e.p === this.mySlot ? 'You are back in the game!' : `${this.nameOf(e.p)} is back!`, { good: true });
+        else if (e?.t === 'softLoss') coopToast(`${e.foe || 'The mythic'} threw every team out! Everyone lost 30% HP, but the run goes on.`, { t: 5 }); // (v0.3.25)
         else if (e?.t === 'revive') coopToast(e.p === this.mySlot ? 'Your team is back on its feet!' : `${this.nameOf(e.p)}'s team is back on its feet!`, { good: true });
         else if (e?.t === 'actClear') {
           // the next act's region and its possible GYM LEADERS (One Spire), so the team can plan for it

@@ -52,8 +52,8 @@ function bestBall(run, e) {
   return owned[0];
 }
 
-function wantCatch(run, e) {
-  if (!run.totalBalls()) return false;
+function wantCatch(run, e, s) {
+  if (!run.totalBalls() || s?.legendBlocked?.(e)) return false; // (ONE LEGENDARY PER RUN; frozen engines have no such rule)
   const minB = Math.min(...run.party.map(m => bst(m.species)));
   if (run.party.length < 6) return run.party.length < 4 || bst(e.species) > minB + 20 || e.legendary;
   return e.legendary || bst(e.species) > minB + 60;
@@ -136,9 +136,9 @@ function battleAction(game, bot) {
     for (const slot of field) {
       const e = duo.enemies[duo.field[slot]];
       if (duo.locks.some((pl, q) => q !== p && pl && pl.ball && duo.normSlot(pl.target) === slot)) continue;
-      if (!wantCatch(run, e)) continue;
-      const ball = bestBall(run, e), frac = e.hp / e.maxHp;
-      if (ball && (frac < 0.45 || (e.status && frac < 0.7) || (D.species[e.species].catchRate >= 190 && frac < 0.8))) return { p, type: 'lock', ball, target: slot };
+      if (!wantCatch(run, e, s)) continue;
+      const ball = bestBall(run, e), frac = e.hp / e.maxHp, mult = duo.cfg.catchMult || 1;
+      if (ball && (frac < 0.45 || (e.status && frac < 0.7) || (D.species[e.species].catchRate * mult >= 180 && frac < (mult > 1 ? 1.01 : 0.8)))) return { p, type: 'lock', ball, target: slot };
     }
   }
 
@@ -212,7 +212,8 @@ function privateAction(game, bot) {
 // --------------------------------------------------------------------------------------------- driver
 // Plays a whole co-op run with two bots. Every action goes through JSON (like the network) and gets the
 // next seq. onAction(action, applied, game) is called after each one.
-export function playCoop({ seed = 'COOP', ascension = 0, world = 'kanto', starters = ['BULBASAUR', 'CHARMANDER'], maxActions = 60000 * starters.length / 2, maxTurns = 80, onAction = null, stopWhen = null } = {}) {
+// champ: a player who has beaten a CHAMPION before posts { type: 'champ' } (v0.3.25: CERULEAN CAVE's MEWTWO can show up).
+export function playCoop({ seed = 'COOP', ascension = 0, world = 'kanto', starters = ['BULBASAUR', 'CHARMANDER'], maxActions = 60000 * starters.length / 2, maxTurns = 80, onAction = null, stopWhen = null, champ = false } = {}) {
   const game = new CoopGame();
   const log = [];
   const post = (a) => {
@@ -223,6 +224,7 @@ export function playCoop({ seed = 'COOP', ascension = 0, world = 'kanto', starte
     return ok;
   };
   post({ type: 'init', seed, ascension, world, starters, names: starters.map((_, p) => 'BOT' + (p + 1)) });
+  if (champ) post({ p: 0, type: 'champ' });
   const bots = starters.map((_, p) => makeBot(seed, p));
   let n = 0;
   while (!['over', 'victory'].includes(game.phase) && n++ < maxActions) {

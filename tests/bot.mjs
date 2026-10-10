@@ -155,7 +155,8 @@ export function botTurn(b, run, skill) {
     if (b._wantCatch) {
       const ball = bestBall(run, e, b);
       const frac = e.hp / e.maxHp;
-      if (ball && (frac < 0.45 || (e.status && frac < 0.7) || (D.species[e.species].catchRate >= 190 && frac < 0.8))) return b.throwBall(ball);
+      // (FARAWAY ISLAND's MEW, cfg.catchMult: easy to catch, and it won't stay long)
+      if (ball && (frac < 0.45 || (e.status && frac < 0.7) || (D.species[e.species].catchRate * (b.cfg.catchMult || 1) >= 180 && frac < (b.cfg.catchMult ? 1.01 : 0.8)))) return b.throwBall(ball);
     }
   } else {
     if (lead.hp < maxHp(lead) * 0.3) { const pot = run.consumables.find(k => CONSUMABLES[k]?.heal || CONSUMABLES[k]?.healFrac); if (pot) b.useItem(pot, lead.uid); }

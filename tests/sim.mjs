@@ -212,6 +212,7 @@ function simulate(seed, asc, starter) {
       if (run.pendingLevelEvents) { handleLevelEvents(run, [run.pendingLevelEvents]); run.pendingLevelEvents = null; }
       if (res.battle) {
         const b = fight(run, res.battle);
+        if (b.result.outcome === 'lose' && b.cfg.softLose) { run.softLoss(b); continue; } // (v0.3.25: a lost mythic fight doesn't end the run)
         if (b.result.outcome === 'lose') { run.finished = true; return { run, died: `event ${ev.id}` }; }
         postBattle(run, b, rng);
       }

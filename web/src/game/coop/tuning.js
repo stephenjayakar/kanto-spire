@@ -5,7 +5,7 @@ export const COOP_TUNING = {
   // field twice the enemies (two wild POKéMON / a tag team of two trainers); elites, bosses and the Elite
   // Four send one party two at a time against two focused players, so each foe needs a lot more HP.
   // (v0.0.5: briefly lowered to 2.1 / 3.3 / 4.0 (~20% wins); restored to 2.35 / 3.65 / 4.35 for the ~11% target.)
-  hp: { wild: 1.1, trainer: 1.15, elite: 2.35, rival: 2.35, boss: 3.65, legend: 3.65, bird: 2.4, bird2: 1.1, gauntlet: 4.35, mythic: 2.4 },
+  hp: { wild: 1.1, trainer: 1.15, elite: 2.35, rival: 2.35, boss: 3.65, legend: 3.65, bird: 2.4, bird2: 1.1, gauntlet: 4.35, mythic: 2.0 },
   // bird2 (v0.3.11): the co-op legendary node's PAIR of legendaries (coop.js legendPairConfig), per legendary. With HP
   // 1.1 / damage 0.65 each the pair is about as hard as the old single legendary (bird: 2.4 / 1.3): same-team A/B on
   // 35 bot rooms stopped before the node (tests/coop_bot.mjs): old 80% wins, 6.9 turns, 22% team HP lost; pair 83%,
@@ -18,9 +18,9 @@ export const COOP_TUNING = {
   // 2-4 levels above a solo run's (wild/tag fights also beat twice the POKéMON of a solo fight).
   exp: { wild: 0.45, trainer: 0.45, elite: 0.75, rival: 0.75, boss: 0.75, legend: 0.75, bird: 0.75, bird2: 0.4, gauntlet: 0.75, mythic: 0.75 },
   // mythic (v0.3.25): a "?" event's mythic (coop.js mythicDuoConfig), one foe like the solo legendary node. An all-target foe
-  // (CERULEAN CAVE's MEWTWO) hits every player each turn instead of acting n/2 times: each hit x spread (Gen 3 doubles:
-  // 0.75), so it deals about 1.5x the damage of a normal single legendary per turn at any party size.
-  spread: 0.75,
+  // (CERULEAN CAVE's MEWTWO) hits every player each turn instead of acting n/2 times: each hit x spread, so it deals about
+  // 1.3x the damage of a normal single legendary per turn at any party size (2 players: 2 hits x 0.65).
+  spread: 0.65,
   // Optional per-act multipliers (index = act, last value repeats): enemy HP and damage.
   actHp: null, actDmg: null,
   // A downed player's lead comes back with this fraction of its max HP when the partner wins.

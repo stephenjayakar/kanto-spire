@@ -153,6 +153,7 @@ export function mythicDuoConfig(world, id, n = 2) {
   const rng = world.rng.fork('mythic' + world.nodeId + ':' + world.actIndex);
   const c = world.mythicConfig(rng, Math.max(0, world.floor), id);
   const cfg = single({ ...c, rng }, 'mythic', world, n);
+  if (MYTHICS[id]?.coopHp) for (const e of cfg.enemies) { e.maxHp = Math.round(e.maxHp * MYTHICS[id].coopHp); e.hp = e.maxHp; e.coopHp = Math.round((e.coopHp || 1) * MYTHICS[id].coopHp * 100) / 100; }
   if (MYTHICS[id]?.allTarget) {
     for (const e of cfg.enemies) e.allTarget = true;
     cfg.dmgScale *= COOP_TUNING.spread ?? 1;

@@ -309,7 +309,7 @@ export class MapScene {
         const lt2 = bossTypes(key2), had = [L, L2].filter(x => (run.legendsCaught || []).includes(x.species)).map(x => x.title);
         return tip(`${L.title} & ${L2.title}`, `Optional. Two legendary POKéMON at once, much tougher than an elite. Beat both for ${L.title}'s unique held item, then each player may catch one of the two (the same one is fine: everyone gets their own).${had.length ? ` (Already caught: ${had.join(', ')}.)` : ''}\nType: ${lt.join('/')} & ${lt2.join('/')}\nPRESSURE: every hand you play also costs a discard.\n${legendLine(run)}`, { accent: TYPE_COLORS[lt[0]], width: 230 });
       }
-      return tip(L?.title || info.name, `${info.desc}${caught ? ' (Already caught this run.)' : ''}${lt.length ? `\nType: ${lt.join('/')}` : ''}\nPRESSURE: every hand you play also costs a discard.\n${legendLine(run)}`, { accent: TYPE_COLORS[lt[0]] });
+      return tip(L?.title || info.name, `${run.hasLegendary?.() ? info.desc.replace(' and a one-time chance to catch it', '') : info.desc}${caught ? ' (Already caught this run.)' : ''}${lt.length ? `\nType: ${lt.join('/')}` : ''}\nPRESSURE: every hand you play also costs a discard.\n${legendLine(run)}`, { accent: TYPE_COLORS[lt[0]] });
     }
     if (hovered.type === 'boss') return tip(this.bossTitle(), `${this.bossDesc()}\n${this.bossTypeLine()}`, { accent: TYPE_COLORS[this.mapRun().act.gauntlet ? null : bossTypes(this.mapRun().boss)[0]] });
     tip(info.name, info.desc);

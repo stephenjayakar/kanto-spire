@@ -35,7 +35,7 @@ export class RewardScene {
     else if (legendMons.length > 1) this.rewards.push({ kind: 'legend', mon: legendMons[0], mons: legendMons, label: `${legendMons.map(m => speciesName(m.species)).join(' and ')} are watching you. Catch one? (Lv${legendMons[0].level})` });
     // ONE LEGENDARY PER RUN (v0.3.25): no catch once you have one, and the screen says why
     const offers = b.result.outcome === 'win' ? run.legendOffers(cfg) : [];
-    if (!legendMons.length && offers.length && run.hasLegendary?.()) this.rewards.push({ kind: 'legendNote', mon: { species: offers[0].species }, auto: true, claimed: true, label: `${offers.map(o => speciesName(o.species)).join(' and ')} ${offers.length > 1 ? 'are' : 'is'} watching. You already have a legendary this run.` });
+    if (!legendMons.length && offers.length && run.hasLegendary?.()) this.rewards.push({ kind: 'legendNote', mon: { species: offers[0].species }, auto: true, claimed: true, label: `${offers.map(o => speciesName(o.species)).join(' & ')}: you already have a legendary this run.` });
     if (cfg.kind === 'boss' && !cfg.gauntlet && !cfg.legendBoss) {
       const badge = badgeForBoss(run.boss);
       if (badge && !run.badges.includes(badge)) this.rewards.push({ kind: 'badge', badge, label: BADGES[badge].name });
