@@ -18,6 +18,7 @@ const teamRun = (result) => ({
   starter: 'BULBASAUR', party: [{ species: 'IVYSAUR', level: 30, shiny: false }, { species: 'CHARMELEON', level: 31, shiny: false }],
   seed: 'SEED1234', stats: { floors: 40, battles: 30, trainers: 12, caught: 6, bestHand: 5000, crits: 9, elites: 3, bosses: 4, moneyEarned: 9000 },
   durationMs: 3600000, finishedAt: Date.now(), version: 'v0.3.12',
+  coopParties: [[{ species: 'IVYSAUR', level: 30, shiny: false }], [{ species: 'CHARMELEON', level: 31, shiny: false }, { species: 'PIDGEY', level: 12, shiny: false }]],
 });
 
 (async () => {
@@ -53,6 +54,7 @@ const teamRun = (result) => ({
     const row = hm.recent.find(r => r.clientRunId === `coop-${code}`);
     ok(!!row && row.playerName === p0.name && row.result === 'win' && row.score === f1.score, 'one team row, owned by the host, result win');
     ok(row && row.coop?.room === code && JSON.stringify(row.coop.with) === JSON.stringify([m0.name]) && JSON.stringify(row.coop.starters) === JSON.stringify(['BULBASAUR', 'CHARMANDER']), `coop tag: room, partners, starters (${JSON.stringify(row?.coop)})`);
+    ok(row?.coop?.parties?.length === 2 && row.coop.parties[1].length === 2 && row.coop.parties[0][0].species === 'IVYSAUR', `every player's team is kept (coop.parties, v0.3.21 fix) (${JSON.stringify(row?.coop?.parties)})`);
     ok(hm.recent.filter(r => r.coop).length === 1, 'no per-player rows');
     ok(mm.recent.some(r => r._id === row?._id), "the partner's MY RUNS lists the team run");
     const mv = await cm('query', 'runs:mine', { version: 'v0.3.12' });

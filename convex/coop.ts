@@ -343,7 +343,8 @@ export const finish = mutation({
     const { room } = await myMembership(ctx, roomId);
     if (room.status === "lobby" || (room.status === "closed" && !room.result)) throw new Error("The run is not in progress.");
     const { score: _s, ...clean } = cleanRun({ ...run, clientRunId: `coop-${room.code}` });
-    const r = await recordCoopRun(ctx, room, clean, { replace: false, createTrainers: true });
+    // (cleanRun drops coopParties, which only a team run carries: hand every player's team on to the record)
+    const r = await recordCoopRun(ctx, room, { ...clean, ...(run.coopParties ? { coopParties: run.coopParties } : {}) }, { replace: false, createTrainers: true });
     return { score: r.score, duplicate: r.duplicate };
   },
 });
