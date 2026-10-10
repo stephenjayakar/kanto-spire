@@ -287,6 +287,7 @@ async function playBattle(pages, opts = {}) {
       for (const i of [0, 1]) {
         const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
         await ctx.addInitScript(t => localStorage.setItem('kantospire.auth.v1', JSON.stringify({ token: t, refreshToken: 'e2e' })), tokens[i]);
+        await require('./pack_cache.cjs').routePacks(ctx); // (asset packs from the shared test cache, not Convex egress)
         const p = await ctx.newPage(); p.__name = `P${i + 1}`; p.__url = BASE; pages.push(p);
       }
     }

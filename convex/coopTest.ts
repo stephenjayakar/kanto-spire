@@ -2,6 +2,7 @@ import { internalMutation, MutationCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
 import { normEmail } from "./lib";
+import { deleteSavesFor } from "./progress";
 
 // DEV-ONLY helpers for the co-op integration tests (tests/coop_auth.cjs). Internal functions, so only
 // the CLI / dashboard can call them, and they refuse to run unless the deployment has COOP_TEST=1:
@@ -20,6 +21,9 @@ async function deleteRoom(ctx: MutationCtx, roomId: Id<"coopRooms">) {
   let n = 0;
   for (const a of await ctx.db.query("coopActions").withIndex("by_room_seq", (q) => q.eq("roomId", roomId)).collect()) { await ctx.db.delete(a._id); n++; }
   for (const c of await ctx.db.query("coopCheckpoints").withIndex("by_room_seq", (q) => q.eq("roomId", roomId)).collect()) await ctx.db.delete(c._id);
+  for (const c of await ctx.db.query("coopCheckpointStates").withIndex("by_room", (q) => q.eq("roomId", roomId)).collect()) await ctx.db.delete(c._id);
+  for (const p of await ctx.db.query("coopPresence").withIndex("by_room", (q) => q.eq("roomId", roomId)).collect()) await ctx.db.delete(p._id);
+  for (const k of await ctx.db.query("coopSketches").withIndex("by_room", (q) => q.eq("roomId", roomId)).collect()) await ctx.db.delete(k._id);
   for (const m of await ctx.db.query("coopMembers").withIndex("by_room", (q) => q.eq("roomId", roomId)).collect()) await ctx.db.delete(m._id);
   if (await ctx.db.get(roomId)) await ctx.db.delete(roomId);
   return n;
@@ -76,6 +80,7 @@ export const cleanup = internalMutation({
           await ctx.db.delete(p._id);
         }
         for (const p of await ctx.db.query("progress").withIndex("by_userId", (q) => q.eq("userId", u._id)).collect()) await ctx.db.delete(p._id);
+        await deleteSavesFor(ctx, u); // (v0.3.21 save tables)
         await ctx.db.delete(u._id);
         out.users++;
       }

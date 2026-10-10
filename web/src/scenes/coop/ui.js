@@ -9,7 +9,7 @@ import { maxHp } from '../../game/pokemon.js';
 export const PCOL = ['#e85848', '#4890f0', '#40b050', '#e0a020'];  // P1 red, P2 blue, P3 green, P4 gold
 export const PFONT = ['red', 'blue', 'green', 'gold'];
 export const PSPRITE = ['gfx/overworld/people/red_normal.png', 'gfx/overworld/people/green_normal.png', 'gfx/overworld/people/rs_brendan.png', 'gfx/overworld/people/rs_may.png'];
-export const OFFLINE_MS = 20000;                      // no heartbeat change for this long = offline
+export const OFFLINE_MS = 70000;                      // no keepalive for this long = offline (they send one every 30 s; a closed tab says goodbye at once)
 
 // ---- toasts -----------------------------------------------------------------------------------
 const toasts = [];

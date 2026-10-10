@@ -1,4 +1,4 @@
-import { mutation, query, MutationCtx, QueryCtx } from "./_generated/server";
+import { internalMutation, mutation, query, MutationCtx, QueryCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { Doc, Id } from "./_generated/dataModel";
 import { cleanRun, normEmail, playerFor, recordCoopRun, requireUser, runInput } from "./lib";
@@ -10,6 +10,11 @@ import { cleanRun, normEmail, playerFor, recordCoopRun, requireUser, runInput } 
 // Wire format note: actions travel as JSON strings (post accepts a string or an object; since returns
 // { seq, p, json }) so big Run snapshots never hit Convex value limits (8192-element arrays, "$" keys).
 // web/src/net/coopnet.js turns them back into { seq, p, type, ...payload, nonce }.
+//
+// Network cost: newer clients read the room only through WebSocket subscriptions (coop:head, coop:feed, coop:presence,
+// coop:sketch, coop:mineLive: see "live reads" below), send a keepalive into coopPresence (which head / feed never read)
+// about twice a minute, and sketches / checkpoint states live in their own tables, so the docs every call reads stay
+// small. Older clients keep polling coop:since / coop:watch: every function they call still works.
 
 const CODE_ABC = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; // no I, L, O, 0, 1
 const CODE_LEN = 5;
@@ -30,7 +35,11 @@ const maxPlayersV = v.optional(v.number());
 
 type Room = Doc<"coopRooms">;
 type Member = Doc<"coopMembers">;
+type Presence = Doc<"coopPresence">;
 type User = Doc<"users">;
+
+const HB_LEGACY = 5000; // older clients beat every 5 s and call a partner offline after 20 s without one
+const NET_MAX = 99;
 
 // v0.1.0 One Spire rooms: "spire" (KANTO + HOENN) / "spire_kanto" (KANTO only) / v0.1.1 "spire_johto" (all three); kanto / hoenn = rooms from before it
 const worldV = v.union(v.literal("kanto"), v.literal("hoenn"), v.literal("spire"), v.literal("spire_kanto"), v.literal("spire_johto"));
@@ -88,33 +97,71 @@ async function myMembership(ctx: QueryCtx, roomId: Id<"coopRooms">) {
   return { user, email, room, me };
 }
 
-function publicMember(m: Member) {
+async function presenceOf(ctx: QueryCtx, roomId: Id<"coopRooms">) {
+  return await ctx.db.query("coopPresence").withIndex("by_room", (q) => q.eq("roomId", roomId)).collect();
+}
+
+// A member's lastSeen / lastSeq for the views older clients read (coop:room / coop:since): the newer of the member row
+// and its heartbeat row. A newer client beats every hb ms (15 s), so its lastSeen is reported up to hb - 5 s later
+// (never past now): an older partner's 20 s offline rule still holds (offline after ~30 s instead of 20).
+function seenOf(m: Member, pres: Presence[], now: number) {
+  const p = pres.find((x) => x.memberId === m._id);
+  if (!p) return { lastSeen: m.lastSeen, lastSeq: m.lastSeq };
+  // (a client that said goodbye, coop:alive gone, gets no allowance: older partners see it offline 20 s later)
+  const shift = p.hb && p.hb > HB_LEGACY && !p.gone ? p.hb - HB_LEGACY : 0;
+  return { lastSeen: Math.max(m.lastSeen, Math.min(now, p.lastSeen + shift)), lastSeq: p.lastSeq };
+}
+
+// The member fields every client sees, without presence (coop:watch: they only change with the member row).
+function memberCore(m: Member) {
   return {
     slot: m.slot, name: m.name, starter: m.starter ?? null, ascMax: m.ascMax ?? null, sketchV: m.sketchV ?? 0, ready: m.ready, left: !!m.left,
     saved: !!m.left && !!m.savedAt, // v0.3.6: left with SAVE & QUIT
-    lastSeen: m.lastSeen, lastSeq: m.lastSeq, maxPlayers: supports(m),
+    maxPlayers: supports(m), net: m.net ?? 0,
   };
 }
 
-function publicRoom(room: Room, members: Member[]) {
+function publicMember(m: Member, pres: Presence[], now: number) {
+  return { ...memberCore(m), ...seenOf(m, pres, now) };
+}
+
+// The room fields that change with the lobby / the run's status (not nextSeq / updatedAt, which every action bumps).
+function roomCore(room: Room, members: Member[]) {
   const host = members.find((m) => m.email === room.host);
   return {
     _id: room._id, code: room.code, status: room.status,
     host: host ? host.slot : 0, // host's slot (emails are not shared)
-    ascension: room.ascension, world: room.world, seed: room.seed, nextSeq: room.nextSeq,
-    createdAt: room.createdAt, updatedAt: room.updatedAt, gameVersion: room.gameVersion ?? null, progress: room.progress ?? null,
+    ascension: room.ascension, world: room.world, seed: room.seed,
+    createdAt: room.createdAt, gameVersion: room.gameVersion ?? null, progress: room.progress ?? null,
     maxPlayers: roomCap(members), // seats in this room (2 while an older 2-player client is in it)
   };
 }
 
-function roomView(room: Room, members: Member[], me: Member) {
+function publicRoom(room: Room, members: Member[]) {
+  return { ...roomCore(room, members), nextSeq: room.nextSeq, updatedAt: room.updatedAt };
+}
+
+function roomView(room: Room, members: Member[], me: Member, pres: Presence[]) {
   const sorted = [...members].sort((a, b) => a.slot - b.slot);
+  const now = Date.now();
   return {
     room: publicRoom(room, sorted),
-    members: sorted.map(publicMember),
+    members: sorted.map((m) => publicMember(m, pres, now)),
     me: me.slot,
     isHost: me.email === room.host,
   };
+}
+
+// FNV-1a of a string, base 36 (the version of a coop:watch view).
+function fnv(s: string) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+  return (h >>> 0).toString(36);
+}
+
+async function deleteMemberRows(ctx: MutationCtx, memberId: Id<"coopMembers">) {
+  for (const p of await ctx.db.query("coopPresence").withIndex("by_member", (q) => q.eq("memberId", memberId)).collect()) await ctx.db.delete(p._id);
+  for (const k of await ctx.db.query("coopSketches").withIndex("by_member", (q) => q.eq("memberId", memberId)).collect()) await ctx.db.delete(k._id);
 }
 
 async function requireLobbyHost(ctx: MutationCtx, roomId: Id<"coopRooms">) {
@@ -242,6 +289,10 @@ export const start = mutation({
     await ctx.db.insert("coopActions", { roomId, seq: 1, p: -1, type: "init", nonce, json: JSON.stringify({ ...init, nonce }), createdAt: now });
     await ctx.db.patch(roomId, { status: "playing", nextSeq: 2, updatedAt: now });
     for (const m of members) await ctx.db.patch(m._id, { lastSeq: 0 });
+    for (const p of await presenceOf(ctx, roomId)) {
+      const m = members.find((x) => x._id === p.memberId);
+      if (m) await ctx.db.patch(p._id, { slot: m.slot, lastSeq: 0 });
+    }
     return { seq: 1 };
   },
 });
@@ -252,6 +303,7 @@ export const leave = mutation({
     const { room, me, email } = await myMembership(ctx, roomId);
     const now = Date.now();
     if (room.status === "lobby") {
+      await deleteMemberRows(ctx, me._id);
       await ctx.db.delete(me._id);
       if (room.host === email) await ctx.db.patch(roomId, { status: "closed", updatedAt: now });
       return { closed: room.host === email };
@@ -270,6 +322,7 @@ export const dismiss = mutation({
     const { room, me, email } = await myMembership(ctx, roomId);
     const now = Date.now();
     if (room.status === "lobby") {
+      await deleteMemberRows(ctx, me._id);
       await ctx.db.delete(me._id);
       if (room.host === email) await ctx.db.patch(roomId, { status: "closed", updatedAt: now });
     } else await ctx.db.patch(me._id, { dismissed: true, left: true, savedAt: undefined, lastSeen: now });
@@ -282,6 +335,9 @@ export const dismiss = mutation({
 async function deleteRoom(ctx: MutationCtx, roomId: Id<"coopRooms">) {
   for (const a of await ctx.db.query("coopActions").withIndex("by_room_seq", (q) => q.eq("roomId", roomId)).collect()) await ctx.db.delete(a._id);
   for (const c of await ctx.db.query("coopCheckpoints").withIndex("by_room_seq", (q) => q.eq("roomId", roomId)).collect()) await ctx.db.delete(c._id);
+  for (const c of await ctx.db.query("coopCheckpointStates").withIndex("by_room", (q) => q.eq("roomId", roomId)).collect()) await ctx.db.delete(c._id);
+  for (const p of await presenceOf(ctx, roomId)) await ctx.db.delete(p._id);
+  for (const k of await ctx.db.query("coopSketches").withIndex("by_room", (q) => q.eq("roomId", roomId)).collect()) await ctx.db.delete(k._id);
   for (const m of await membersOf(ctx, roomId)) await ctx.db.delete(m._id);
   await ctx.db.delete(roomId);
 }
@@ -321,15 +377,35 @@ export const post = mutation({
   },
 });
 
+// "I'm here, at seq": writes my coopPresence row, not the member row (so the room view, and every coop:watch
+// subscription, stays as it is). net: the wire protocol my client speaks (web/src/game/coop/wire.js); a heartbeat
+// without it (an older client) clears it. hb: my heartbeat interval (ms).
+// -> { now, presence: [{ slot, lastSeen, lastSeq, hb }] } (everyone's last heartbeat and how often they beat: newer
+// clients' "online" dots; a hidden tab beats less often and says so)
 export const heartbeat = mutation({
-  args: { roomId: v.id("coopRooms"), seq: v.optional(v.number()) },
-  handler: async (ctx, { roomId, seq }) => {
+  args: { roomId: v.id("coopRooms"), seq: v.optional(v.number()), net: v.optional(v.number()), hb: v.optional(v.number()) },
+  handler: async (ctx, { roomId, seq, net, hb }) => {
     const { room, me } = await myMembership(ctx, roomId);
-    const patch: Partial<Member> = { lastSeen: Date.now() };
-    if (seq !== undefined && Number.isFinite(seq)) patch.lastSeq = Math.max(0, Math.min(Math.floor(seq), room.nextSeq - 1));
+    const now = Date.now();
+    const lastSeq = seq !== undefined && Number.isFinite(seq) ? Math.max(0, Math.min(Math.floor(seq), room.nextSeq - 1)) : undefined;
+    const hbMs = hb !== undefined && Number.isFinite(hb) ? Math.max(1000, Math.min(120_000, Math.floor(hb))) : undefined;
+    const pres = await presenceOf(ctx, roomId);
+    const mine = pres.find((p) => p.memberId === me._id);
+    if (mine) {
+      const row = { lastSeen: now, slot: me.slot, hb: hbMs, gone: undefined, ...(lastSeq !== undefined ? { lastSeq } : {}) };
+      await ctx.db.patch(mine._id, row);
+      Object.assign(mine, row);
+    } else {
+      const row = { roomId, memberId: me._id, slot: me.slot, lastSeen: now, lastSeq: lastSeq ?? me.lastSeq, ...(hbMs !== undefined ? { hb: hbMs } : {}) };
+      const _id = await ctx.db.insert("coopPresence", row);
+      pres.push({ ...row, _id, _creationTime: now });
+    }
+    const patch: Partial<Member> = {};
     if (me.left && room.status === "playing") { patch.left = false; patch.savedAt = undefined; }
-    await ctx.db.patch(me._id, patch);
-    return { now: patch.lastSeen };
+    const netV = net !== undefined && Number.isInteger(net) && net >= 1 && net <= NET_MAX ? net : undefined;
+    if (me.net !== netV) patch.net = netV;
+    if (Object.keys(patch).length) await ctx.db.patch(me._id, patch);
+    return { now, presence: pres.map((p) => ({ slot: p.slot, lastSeen: p.lastSeen, lastSeq: p.lastSeq, hb: p.hb ?? HB_LEGACY })) };
   },
 });
 
@@ -354,11 +430,15 @@ const MAX_CHECKPOINT_BYTES = 900_000;
 const KEEP_CHECKPOINTS = 8;
 const CHECKPOINT_REASONS = new Set(["auto", "save", "resume", "legacy", "fallback"]);
 
-// Every client writes one when the game reaches the map (and on SAVE & QUIT); the same seq written again with the
-// same checksum just adds the writer's slot, a different checksum marks it disputed (a desync: never loaded).
+// A client writes one when the game reaches the map (and on SAVE & QUIT); the same seq written again with the same
+// checksum just adds the writer's slot, a different checksum marks it disputed (a desync: never loaded).
+// state may be left out (newer clients): "I have this seq with this checksum", which adds my slot or disputes it like a
+// full write, without uploading the game. need: true when the server has no state for that seq yet (the caller then
+// sends it). Newer clients upload from one player (the lowest present slot) and confirm from the others.
+const hasState = (c: Doc<"coopCheckpoints">) => !!c.stateId || !!c.state;
 export const checkpoint = mutation({
   args: {
-    roomId: v.id("coopRooms"), seq: v.number(), phase: v.string(), state: v.string(), checksum: v.number(),
+    roomId: v.id("coopRooms"), seq: v.number(), phase: v.string(), state: v.optional(v.string()), checksum: v.number(),
     gameVersion: tagV, engine: tagV, reason: v.optional(v.string()), progress: v.optional(v.string()),
   },
   handler: async (ctx, { roomId, seq, phase, state, checksum, gameVersion, engine, reason, progress }) => {
@@ -366,39 +446,53 @@ export const checkpoint = mutation({
     if (room.status !== "playing") throw new Error("The run is not in progress.");
     if (!Number.isInteger(seq) || seq < 1 || seq > room.nextSeq - 1) throw new Error("Bad checkpoint seq.");
     if (phase !== "map") throw new Error("Checkpoints are only taken on the map.");
-    if (byteLength(state) > MAX_CHECKPOINT_BYTES) throw new Error("Checkpoint is too big.");
+    if (state !== undefined && !state) throw new Error("Bad checkpoint state.");
+    if (state !== undefined && byteLength(state) > MAX_CHECKPOINT_BYTES) throw new Error("Checkpoint is too big.");
     if (!Number.isFinite(checksum)) throw new Error("Bad checksum.");
     const now = Date.now();
+    // (rows keep their state in coopCheckpointStates, so this reads a few hundred bytes)
     const same = await ctx.db.query("coopCheckpoints").withIndex("by_room_seq", (q) => q.eq("roomId", roomId).eq("seq", seq)).first();
-    let disputed = false;
+    let disputed = false, have = state !== undefined;
     if (same) {
       if (same.checksum !== checksum) { disputed = true; if (!same.disputed) await ctx.db.patch(same._id, { disputed: true }); }
-      else if (!same.slots.includes(me.slot)) await ctx.db.patch(same._id, { slots: [...same.slots, me.slot] });
+      else {
+        const patch: Partial<Doc<"coopCheckpoints">> = {};
+        if (!same.slots.includes(me.slot)) patch.slots = [...same.slots, me.slot];
+        if (hasState(same)) have = true;
+        else if (state !== undefined) patch.stateId = await ctx.db.insert("coopCheckpointStates", { roomId, state });
+        if (Object.keys(patch).length) await ctx.db.patch(same._id, patch);
+      }
     } else {
+      const stateId = state !== undefined ? await ctx.db.insert("coopCheckpointStates", { roomId, state }) : undefined;
       await ctx.db.insert("coopCheckpoints", {
-        roomId, seq, phase, state, checksum, slots: [me.slot], createdAt: now,
+        roomId, seq, phase, state: "", checksum, slots: [me.slot], createdAt: now, ...(stateId ? { stateId } : {}),
         ...(cleanTag(gameVersion) ? { gameVersion: cleanTag(gameVersion) } : {}), ...(cleanTag(engine) ? { engine: cleanTag(engine) } : {}),
         ...(reason && CHECKPOINT_REASONS.has(reason) ? { reason } : {}),
       });
       // keep the newest few
       const all = await ctx.db.query("coopCheckpoints").withIndex("by_room_seq", (q) => q.eq("roomId", roomId)).order("desc").collect();
-      for (const c of all.slice(KEEP_CHECKPOINTS)) await ctx.db.delete(c._id);
+      for (const c of all.slice(KEEP_CHECKPOINTS)) {
+        if (c.stateId) await ctx.db.delete(c.stateId);
+        await ctx.db.delete(c._id);
+      }
     }
     const label = typeof progress === "string" ? progress.replace(/[^A-Za-z0-9 .:-]/g, "").slice(0, 32) : "";
     if (!disputed && label && label !== room.progress) await ctx.db.patch(roomId, { progress: label });
-    return { seq, disputed, duplicate: !!same };
+    return { seq, disputed, duplicate: !!same, need: !disputed && !have };
   },
 });
 
-// The newest checkpoint that isn't disputed (null if the room has none, e.g. one from before v0.3.6).
+// The newest checkpoint that isn't disputed and has its state (null if the room has none, e.g. one from before v0.3.6).
 export const latestCheckpoint = query({
   args: { roomId: v.id("coopRooms") },
   handler: async (ctx, { roomId }) => {
     await myMembership(ctx, roomId);
     for await (const c of ctx.db.query("coopCheckpoints").withIndex("by_room_seq", (q) => q.eq("roomId", roomId)).order("desc")) {
       if (c.disputed) continue;
+      const state = c.state || (c.stateId ? (await ctx.db.get(c.stateId))?.state : "") || "";
+      if (!state) continue; // (only confirmed by checksum so far)
       return {
-        seq: c.seq, phase: c.phase, state: c.state, checksum: c.checksum, gameVersion: c.gameVersion ?? null, engine: c.engine ?? null,
+        seq: c.seq, phase: c.phase, state, checksum: c.checksum, gameVersion: c.gameVersion ?? null, engine: c.engine ?? null,
         reason: c.reason ?? null, slots: c.slots, createdAt: c.createdAt,
       };
     }
@@ -429,19 +523,40 @@ export const setSketch = mutation({
     try { parsed = JSON.parse(sketch); } catch { throw new Error("Bad sketch."); }
     if (!parsed || typeof parsed !== "object" || !Array.isArray((parsed as { strokes?: unknown }).strokes)) throw new Error("Bad sketch.");
     const v1 = (me.sketchV ?? 0) + 1;
-    await ctx.db.patch(me._id, { sketch, sketchV: v1, lastSeen: Date.now() });
+    // the sketch goes to coopSketches; the member row keeps the version (the room view carries it: clients fetch on
+    // change) and drops a sketch stored there by an older server
+    await putSketch(ctx, roomId, me._id, sketch);
+    await ctx.db.patch(me._id, { sketchV: v1, lastSeen: Date.now(), ...(me.sketch !== undefined ? { sketch: undefined } : {}) });
     // ERASE wipes the other players' sketches too
-    if (all) for (const m of await membersOf(ctx, roomId)) if (m._id !== me._id) await ctx.db.patch(m._id, { sketch: "", sketchV: (m.sketchV ?? 0) + 1 });
+    if (all) {
+      for (const m of await membersOf(ctx, roomId)) {
+        if (m._id === me._id) continue;
+        await putSketch(ctx, roomId, m._id, "");
+        await ctx.db.patch(m._id, { sketchV: (m.sketchV ?? 0) + 1, ...(m.sketch !== undefined ? { sketch: undefined } : {}) });
+      }
+    }
     return { v: v1 };
   },
 });
 
+async function putSketch(ctx: MutationCtx, roomId: Id<"coopRooms">, memberId: Id<"coopMembers">, sketch: string) {
+  const row = await ctx.db.query("coopSketches").withIndex("by_member", (q) => q.eq("memberId", memberId)).first();
+  if (row) await ctx.db.patch(row._id, { sketch });
+  else await ctx.db.insert("coopSketches", { roomId, memberId, sketch });
+}
+
+// -> [{ slot, sketch (JSON or null), sketchV }]. only: just these slots (newer clients fetch the ones whose sketchV changed).
 export const sketches = query({
-  args: { roomId: v.id("coopRooms") },
-  handler: async (ctx, { roomId }) => {
+  args: { roomId: v.id("coopRooms"), only: v.optional(v.array(v.number())) },
+  handler: async (ctx, { roomId, only }) => {
     await myMembership(ctx, roomId);
-    const members = await membersOf(ctx, roomId);
-    return members.map((m) => ({ slot: m.slot, sketch: m.sketch || null, sketchV: m.sketchV ?? 0 }));
+    const members = (await membersOf(ctx, roomId)).filter((m) => !only || only.includes(m.slot));
+    const out = [];
+    for (const m of members) {
+      const row = await ctx.db.query("coopSketches").withIndex("by_member", (q) => q.eq("memberId", m._id)).first();
+      out.push({ slot: m.slot, sketch: (row ? row.sketch : m.sketch) || null, sketchV: m.sketchV ?? 0 });
+    }
+    return out;
   },
 });
 
@@ -451,26 +566,53 @@ export const room = query({
   args: { roomId: v.id("coopRooms") },
   handler: async (ctx, { roomId }) => {
     const { room, me } = await myMembership(ctx, roomId);
-    return { ...roomView(room, await membersOf(ctx, roomId), me), now: Date.now() };
+    return { ...roomView(room, await membersOf(ctx, roomId), me, await presenceOf(ctx, roomId)), now: Date.now() };
   },
 });
 
+async function actionsAfter(ctx: QueryCtx, roomId: Id<"coopRooms">, after: number) {
+  const from = Number.isFinite(after) ? Math.max(0, Math.floor(after)) : 0;
+  const actions: { seq: number; p: number; json: string }[] = [];
+  let bytes = 0;
+  for await (const a of ctx.db.query("coopActions").withIndex("by_room_seq", (q) => q.eq("roomId", roomId).gt("seq", from))) {
+    actions.push({ seq: a.seq, p: a.p, json: a.json });
+    bytes += a.json.length;
+    if (actions.length >= SINCE_MAX || bytes >= SINCE_MAX_BYTES) break;
+  }
+  return { actions, last: actions.length ? actions[actions.length - 1].seq : from };
+}
+
 // Actions with seq > after, in order (at most 200, fewer if they are big: check `more`), plus the room.
+// (What older clients poll every 700 ms; newer ones subscribe to coop:watch.)
 export const since = query({
   args: { roomId: v.id("coopRooms"), after: v.number() },
   handler: async (ctx, { roomId, after }) => {
     const { room, me } = await myMembership(ctx, roomId);
-    const from = Number.isFinite(after) ? Math.max(0, Math.floor(after)) : 0;
-    const actions: { seq: number; p: number; json: string }[] = [];
-    let bytes = 0;
-    for await (const a of ctx.db.query("coopActions").withIndex("by_room_seq", (q) => q.eq("roomId", roomId).gt("seq", from))) {
-      actions.push({ seq: a.seq, p: a.p, json: a.json });
-      bytes += a.json.length;
-      if (actions.length >= SINCE_MAX || bytes >= SINCE_MAX_BYTES) break;
-    }
-    const last = actions.length ? actions[actions.length - 1].seq : from;
-    const view = roomView(room, await membersOf(ctx, roomId), me);
+    const { actions, last } = await actionsAfter(ctx, roomId, after);
+    const view = roomView(room, await membersOf(ctx, roomId), me, await presenceOf(ctx, roomId));
     return { actions, more: last < room.nextSeq - 1, status: room.status, ...view, now: Date.now() };
+  },
+});
+
+// The run's live feed, for a subscription (or a poll): actions with seq > after (like coop:since), the room's nextSeq
+// and status, and the room view { room, members, me, isHost } only when its version (vh) differs from the caller's.
+// It reads the room, its members and the new actions, never presence (heartbeats, see coop:heartbeat), so a
+// subscription re-runs only when someone posts, joins, leaves, readies, sketches or a checkpoint moves the progress.
+// view.room has no nextSeq / updatedAt and view.members no lastSeen / lastSeq (presence comes with the heartbeat).
+export const watch = query({
+  args: { roomId: v.id("coopRooms"), after: v.number(), vh: v.optional(v.string()) },
+  handler: async (ctx, { roomId, after, vh }) => {
+    const user = await requireUser(ctx);
+    const email = normEmail(user.email);
+    const room = await ctx.db.get(roomId);
+    const members = room ? await membersOf(ctx, roomId) : [];
+    const me = members.find((m) => m.email === email);
+    if (!room || !me) throw new Error("Room not found");
+    const { actions, last } = await actionsAfter(ctx, roomId, after);
+    const sorted = members.sort((a, b) => a.slot - b.slot);
+    const view = { room: roomCore(room, sorted), members: sorted.map(memberCore), me: me.slot, isHost: me.email === room.host };
+    const hash = fnv(JSON.stringify(view));
+    return { actions, more: last < room.nextSeq - 1, nextSeq: room.nextSeq, status: room.status, vh: hash, ...(hash !== vh ? { view } : {}) };
   },
 });
 
@@ -498,5 +640,170 @@ export const mine = query({
       });
     }
     return out.sort((a, b) => b.updatedAt - a.updatedAt);
+  },
+});
+
+// ---- live reads (staging-net): newer clients read everything through these, as Convex WebSocket subscriptions ----
+// A subscription re-runs when a document it read changes, and its client only hears about it when the result changed.
+// So each one reads as little as it can and returns only what its client needs:
+//   coop:head      the room and its members, without what changes per action (nextSeq, updatedAt) or per keepalive
+//                  (lastSeen): status, seats, starters, ready, left / saved, ascension, progress. Changes rarely.
+//   coop:feed      the actions after a cursor; never reads the room. The client subscribes again from its newest seq
+//                  after every delivery, so a result is just the new actions (usually none).
+//   coop:presence  everyone's keepalive row (coopPresence, written by coop:alive): about twice a minute per player,
+//                  and at once on a real change (tab hidden / shown, reconnect, goodbye).
+//   coop:sketch    one player's map sketch; for my own slot (wiped) only whether a partner's ERASE wiped mine.
+//   coop:mineLive  my REJOIN list, without the fields every action changes.
+// Older clients keep polling coop:since / coop:room and beating coop:heartbeat: all of those still work as before.
+const FEED_MAX = 200;
+const FEED_MAX_BYTES = 1_000_000; // a backlog (a reconnect, a long log) arrives in pages of this size
+
+// My membership without reading the room document (which every posted action rewrites).
+async function memberOrThrow(ctx: QueryCtx, roomId: Id<"coopRooms">) {
+  const user = await requireUser(ctx);
+  const email = normEmail(user.email);
+  const me = await ctx.db.query("coopMembers").withIndex("by_room_email", (q) => q.eq("roomId", roomId).eq("email", email)).first();
+  if (!me) throw new Error("Room not found");
+  return { user, email, me };
+}
+
+// The member fields coop:head shows (memberCore without sketchV: sketches come through coop:sketch).
+function memberHead(m: Member) {
+  const { sketchV: _v, ...rest } = memberCore(m);
+  return rest;
+}
+
+// -> { room: { _id, code, status, host (slot), ascension, world, seed, createdAt, gameVersion, progress, maxPlayers },
+//      members: [{ slot, name, starter, ascMax, ready, left, saved, maxPlayers, net }], me, isHost }
+export const head = query({
+  args: { roomId: v.id("coopRooms") },
+  handler: async (ctx, { roomId }) => {
+    const { room, me } = await myMembership(ctx, roomId);
+    const members = (await membersOf(ctx, roomId)).sort((a, b) => a.slot - b.slot);
+    return { room: roomCore(room, members), members: members.map(memberHead), me: me.slot, isHost: me.email === room.host };
+  },
+});
+
+// -> { actions: [{ seq, p, json }] (seq > after, in order), more } (more: a page limit was hit, ask again from the last seq)
+export const feed = query({
+  args: { roomId: v.id("coopRooms"), after: v.number() },
+  handler: async (ctx, { roomId, after }) => {
+    await memberOrThrow(ctx, roomId);
+    const from = Number.isFinite(after) ? Math.max(0, Math.floor(after)) : 0;
+    const actions: { seq: number; p: number; json: string }[] = [];
+    let bytes = 0, more = false;
+    for await (const a of ctx.db.query("coopActions").withIndex("by_room_seq", (q) => q.eq("roomId", roomId).gt("seq", from))) {
+      if (actions.length >= FEED_MAX || (actions.length && bytes + a.json.length > FEED_MAX_BYTES)) { more = true; break; }
+      actions.push({ seq: a.seq, p: a.p, json: a.json });
+      bytes += a.json.length;
+    }
+    return { actions, more };
+  },
+});
+
+// -> [{ slot, lastSeen, hb, gone? }] (lastSeen: server time of their last keepalive; hb: how often they send one)
+export const presence = query({
+  args: { roomId: v.id("coopRooms") },
+  handler: async (ctx, { roomId }) => {
+    await memberOrThrow(ctx, roomId);
+    return (await presenceOf(ctx, roomId)).sort((a, b) => a.slot - b.slot)
+      .map((p) => ({ slot: p.slot, lastSeen: p.lastSeen, hb: p.hb ?? HB_LEGACY, ...(p.gone ? { gone: true } : {}) }));
+  },
+});
+
+// The keepalive of newer clients: my coopPresence row only (coop:head and coop:feed never read it). hb: how often I
+// send one (longer in a hidden tab); net: the wire protocol I speak; gone: I am leaving (tab closed): offline at once.
+// Like a heartbeat it brings me back from "left" in a run in progress. -> { now } (the server clock, for presence ages)
+export const alive = mutation({
+  args: { roomId: v.id("coopRooms"), hb: v.optional(v.number()), net: v.optional(v.number()), gone: v.optional(v.boolean()), seq: v.optional(v.number()) },
+  handler: async (ctx, { roomId, hb, net, gone, seq }) => {
+    const { room, me } = await myMembership(ctx, roomId);
+    const now = Date.now();
+    const hbMs = !gone && hb !== undefined && Number.isFinite(hb) ? Math.max(1000, Math.min(120_000, Math.floor(hb))) : undefined;
+    const lastSeq = seq !== undefined && Number.isFinite(seq) ? Math.max(0, Math.min(Math.floor(seq), room.nextSeq - 1)) : undefined;
+    const mine = await ctx.db.query("coopPresence").withIndex("by_member", (q) => q.eq("memberId", me._id)).first();
+    if (mine) {
+      await ctx.db.patch(mine._id, { lastSeen: now, slot: me.slot, hb: hbMs, gone: gone ? true : undefined, ...(lastSeq !== undefined ? { lastSeq } : {}) });
+    } else {
+      await ctx.db.insert("coopPresence", {
+        roomId, memberId: me._id, slot: me.slot, lastSeen: now, lastSeq: lastSeq ?? me.lastSeq,
+        ...(hbMs !== undefined ? { hb: hbMs } : {}), ...(gone ? { gone: true } : {}),
+      });
+    }
+    const patch: Partial<Member> = {};
+    if (!gone && me.left && room.status === "playing") { patch.left = false; patch.savedAt = undefined; }
+    const netV = net !== undefined && Number.isInteger(net) && net >= 1 && net <= NET_MAX ? net : undefined;
+    if (netV !== undefined && me.net !== netV) patch.net = netV;
+    if (Object.keys(patch).length) await ctx.db.patch(me._id, patch);
+    return { now };
+  },
+});
+
+// -> { slot, sketch (JSON or null) }; with wiped: { slot, wiped } (true while a partner's ERASE left that sketch empty)
+export const sketch = query({
+  args: { roomId: v.id("coopRooms"), slot: v.number(), wiped: v.optional(v.boolean()) },
+  handler: async (ctx, { roomId, slot, wiped }) => {
+    await memberOrThrow(ctx, roomId);
+    const m = await ctx.db.query("coopMembers").withIndex("by_room", (q) => q.eq("roomId", roomId).eq("slot", slot)).first();
+    const row = m ? await ctx.db.query("coopSketches").withIndex("by_member", (q) => q.eq("memberId", m._id)).first() : null;
+    const sk = row ? row.sketch : m?.sketch;
+    if (wiped) return { slot, wiped: sk === "" };
+    return { slot, sketch: sk || null };
+  },
+});
+
+// My REJOIN list (coop:mine without nextSeq / updatedAt / createdAt, which every action changes), newest first.
+export const mineLive = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await requireUser(ctx);
+    const email = normEmail(user.email);
+    const now = Date.now();
+    const mems = await ctx.db.query("coopMembers").withIndex("by_email", (q) => q.eq("email", email).gt("joinedAt", now - KEEP_RUNS - 7 * DAY)).order("desc").take(50);
+    const out = [];
+    for (const me of mems) {
+      if (me.dismissed) continue;
+      const room = await ctx.db.get(me.roomId);
+      if (!room || room.status === "closed" || room.updatedAt < now - (room.status === "playing" ? KEEP_RUNS : DAY)) continue;
+      const members = await membersOf(ctx, room._id);
+      out.push({
+        at: room.updatedAt,
+        row: {
+          roomId: room._id, code: room.code, status: room.status, ascension: room.ascension, world: room.world,
+          slot: me.slot, isHost: room.host === email, progress: room.progress ?? null,
+          members: members.sort((a, b) => a.slot - b.slot).map((m) => ({ slot: m.slot, name: m.name, starter: m.starter ?? null, left: !!m.left, saved: !!m.left && !!m.savedAt })),
+        },
+      });
+    }
+    return out.sort((a, b) => b.at - a.at).map((x) => x.row);
+  },
+});
+
+// ---- one-off data moves (internal: `npx convex run coop:migrateNet '{}'`, repeat with the returned cursor) ----------
+// Moves map sketches out of coopMembers into coopSketches, and inline checkpoint states into coopCheckpointStates, so
+// rooms from before keep their reads small too. Safe to run any number of times, alongside any client.
+export const migrateNet = internalMutation({
+  args: { table: v.optional(v.union(v.literal("coopMembers"), v.literal("coopCheckpoints"))), cursor: v.optional(v.union(v.string(), v.null())) },
+  handler: async (ctx, { table = "coopMembers", cursor = null }) => {
+    let moved = 0;
+    if (table === "coopMembers") {
+      const page = await ctx.db.query("coopMembers").paginate({ numItems: 100, cursor });
+      for (const m of page.page) {
+        if (m.sketch === undefined) continue;
+        const row = await ctx.db.query("coopSketches").withIndex("by_member", (q) => q.eq("memberId", m._id)).first();
+        if (!row) await ctx.db.insert("coopSketches", { roomId: m.roomId, memberId: m._id, sketch: m.sketch });
+        await ctx.db.patch(m._id, { sketch: undefined });
+        moved++;
+      }
+      return { table, moved, cursor: page.isDone ? null : page.continueCursor, done: page.isDone };
+    }
+    const page = await ctx.db.query("coopCheckpoints").paginate({ numItems: 20, cursor });
+    for (const c of page.page) {
+      if (!c.state || c.stateId) continue;
+      const stateId = await ctx.db.insert("coopCheckpointStates", { roomId: c.roomId, state: c.state });
+      await ctx.db.patch(c._id, { state: "", stateId });
+      moved++;
+    }
+    return { table, moved, cursor: page.isDone ? null : page.continueCursor, done: page.isDone };
   },
 });

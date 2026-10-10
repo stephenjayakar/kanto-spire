@@ -3,8 +3,15 @@
 // (identity in sessionStorage; ?coopdev=Name picks the display name). Never used when Cloud.url is set.
 // Every call is ONE IndexedDB transaction, serialized across tabs like a Convex mutation (the old localStorage
 // store lost writes when 3-4 tabs posted at once: each tab's cached copy overwrote the others').
+// Live reads work like the real ones (staging-net): every write announces its room on a BroadcastChannel, and each
+// subscription re-runs its read when its room changed, handing the result on only when it differs. Nothing polls.
 import { coopAscCap } from '../../game/unlocks.js';
 import { COOP_WORLDS } from '../../game/regions.js';
+import { NET_PROTO, fnv } from '../../game/coop/wire.js';
+export { NET_PROTO };
+export const KEEPALIVE_MS = 30000, KEEPALIVE_HIDDEN_MS = 60000; // (same as net/coopnet.js)
+export const HEARTBEAT_MS = KEEPALIVE_MS;
+const HB_LEGACY = 5000;
 const DB_NAME = 'kantospire-coopdev', STORE = 'rooms';
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 export const MAX_MEMBERS = 4; // (same as convex/coop.ts)
@@ -24,6 +31,33 @@ function me() {
   return id;
 }
 const delay = (v) => new Promise((res, rej) => setTimeout(() => (v instanceof Error ? rej(v) : res(v)), 40 + Math.random() * 60));
+// ---- change announcements: this tab (bus) and the other tabs of this origin (BroadcastChannel) ----
+const bus = new EventTarget();
+let channel = null;
+try {
+  channel = new BroadcastChannel('kantospire-coopdev');
+  channel.onmessage = (e) => bus.dispatchEvent(new CustomEvent('change', { detail: e.data }));
+} catch {}
+function announce(roomId) {
+  bus.dispatchEvent(new CustomEvent('change', { detail: roomId }));
+  try { channel?.postMessage(roomId); } catch {}
+}
+// A live read: run() now and again whenever `roomId` changes (null: any room); cb(result) only when it differs.
+function live(roomId, run, cb, onError) {
+  let stop = false, last, busy = false, again = false;
+  const go = async () => {
+    if (stop) return;
+    if (busy) { again = true; return; }
+    busy = true;
+    try { const v = await run(); const j = JSON.stringify(v); if (!stop && j !== last) { last = j; cb?.(v); } }
+    catch (e) { if (!stop) onError?.(e); }
+    finally { busy = false; if (again && !stop) { again = false; go(); } }
+  };
+  const h = (e) => { if (roomId == null || e.detail === roomId) go(); };
+  bus.addEventListener('change', h);
+  go();
+  return () => { stop = true; bus.removeEventListener('change', h); };
+}
 let dbP = null;
 const idb = () => (dbP ||= new Promise((res, rej) => {
   const r = indexedDB.open(DB_NAME, 1);
@@ -46,8 +80,10 @@ async function atomic(fn, { id = null, write = true } = {}) {
       try { val = structuredClone(fn(rooms, (r) => puts.add(r), (r) => dels.add(r))); } catch (e) { err = e; return; }
       for (const r of puts) if (!dels.has(r)) st.put(r);
       for (const r of dels) st.delete(r._id);
+      for (const r of [...puts, ...dels]) changed.add(r._id);
     };
-    t.oncomplete = () => (err ? rej(err) : res(val));
+    const changed = new Set();
+    t.oncomplete = () => { if (!err) for (const id of changed) announce(id); return err ? rej(err) : res(val); };
     t.onabort = t.onerror = () => rej(err || t.error);
   }).catch(e => (e instanceof Error ? e : new Error(String(e))));
   return delay(out);
@@ -63,11 +99,23 @@ function withRoom(roomId, fn, { write = false } = {}) {
     return out;
   }, { id: roomId, write });
 }
-function view(room, mine) {
-  const members = [...room.members].sort((a, b) => a.slot - b.slot).map(m => ({ slot: m.slot, name: m.name, starter: m.starter ?? null, ascMax: m.ascMax ?? null, sketchV: m.sketchV ?? 0, ready: m.ready, left: !!m.left, saved: !!m.left && !!m.savedAt, lastSeen: m.lastSeen, lastSeq: m.lastSeq, maxPlayers: supports(m) }));
+// (same shapes as convex/coop.ts: memberCore / roomCore for coop:watch, plus presence and nextSeq for the older views)
+const memberCore = (m) => ({ slot: m.slot, name: m.name, starter: m.starter ?? null, ascMax: m.ascMax ?? null, sketchV: m.sketchV ?? 0, ready: m.ready, left: !!m.left, saved: !!m.left && !!m.savedAt, maxPlayers: supports(m), net: m.net ?? 0 });
+function seenOf(m, now) {
+  const p = m.pres;
+  if (!p) return { lastSeen: m.lastSeen, lastSeq: m.lastSeq };
+  const shift = p.hb && p.hb > HB_LEGACY ? p.hb - HB_LEGACY : 0;
+  return { lastSeen: Math.max(m.lastSeen, Math.min(now, p.lastSeen + shift)), lastSeq: p.lastSeq };
+}
+function roomCore(room) {
   const host = room.members.find(m => m.email === room.host);
+  return { _id: room._id, code: room.code, status: room.status, host: host ? host.slot : 0, ascension: room.ascension, world: room.world, seed: room.seed, createdAt: room.createdAt, gameVersion: room.gameVersion ?? null, progress: room.progress ?? null, maxPlayers: roomCap(room.members) };
+}
+function view(room, mine) {
+  const now = Date.now();
+  const members = [...room.members].sort((a, b) => a.slot - b.slot).map(m => ({ ...memberCore(m), ...seenOf(m, now) }));
   return {
-    room: { _id: room._id, code: room.code, status: room.status, host: host ? host.slot : 0, ascension: room.ascension, world: room.world, seed: room.seed, nextSeq: room.nextSeq, createdAt: room.createdAt, updatedAt: room.updatedAt, maxPlayers: roomCap(room.members), progress: room.progress ?? null },
+    room: { ...roomCore(room), nextSeq: room.nextSeq, updatedAt: room.updatedAt },
     members, me: mine.slot, isHost: mine.email === room.host,
   };
 }
@@ -131,7 +179,7 @@ export const setSketch = (roomId, sketch, all = false) => withRoom(roomId, (room
   if (all) for (const m of room.members) if (m !== mine) { m.sketch = ''; m.sketchV = (m.sketchV ?? 0) + 1; }
   return { v: mine.sketchV };
 }, { write: true });
-export const getSketches = (roomId) => withRoom(roomId, (room) => room.members.map(m => ({ slot: m.slot, sketch: m.sketch || null, sketchV: m.sketchV ?? 0 })));
+export const getSketches = (roomId, only) => withRoom(roomId, (room) => room.members.filter(m => !Array.isArray(only) || only.includes(m.slot)).map(m => ({ slot: m.slot, sketch: m.sketch || null, sketchV: m.sketchV ?? 0 })));
 export const setReady = (roomId, ready) => withRoom(roomId, (room, mine) => { if (room.status !== 'lobby') throw new Error('The run has already started.'); mine.ready = !!ready; mine.lastSeen = Date.now(); return null; }, { write: true });
 export const configure = (roomId, opts = {}) => withRoom(roomId, (room, mine) => {
   lobbyHost(room, mine);
@@ -180,10 +228,52 @@ export function myRooms() {
     return out.sort((a, b) => b.updatedAt - a.updatedAt);
   });
 }
-export const heartbeat = (roomId, seq) => withRoom(roomId, (room, mine) => {
-  mine.lastSeen = Date.now(); if (seq != null) mine.lastSeq = seq; if (mine.left && room.status === 'playing') { mine.left = false; mine.savedAt = null; }
-  return { now: mine.lastSeen };
+// (same as convex/coop.ts heartbeat: presence apart from the member, net / hb from this client, everyone's presence back)
+export const heartbeat = (roomId, seq, { hb = HEARTBEAT_MS } = {}) => withRoom(roomId, (room, mine) => {
+  const now = Date.now();
+  mine.pres = { lastSeen: now, lastSeq: seq != null ? seq : (mine.pres?.lastSeq ?? mine.lastSeq), hb };
+  if (mine.left && room.status === 'playing') { mine.left = false; mine.savedAt = null; }
+  mine.net = NET_PROTO;
+  return { now, presence: room.members.filter(m => m.pres).map(m => ({ slot: m.slot, lastSeen: m.pres.lastSeen, lastSeq: m.pres.lastSeq, hb: m.pres.hb ?? HB_LEGACY })) };
 }, { write: true });
+// (same as convex/coop.ts alive: my presence row only; gone = I'm leaving)
+export const alive = (roomId, { hb = KEEPALIVE_MS, gone = false } = {}) => withRoom(roomId, (room, mine) => {
+  const now = Date.now();
+  mine.pres = { lastSeen: now, lastSeq: mine.pres?.lastSeq ?? mine.lastSeq, hb: gone ? undefined : hb, gone: gone || undefined };
+  if (!gone && mine.left && room.status === 'playing') { mine.left = false; mine.savedAt = null; }
+  mine.net = NET_PROTO;
+  return { now };
+}, { write: true });
+export const goodbye = (roomId) => alive(roomId, { gone: true }).catch(() => {});
+// The mock is always "connected".
+export const onConnection = (cb) => { try { cb({ isWebSocketConnected: true, hasEverConnected: true }); } catch {} return () => {}; };
+
+// ---- live reads (same shapes as convex/coop.ts head / feed / presence / sketch / mineLive) ----
+const headOf = (room, mine) => {
+  const ms = [...room.members].sort((a, b) => a.slot - b.slot);
+  return { room: roomCore(room), members: ms.map(m => { const { sketchV: _v, ...rest } = memberCore(m); return rest; }), me: mine.slot, isHost: mine.email === room.host };
+};
+export const watchRoom = (roomId, cb, onError) => live(roomId, () => withRoom(roomId, (room, mine) => headOf(room, mine)), cb, onError);
+const presenceOf = (room) => [...room.members].filter(m => m.pres).sort((a, b) => a.slot - b.slot).map(m => ({ slot: m.slot, lastSeen: m.pres.lastSeen, hb: m.pres.hb ?? HB_LEGACY, ...(m.pres.gone ? { gone: true } : {}) }));
+export const watchPresence = (roomId, cb, onError) => live(roomId, () => withRoom(roomId, (room) => presenceOf(room)), cb, onError);
+const sketchOf = (room, slot, wiped) => {
+  const m = room.members.find(x => x.slot === slot);
+  return wiped ? { slot, wiped: m?.sketch === '' } : { slot, sketch: m?.sketch || null };
+};
+export const getSketch = (roomId, slot) => withRoom(roomId, (room) => sketchOf(room, slot, false));
+export const watchSketch = (roomId, slot, cb, { wiped = false } = {}, onError) => live(roomId, () => withRoom(roomId, (room) => sketchOf(room, slot, wiped)), cb, onError);
+export const watchMyRooms = (cb, onError) => live(null, () => myRooms().then(list => list.map(({ nextSeq: _n, updatedAt: _u, createdAt: _c, ...r }) => r)), cb, onError);
+const feedOf = (room, after) => {
+  const actions = room.actions.filter(a => a.seq > after).slice(0, 200).map(a => ({ seq: a.seq, p: a.p, json: a.json }));
+  const last = actions.length ? actions[actions.length - 1].seq : after;
+  return { actions, more: last < room.nextSeq - 1 };
+};
+export const fetchFeed = (roomId, after = 0) => withRoom(roomId, (room) => {
+  const r = feedOf(room, after);
+  return { actions: r.actions.map(a => ({ ...JSON.parse(a.json), seq: a.seq, p: a.p })), more: r.more };
+});
+const watchFeed = (roomId, after, cb, onError) => live(roomId, () => withRoom(roomId, (room) => feedOf(room, after)), cb, onError);
+
 export const postAction = (roomId, action) => withRoom(roomId, (room, mine) => {
   if (room.status !== 'playing') throw new Error('The run is not in progress.');
   const { seq: _s, p: _p, ...rest } = action || {};
@@ -202,23 +292,31 @@ export const fetchSince = (roomId, after = 0) => withRoom(roomId, (room, mine) =
 });
 
 // checkpoints + SAVE & QUIT (same rules as convex/coop.ts checkpoint / latestCheckpoint / saveQuit)
+// (state may be left out: a confirmation by checksum; need = the server has no state for that seq yet)
 export const writeCheckpoint = (roomId, cp) => withRoom(roomId, (room, mine) => {
   if (room.status !== 'playing') throw new Error('The run is not in progress.');
   if (!Number.isInteger(cp.seq) || cp.seq < 1 || cp.seq > room.nextSeq - 1) throw new Error('Bad checkpoint seq.');
   if (cp.phase !== 'map') throw new Error('Checkpoints are only taken on the map.');
   room.checkpoints ||= [];
   const same = room.checkpoints.find(c => c.seq === cp.seq);
-  let disputed = false;
-  if (same) { if (same.checksum !== cp.checksum) { disputed = true; same.disputed = true; } else if (!same.slots.includes(mine.slot)) same.slots.push(mine.slot); }
-  else {
-    room.checkpoints.push({ seq: cp.seq, phase: cp.phase, state: cp.state, checksum: cp.checksum, gameVersion: cp.gameVersion ?? null, engine: cp.engine ?? null, reason: cp.reason ?? null, slots: [mine.slot], createdAt: Date.now() });
+  let disputed = false, have = cp.state !== undefined;
+  if (same) {
+    if (same.checksum !== cp.checksum) { disputed = true; same.disputed = true; }
+    else {
+      if (!same.slots.includes(mine.slot)) same.slots.push(mine.slot);
+      if (same.state) have = true; else if (cp.state !== undefined) same.state = cp.state;
+    }
+  } else {
+    room.checkpoints.push({ seq: cp.seq, phase: cp.phase, state: cp.state ?? '', checksum: cp.checksum, gameVersion: cp.gameVersion ?? null, engine: cp.engine ?? null, reason: cp.reason ?? null, slots: [mine.slot], createdAt: Date.now() });
     room.checkpoints.sort((a, b) => b.seq - a.seq);
     room.checkpoints = room.checkpoints.slice(0, 8);
   }
   if (!disputed && cp.progress) room.progress = String(cp.progress).slice(0, 32);
-  return { seq: cp.seq, disputed, duplicate: !!same };
+  room.cpWrites = (room.cpWrites || 0) + (cp.state !== undefined ? 1 : 0); // (tests: how many uploads)
+  return { seq: cp.seq, disputed, duplicate: !!same, need: !disputed && !have };
 }, { write: true });
-export const latestCheckpoint = (roomId) => withRoom(roomId, (room) => (room.checkpoints || []).find(c => !c.disputed) || null);
+export const confirmCheckpoint = (roomId, cp) => { const { state: _s, ...rest } = cp; return writeCheckpoint(roomId, rest); };
+export const latestCheckpoint = (roomId) => withRoom(roomId, (room) => (room.checkpoints || []).find(c => !c.disputed && c.state) || null);
 export const saveQuit = (roomId) => withRoom(roomId, (room, mine) => {
   if (room.status === 'playing') { mine.left = true; mine.savedAt = Date.now(); mine.lastSeen = mine.savedAt; }
   return { saved: room.status === 'playing' };
@@ -234,31 +332,35 @@ export const finishRoom = (roomId, run) => withRoom(roomId, (room) => {
   return { score: 0, duplicate: false };
 }, { write: true });
 
-// Same interface as coopnet's CoopPoller.
-export class CoopPoller {
-  constructor(roomId, { intervalMs = 700, after = 0, onActions, onRoom, onError } = {}) {
-    Object.assign(this, { roomId, intervalMs, after, onActions, onRoom, onError, running: false, busy: false, _timer: null, _gen: 0 });
+// Same interface as coopnet's CoopFeed: head / presence / feed subscriptions, the feed subscribing again from its newest
+// seq after every delivery.
+export class CoopFeed {
+  constructor(roomId, { after = 0, onActions, onHead, onPresence, onCaughtUp, onError } = {}) {
+    Object.assign(this, { roomId, after: Math.max(0, after | 0), onActions, onHead, onPresence, onCaughtUp, onError, running: false, subs: {}, _gen: 0, _chain: Promise.resolve() });
   }
-  start() { if (!this.running) { this.running = true; this._schedule(0); } return this; }
-  stop() { this.running = false; this._gen++; clearTimeout(this._timer); return this; }
-  setAfter(seq) { this.after = Math.max(0, seq | 0); this._gen++; if (this.running && !this.busy) this._schedule(0); return this; }
-  kick() { if (this.running && !this.busy) this._schedule(0); return this; }
-  _schedule(ms) { clearTimeout(this._timer); this._timer = setTimeout(() => this._tick(), ms); }
-  async _tick() {
-    if (!this.running || this.busy) return;
-    this.busy = true;
-    const gen = this._gen;
-    let next = this.intervalMs;
-    try {
-      const r = await fetchSince(this.roomId, this.after);
-      if (gen === this._gen && this.running) {
-        const fresh = r.actions.filter(a => a.seq > this.after);
-        if (fresh.length) { this.after = fresh[fresh.length - 1].seq; await this.onActions?.(fresh); }
-        await this.onRoom?.(r.room, r.members, { room: r.room, members: r.members, me: r.me, isHost: r.isHost, status: r.status, now: r.now });
-        if (r.more && fresh.length) next = 0;
-      } else next = 0;
-    } catch (e) { try { this.onError?.(e); } catch {} }
-    finally { this.busy = false; }
-    if (this.running) this._schedule(next);
+  start() {
+    if (this.running) return this;
+    this.running = true;
+    this.subs.head = watchRoom(this.roomId, v => this._safe(this.onHead, v), e => this._safe(this.onError, e));
+    this.subs.presence = watchPresence(this.roomId, l => this._safe(this.onPresence, l), e => this._safe(this.onError, e));
+    this._feed();
+    return this;
   }
+  stop() { this.running = false; this._gen++; for (const k of Object.keys(this.subs)) { try { this.subs[k]?.(); } catch {} } this.subs = {}; return this; }
+  setAfter(seq) { this.after = Math.max(0, seq | 0); if (this.running) this._feed(); return this; }
+  _feed() {
+    const gen = ++this._gen, old = this.subs.feed;
+    this.subs.feed = watchFeed(this.roomId, this.after, r => { if (gen === this._gen) this._deliver(r, gen); }, e => { if (gen === this._gen) this._safe(this.onError, e); });
+    try { old?.(); } catch {}
+  }
+  _deliver(r, gen) {
+    this._chain = this._chain.then(async () => {
+      if (!this.running || gen !== this._gen) return;
+      const fresh = r.actions.map(a => ({ ...JSON.parse(a.json), seq: a.seq, p: a.p })).filter(a => a.seq > this.after);
+      if (fresh.length) { this.after = fresh[fresh.length - 1].seq; await this._safe(this.onActions, fresh); }
+      if (!this.running || gen !== this._gen) return;
+      if (fresh.length || r.more) this._feed(); else await this._safe(this.onCaughtUp);
+    }).catch(e => console.warn('mock CoopFeed', e));
+  }
+  async _safe(fn, ...a) { if (!fn) return; try { await fn(...a); } catch (e) { if (fn !== this.onError) { try { this.onError?.(e); } catch {} } else console.warn(e); } }
 }

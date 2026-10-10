@@ -38,9 +38,10 @@ const START = async ({ SLOT }) => {
     postAction: async (id, a) => push(a, SLOT),
     finishRoom: async (id, run) => { finishes.push(run); room.status = 'closed'; return { score: 1, duplicate: finishes.length > 1 }; },
   };
-  net.CoopPoller = class {
+  // (the harness's stand-in for net/coopnet.js CoopFeed: it re-reads its in-memory log every 120 ms)
+  net.CoopFeed = class {
     constructor(roomId, o) { Object.assign(this, o, { running: false }); }
-    start() { this.running = true; const tick = async () => { if (!this.running) return; const r = await net.fetchSince('r1', this.after); const f = r.actions.filter(a => a.seq > this.after); if (f.length) { this.after = f[f.length - 1].seq; await this.onActions(f); } await this.onRoom(r.room, r.members, r); this.t = setTimeout(tick, 120); }; tick(); return this; }
+    start() { this.running = true; const tick = async () => { if (!this.running) return; const r = await net.fetchSince('r1', this.after); const f = r.actions.filter(a => a.seq > this.after); if (f.length) { this.after = f[f.length - 1].seq; await this.onActions(f); } await this.onHead?.({ room: r.room, members: r.members, me: r.me, isHost: r.isHost }); if (!f.length) await this.onCaughtUp?.(); this.t = setTimeout(tick, 120); }; tick(); return this; }
     stop() { this.running = false; clearTimeout(this.t); return this; }
     kick() { return this; } setAfter(s) { this.after = s; return this; }
   };

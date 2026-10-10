@@ -34,6 +34,28 @@ export default defineSchema({
     size: v.number(),
     uploadedAt: v.number(),
   }).index("by_name", ["name"]),
+  // v0.3.21: more about a pack (a table of its own, so assetPacks rows keep the shape older server code expects).
+  assetPackExtras: defineTable({
+    name: v.string(),
+    hash: v.string(), // the assetPacks row (name + hash) this belongs to
+    zStorageId: v.optional(v.id("_storage")), // the same pack gzipped (GET /pack?enc=gzip; the plain one stays for older clients)
+    zsize: v.optional(v.number()),
+    lazy: v.optional(v.boolean()), // not needed to reach the title: newer clients load it in the background
+    dirs: v.optional(v.array(v.string())), // lazy packs: the path prefixes of their files (what waits for them)
+  }).index("by_name", ["name"]),
+
+  // NOW PLAYING for newer clients (players:activity / players:nowPlayingLive): one row per trainer while in a run, so the
+  // once-a-minute keepalive never rewrites the players row (which RECORDS subscriptions read). Older clients still
+  // write players.lastSeen / activity; both are listed.
+  playerActivity: defineTable({
+    playerId: v.id("players"),
+    name: v.string(), // the trainer name when it was written
+    activity: v.string(), // short label, e.g. "ACT 2 TORCHIC" or "CO-OP ACT 3"
+    room: v.optional(v.string()), // co-op room code (checked membership): groups partners, never sent out
+    lastSeen: v.number(),
+  })
+    .index("by_player", ["playerId"])
+    .index("by_lastSeen", ["lastSeen"]),
 
   // A trainer: one per signed-in Google account.
   players: defineTable({
@@ -66,6 +88,29 @@ export default defineSchema({
   })
     .index("by_userId", ["userId"])
     .index("by_email", ["email"]),
+
+  // v0.3.21 save storage (convex/progress.ts): per account one small head row pointing at its two parts, each part
+  // stored deflated in its own row, so a push writes only the part that changed. Accounts without a head row are
+  // still served from the progress table above (their first new-format save copies it over).
+  saveHeads: defineTable({
+    userId: v.id("users"),
+    email: v.string(), // lowercase; the save key
+    metaId: v.optional(v.id("saveBlobs")),
+    metaHash: v.optional(v.string()), // hash of the meta JSON (progress.ts saveHash): unchanged pushes write nothing
+    runId: v.optional(v.id("saveBlobs")), // unset when no run is in progress
+    runHash: v.optional(v.string()), // "-" = no run in progress
+    updatedAt: v.number(),
+  })
+    .index("by_userId", ["userId"])
+    .index("by_email", ["email"]),
+  saveBlobs: defineTable({
+    email: v.string(),
+    part: v.union(v.literal("meta"), v.literal("run")),
+    enc: v.string(), // "deflate" (fflate deflateSync of the UTF-8 JSON)
+    data: v.bytes(),
+    size: v.number(), // length of the JSON text
+    updatedAt: v.number(),
+  }),
 
   // The full log of a finished run (battles, picks, purchases, events), for balance analysis.
   runLogs: defineTable({
@@ -168,13 +213,37 @@ export default defineSchema({
     dismissed: v.optional(v.boolean()), // deleted the room from their REJOIN list (rejoining by code undoes it)
     maxPlayers: v.optional(v.number()), // the room size this player's client supports (2-4); unset = an older 2-player client
     savedAt: v.optional(v.number()), // v0.3.6: last SAVE & QUIT (shown to the others while they are away)
+    net: v.optional(v.number()), // the co-op wire protocol this player's client speaks (sent with its heartbeat; unset = older client)
     joinedAt: v.number(),
-    lastSeen: v.number(),
-    lastSeq: v.number(), // last action seq this player's client applied
+    lastSeen: v.number(), // (since coopPresence: only set by joins / lobby picks; heartbeats go to coopPresence)
+    lastSeq: v.number(), // last action seq this player's client applied (likewise, see coopPresence)
   })
     .index("by_room", ["roomId", "slot"])
     .index("by_room_email", ["roomId", "email"])
     .index("by_email", ["email", "joinedAt"]),
+
+  // Heartbeats, one row per member: kept out of coopMembers so a heartbeat doesn't change what the room view reads
+  // (coop:watch subscriptions only re-run when the room, its members or its log change).
+  coopPresence: defineTable({
+    roomId: v.id("coopRooms"),
+    memberId: v.id("coopMembers"),
+    slot: v.number(),
+    lastSeen: v.number(),
+    lastSeq: v.number(),
+    hb: v.optional(v.number()), // the sender's heartbeat interval (ms); unset = an older client (every 5 s)
+    gone: v.optional(v.boolean()), // staging-net: the client said goodbye (tab closed / left): offline at once
+  })
+    .index("by_room", ["roomId"])
+    .index("by_member", ["memberId"]),
+
+  // Map sketches, one row per member (they used to live in coopMembers.sketch, which made every member read big).
+  coopSketches: defineTable({
+    roomId: v.id("coopRooms"),
+    memberId: v.id("coopMembers"),
+    sketch: v.string(), // JSON { act, strokes }, or "" after an ERASE
+  })
+    .index("by_room", ["roomId"])
+    .index("by_member", ["memberId"]),
 
   // The lockstep action log: seq 1, 2, 3... per room, assigned by the server.
   coopActions: defineTable({
@@ -203,6 +272,15 @@ export default defineSchema({
     reason: v.optional(v.string()), // "auto" | "save" | "resume" | "legacy" | "fallback"
     slots: v.array(v.number()), // the players whose client wrote this same checkpoint (same checksum)
     disputed: v.optional(v.boolean()), // two clients wrote different states for this seq: never loaded
+    // newer rows keep the snapshot in coopCheckpointStates (state is ""), so checking or confirming a checkpoint reads
+    // a few hundred bytes, not the whole game. No state and no stateId: confirmed by checksum only so far (not loadable).
+    stateId: v.optional(v.id("coopCheckpointStates")),
     createdAt: v.number(),
   }).index("by_room_seq", ["roomId", "seq"]),
+
+  // The snapshot JSON of a coopCheckpoints row (see stateId).
+  coopCheckpointStates: defineTable({
+    roomId: v.id("coopRooms"),
+    state: v.string(),
+  }).index("by_room", ["roomId"]),
 });

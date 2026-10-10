@@ -14,7 +14,7 @@ import { BADGES } from '../game/items.js';
 export function goToMap(opts = {}) {
   if (G.coop) return G.coop.privateDone(); // co-op: leaving a private scene hands the run back to the session
   if (G.run) G.run.inNode = false;
-  saveRun();
+  saveRun('checkpoint'); // (the cloud save follows once per node, here)
   setScene(new MapScene(opts));
 }
 
@@ -22,7 +22,7 @@ export function enterNode(id, resume = false) {
   const run = G.run;
   const node = resume ? run.map.nodes[id] : run.enterNode(id);
   run.inNode = true;
-  saveRun();
+  saveRun('defer');
   switch (node.type) {
     case 'wild': case 'trainer': case 'elite': case 'boss': case 'rival': case 'legend':
       return startBattle(run.battleConfig(node), node);

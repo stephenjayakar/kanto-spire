@@ -46,19 +46,21 @@ export function loadMeta() {
   if (migrateStarterMeta(G.meta) | migrateAscensionMeta(G.meta) | migrateSpireMeta(G.meta)) saveMeta();
   return G.meta;
 }
-export function saveMeta() { try { localStorage.setItem(saveKeys.meta, JSON.stringify(G.meta)); } catch {} queueProgressSync(); }
+// sync: when the cloud copy follows (net/savesync.js): 'checkpoint' = now, 'defer' = with the next upload,
+// undefined = within half a minute.
+export function saveMeta(sync) { try { localStorage.setItem(saveKeys.meta, JSON.stringify(G.meta)); } catch {} queueProgressSync(sync); }
 
-export function saveRun() {
+export function saveRun(sync) {
   if (!G.run || G.coop) return;
   try { localStorage.setItem(saveKeys.run, JSON.stringify(G.run)); } catch (e) { console.warn('save failed', e); }
-  queueProgressSync();
+  queueProgressSync(sync);
 }
 export function hasSavedRun() { return !!localStorage.getItem(saveKeys.run); }
 export function loadRun() {
   try { const o = JSON.parse(localStorage.getItem(saveKeys.run)); if (!o) return null; G.run = Run.fromJSON(o); return G.run; }
   catch (e) { console.warn('load failed', e); return null; }
 }
-export function clearRun() { if (G.coop) return; localStorage.removeItem(saveKeys.run); queueProgressSync(); }
+export function clearRun() { if (G.coop) return; localStorage.removeItem(saveKeys.run); queueProgressSync('checkpoint'); }
 
 // Winning at Ascension 5+ unlocks the shiny form of the starter's evolution family. Returns the family
 // if it was newly unlocked (cosmetic only; synced with the rest of meta by the cloud progress save).

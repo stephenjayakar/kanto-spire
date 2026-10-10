@@ -1,5 +1,7 @@
 // Co-op lobby: CREATE ROOM / JOIN ROOM (type or paste the code) / REJOIN, then the room itself:
 // 2-4 players, starter picks, ascension (host; no world choice since v0.1.0 One Spire), START. Hands off to CoopSession once playing.
+// Network (staging-net): the REJOIN list (net.watchMyRooms), the room (net.watchRoom) and who is online
+// (net.watchPresence) are subscriptions; in a room this client sends a presence keepalive (net.alive). Nothing polls.
 import { Engine, W, H, setScene, hover, clicked, keyPressed, pushOverlay } from '../../engine/core.js';
 import { draw } from '../../engine/assets.js';
 import { text, textBlock, measure, textFit } from '../../engine/font.js';
@@ -39,12 +41,14 @@ export class CoopLobbyScene {
       if (s) { this.code = s; e.preventDefault(); }
     };
     window.addEventListener('paste', this.onPaste);
-    loadNet().then(net => { this.net = net; this.refreshRooms(); if (this.opts.roomId) this.openRoom(this.opts.roomId); })
+    loadNet().then(net => { this.net = net; this.watchRooms(); if (this.opts.roomId) this.openRoom(this.opts.roomId); })
       .catch(e => { this.netErr = e.message; coopToast(e.message, { bad: true, t: 6 }); });
   }
   exit() {
     window.removeEventListener('paste', this.onPaste);
-    clearTimeout(this.pollTimer); this.pollTimer = null;
+    this.sayGoodbye();
+    this.unwatch();
+    this.unwatchRooms();
   }
   update(dt) {
     this.t += dt;
@@ -69,11 +73,18 @@ export class CoopLobbyScene {
         if (v !== 1) return;
         const res = await this.act(net => net.dismissRoom(r.roomId));
         if (res) { Sound.playSE('se_select'); coopToast(res.deleted ? `Room ${r.code} deleted.` : `Room ${r.code} removed from your list.`); }
-        this.refreshRooms();
+        if (!this.stopRooms) this.refreshRooms();
       },
     }));
   }
   refreshRooms() { this.net?.myRooms().then(r => { this.rooms = r || []; }).catch(() => { this.rooms = []; }); }
+  // The REJOIN list, live (a partner starting, saving or deleting a room shows at once); one read without live updates.
+  watchRooms() {
+    this.unwatchRooms();
+    if (!this.net?.watchMyRooms) { this.refreshRooms(); return; }
+    this.stopRooms = this.net.watchMyRooms(r => { this.rooms = r || []; }, () => { if (!this.rooms) this.rooms = []; });
+  }
+  unwatchRooms() { try { this.stopRooms?.(); } catch {} this.stopRooms = null; }
   ownBest() { return Math.max(0, ...Object.values(G.meta.ascBy || {}).map(n => Math.min(MAX_ASC, n | 0))); }
   async create() {
     const r = await this.act(net => net.createRoom({ ascension: this.asc, world: coopWorldFor(G.meta) }));
@@ -84,47 +95,83 @@ export class CoopLobbyScene {
     if (r) this.openRoom(r.roomId);
   }
   openRoom(roomId) {
+    this.unwatchRooms();
     this.roomId = roomId;
     this.mode = 'room';
     this.view = null;
-    this.poll();
+    this.watch(roomId);
   }
-  async poll() {
-    if (this.polling) { this.pollAgain = true; return; }
-    clearTimeout(this.pollTimer);
-    if (this.mode !== 'room' || !this.roomId || this.handedOff) return;
-    this.polling = true;
-    let next = 1000;
-    try {
-      const v = await this.net.getRoom(this.roomId);
-      if (this.mode !== 'room' || v.room._id !== this.roomId) return;
-      this.view = v; this.pollErr = null;
-      if (v.room.status === 'playing') { next = null; this.handOff(v); }
-      else if (v.room.status === 'closed') { next = null; coopToast('The host closed the room.', { bad: true }); this.backToMenu(); }
-    } catch (e) {
-      this.pollErr = e.message;
-      if (/not found/i.test(e.message)) { next = null; coopToast('Room not found.', { bad: true }); this.backToMenu(); }
-    } finally {
-      this.polling = false;
-      if (next !== null && this.mode === 'room' && !this.handedOff) this.pollTimer = setTimeout(() => this.poll(), this.pollAgain ? 0 : next);
-      this.pollAgain = false;
-    }
+  // The room (coop:head) and who is online (coop:presence), live, plus my own keepalive while I'm in it.
+  watch(roomId) {
+    this.unwatch();
+    const token = this.watchToken = {};
+    const mine = (fn) => (...a) => { if (this.watchToken === token) fn(...a); };
+    this.stopWatch = this.net.watchRoom(roomId, mine(v => this.onView(v)), mine(e => this.onWatchError(e)));
+    this.stopPresence = this.net.watchPresence?.(roomId, mine(list => { const pr = {}; for (const x of list || []) pr[x.slot] = x; this.presence = pr; }), () => {});
+    this.beat(roomId, token);
+    this.onVisible = () => this.beat(roomId, token);
+    document.addEventListener('visibilitychange', this.onVisible);
+    this.onLeave = () => { if (this.watchToken === token) this.net.goodbye?.(roomId); };
+    addEventListener('pagehide', this.onLeave);
+  }
+  // Presence keepalive: now, then every KEEPALIVE_MS (a hidden tab: KEEPALIVE_HIDDEN_MS, and it says so).
+  beat(roomId, token) {
+    clearTimeout(this.beatTimer);
+    if (this.watchToken !== token || !this.net.alive) return;
+    const hb = document.hidden ? (this.net.KEEPALIVE_HIDDEN_MS || 60000) : (this.net.KEEPALIVE_MS || 30000);
+    this.net.alive(roomId, { hb }).then(r => { if (r?.now) { this.serverNow = r.now; this.serverNowAt = Date.now(); } }).catch(() => {});
+    this.beatTimer = setTimeout(() => this.beat(roomId, token), hb * (0.85 + Math.random() * 0.3));
+  }
+  unwatch() {
+    this.watchToken = null;
+    for (const k of ['stopWatch', 'stopPresence']) { try { this[k]?.(); } catch {} this[k] = null; }
+    clearTimeout(this.beatTimer); this.beatTimer = null;
+    if (this.onVisible) document.removeEventListener('visibilitychange', this.onVisible);
+    if (this.onLeave) removeEventListener('pagehide', this.onLeave);
+    this.onVisible = this.onLeave = null;
+    this.presence = null;
+  }
+  onWatchError(e) {
+    this.pollErr = e?.message || String(e);
+    if (/not found/i.test(this.pollErr) && this.mode === 'room' && !this.handedOff) { coopToast('Room not found.', { bad: true }); this.backToMenu(); }
+  }
+  // -> false once the lobby is done with this room
+  onView(v) {
+    if (this.mode !== 'room' || this.handedOff || v?.room?._id !== this.roomId) return false;
+    this.view = v; this.pollErr = null;
+    if (v.room.status === 'playing') { this.handOff(v); return false; }
+    if (v.room.status === 'closed') { coopToast('The host closed the room.', { bad: true }); this.backToMenu(); return false; }
+    return true;
+  }
+  // Online in the lobby: a fresh keepalive (coop:presence). A member without one yet (just joined, or an older client
+  // that doesn't send them in the lobby) counts as online unless they left.
+  online(m) {
+    if (!m || m.left) return false;
+    const pr = this.presence?.[m.slot];
+    if (!pr) return true;
+    if (pr.gone) return false;
+    const now = this.serverNow ? this.serverNow + (Date.now() - this.serverNowAt) : Date.now();
+    return now - pr.lastSeen < Math.max(OFFLINE_MS, 2 * (pr.hb || 0) + 10000);
   }
   handOff(v) {
     this.handedOff = true;
+    this.unwatch();
     G.meta.lastAscension = v.room.ascension;
-    new CoopSession(this.net, { roomId: v.room._id, code: v.room.code, mySlot: v.me, members: v.members, now: v.now }).start();
+    new CoopSession(this.net, { roomId: v.room._id, code: v.room.code, mySlot: v.me, members: v.members, now: this.serverNow ? this.serverNow + (Date.now() - this.serverNowAt) : undefined }).start();
   }
+  // Leaving the room screen (not into the game): the others see me offline at once rather than after a minute.
+  sayGoodbye() { if (this.mode === 'room' && this.roomId && this.watchToken && !this.handedOff) this.net?.goodbye?.(this.roomId, { unloading: false }); }
   backToMenu() {
-    clearTimeout(this.pollTimer);
+    this.sayGoodbye();
+    this.unwatch();
     this.mode = 'menu'; this.roomId = null; this.view = null;
-    this.refreshRooms();
+    this.watchRooms();
   }
   async leave() {
     const id = this.roomId;
     this.backToMenu();
     if (id) await this.act(net => net.leaveRoom(id));
-    this.refreshRooms();
+    if (!this.stopRooms) this.refreshRooms();
   }
 
   // ---- code entry -----------------------------------------------------------------------------
@@ -178,7 +225,7 @@ export class CoopLobbyScene {
       text(ctx, (r.members || []).map(m => `P${m.slot + 1} ${m.name}${m.saved ? ' (saved)' : ''}`).join(' · '), rx + 16, y + 18, { color: 'gray', font: 'small' });
       if (hot && clicked(rx + 8, y, rw - 16, 32) && !this.busy) { Sound.playSE('se_select'); this.openRoom(r.roomId); }
     });
-    if (button(ctx, 'REFRESH', rx + rw - 84, 286, 76, 20, { color: '#506080', font: 'small' })) { this.rooms = null; this.refreshRooms(); }
+    if (!this.stopRooms && button(ctx, 'REFRESH', rx + rw - 84, 286, 76, 20, { color: '#506080', font: 'small' })) { this.rooms = null; this.refreshRooms(); }
     if (button(ctx, 'BACK', 14, H - 34, 70, 24, { color: '#806060' })) this.toTitle();
   }
 
@@ -218,7 +265,7 @@ export class CoopLobbyScene {
       pixBox(ctx, 18, y + 4, 22, 14, PCOL[p], null, 2);
       text(ctx, `P${p + 1}`, 29, y + 5, { align: 'center', color: 'white', font: 'small' });
       if (!m) { text(ctx, p < 2 ? 'waiting for a partner...' : p < seats ? 'open seat' : 'closed (old version here)', 46, y + 6, { color: 'gray', font: 'small' }); draw(ctx, PSPRITE[p], 150, y + 4, { sx: 0, sy: 0, sw: 16, sh: 32, alpha: 0.3 }); continue; }
-      const online = !m.left && (!v.now || v.now - m.lastSeen < OFFLINE_MS);
+      const online = this.online(m);
       textFit(ctx, `${m.name}${p === me ? ' (you)' : ''}${room.host === p ? ' · HOST' : ''}`, 46, y + 5, 100, { color: 'white', font: 'small' });
       text(ctx, online ? 'online' : 'offline', 46, y + 20, { color: online ? 'lime' : 'gray', font: 'small' });
       text(ctx, m.ready ? 'READY' : 'not ready', 90, y + 20, { color: m.ready ? 'lime' : 'gray', font: 'small' });
@@ -252,7 +299,7 @@ export class CoopLobbyScene {
       const takers = v.members.filter(x => x.slot !== me && x.starter === sp).map(x => `P${x.slot + 1}`);
       if (taken) text(ctx, big ? takers.join(' ') : 'P', big ? cx + 31 : cx + tw - 6, cy + 2, { align: 'center', color: 'orange', font: 'small' });
       if (!big && hot) tip(D.species[sp].name, taken ? `${takers.join(', ')} picked this one too.` : 'Click to bring it.');
-      if (hot && clicked(cx, cy, tw, th) && !this.busy && !sel) { Sound.playCry(sp); this.act(net => net.setStarter(this.roomId, sp, ascUnlocked(G.meta, sp))).then(() => this.poll()); }
+      if (hot && clicked(cx, cy, tw, th) && !this.busy && !sel) { Sound.playCry(sp); this.act(net => net.setStarter(this.roomId, sp, ascUnlocked(G.meta, sp))); }
     });
     if (list.length <= 3) text(ctx, 'Clear acts (solo or co-op) to unlock more starters.', 425, 160, { align: 'center', color: 'gray', font: 'small' });
     // settings
@@ -274,9 +321,9 @@ export class CoopLobbyScene {
     textBlock(ctx, 'Each act draws its region from the run seed. HOENN acts join once the host has won a run, JOHTO acts once the host has won twice.', 430, 226, 186, { color: 'gray', font: 'small', lineHeight: 10 });
     // buttons
     const both = v.members.length >= 2 && v.members.every(x => x.starter);
-    if (mine && button(ctx, mine.ready ? 'READY ✓' : 'READY?', 224, 292, 120, 26, { color: mine.ready ? THEME.green : '#506080', disabled: this.busy })) this.act(net => net.setReady(this.roomId, !mine.ready)).then(() => this.poll());
+    if (mine && button(ctx, mine.ready ? 'READY ✓' : 'READY?', 224, 292, 120, 26, { color: mine.ready ? THEME.green : '#506080', disabled: this.busy })) this.act(net => net.setReady(this.roomId, !mine.ready));
     if (isHost) {
-      if (button(ctx, 'START', 506, 292, 120, 26, { color: THEME.green, disabled: !both || this.busy })) this.act(net => net.startRoom(this.roomId)).then(r => { if (r) this.poll(); });
+      if (button(ctx, 'START', 506, 292, 120, 26, { color: THEME.green, disabled: !both || this.busy })) this.act(net => net.startRoom(this.roomId));
       if (!both) text(ctx, v.members.length < 2 ? 'waiting for a second player' : 'everyone needs a starter', 566, 322, { align: 'center', color: 'gray', font: 'small' });
       else if (v.members.length < seats) text(ctx, `start with ${v.members.length} or wait`, 566, 322, { align: 'center', color: 'gray', font: 'small' });
     } else text(ctx, 'waiting for the host to start...', 566, 300, { align: 'center', color: 'gray', font: 'small' });
@@ -285,7 +332,7 @@ export class CoopLobbyScene {
     if (button(ctx, 'BACK', 90, H - 34, 70, 24, { color: '#506080' })) this.backToMenu();
     if (hover(90, H - 34, 70, 24)) tip('BACK', 'Back to the co-op menu; you keep your seat (REJOIN).');
   }
-  config(opts) { this.act(net => net.configure(this.roomId, opts)).then(() => this.poll()); }
+  config(opts) { this.act(net => net.configure(this.roomId, opts)); }
   toTitle() { import('../title.js').then(m => setScene(new m.TitleScene())); }
 }
 

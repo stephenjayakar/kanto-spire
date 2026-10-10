@@ -1,1 +1,1 @@
-{"name":"kanto-spire","private":true,"type":"commonjs","scripts":{"serve":"node serve.cjs 8080","sim":"node tests/sim.mjs 40 0"},"devDependencies":{"jose":"^6.2.12","playwright":"1.55"},"dependencies":{"@auth/core":"^0.41.3","@convex-dev/auth":"^0.0.96","convex":"^1.46.0"}}
+{"name":"kanto-spire","private":true,"type":"commonjs","scripts":{"serve":"node serve.cjs 8080","sim":"node tests/sim.mjs 40 0"},"devDependencies":{"jose":"^6.2.12","playwright":"1.55"},"dependencies":{"@auth/core":"^0.41.3","@convex-dev/auth":"^0.0.96","convex":"^1.46.0","fflate":"^0.8.2"}}

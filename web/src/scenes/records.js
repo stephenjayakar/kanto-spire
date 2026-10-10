@@ -3,7 +3,7 @@ import { regionByLetter } from '../game/regions.js';
 import { Engine, W, H, setScene, pushOverlay, hover } from '../engine/core.js';
 import { text, textFit } from '../engine/font.js';
 import { swirlBackground, button, panel, pixBox, rect, drawTips, tip, THEME, scrollArea } from '../engine/ui.js';
-import { Cloud, rename, signOut, createInviteLink, leaderboard, topTrainers, myRuns, pendingRuns, flushQueue } from '../net/cloud.js';
+import { Cloud, rename, signOut, createInviteLink, pendingRuns, flushQueue, watchLeaderboard, watchTopTrainers, watchMyRuns } from '../net/cloud.js';
 import { drawIcon, Modal, ChoiceModal } from './common.js';
 import { TitleScene } from './title.js';
 import { VERSION, PATCH_NOTES } from '../game/version.js';
@@ -35,19 +35,26 @@ function ago(ms) {
 
 export class RecordsScene {
   enter() { this.t = 0; this.tab = 'all'; this.version = 'all'; this.sort = 'recent'; this.load(); }
+  exit() { this.unwatch(); }
+  unwatch() { try { this.stopWatch?.(); } catch {} this.stopWatch = null; }
+  // The list on screen is a live subscription (staging-net): a run finished anywhere shows up without a refresh, and
+  // nothing is fetched again while it stays the same. A tab / version / sort change subscribes to the new list.
   async load() {
     const tab = this.tab, version = this.version === 'all' ? null : this.version;
     const token = this.loadToken = (this.loadToken || 0) + 1; // a newer load (tab or version change) wins
+    this.unwatch();
     this.rows = null; this.error = null; this.scroll = 0; this.contentH = 0;
     if (!Cloud.url) { this.error = 'Cloud records are off: this build has no cloud.json.'; return; }
-    try {
-      await flushQueue();
-      let rows;
-      if (tab === 'trainers') rows = await topTrainers(version);
-      else if (tab === 'mine') { const r = await myRuns(version); if (this.loadToken === token) this.mine = r; rows = r ? r.recent : []; }
-      else rows = await leaderboard(tab === 'all' ? null : tab, version, this.sort);
-      if (this.loadToken === token) this.rows = rows;
-    } catch (e) { if (this.loadToken === token) this.error = e.message; }
+    try { await flushQueue(); } catch {}
+    if (this.loadToken !== token) return;
+    const onRows = (rows) => { if (this.loadToken === token) { this.rows = rows; this.error = null; } };
+    const onErr = (e) => { if (this.loadToken === token) this.error = e.message; };
+    if (tab === 'trainers') this.stopWatch = watchTopTrainers(version, onRows, onErr);
+    else if (tab === 'mine') {
+      if (!Cloud.me) { this.rows = []; this.mine = null; return; }
+      this.stopWatch = watchMyRuns(version, (r) => { if (this.loadToken === token) this.mine = r; onRows(r ? r.recent : []); }, onErr);
+    }
+    else this.stopWatch = watchLeaderboard(tab === 'all' ? null : tab, version, this.sort, onRows, onErr);
   }
   update(dt) { this.t += dt; }
   // A one-time invite link, copied to the clipboard.
