@@ -21,7 +21,8 @@ import { RNG } from '../rng.js';
 // v0.3.8-v0.3.10 didn't; v0.3.11 did: foes stop self-KO moves, two legendaries at a co-op legendary node, shipped as
 // v0.3.14; v0.3.15-v0.3.18 didn't; v0.3.19 did: PROTECT / DETECT / ENDURE only move a hand first when they succeed;
 // v0.3.20-v0.3.22 didn't; v0.3.23 did: after a FLY / DIG / DIVE / BOUNCE dodge the lead is LANDING for a turn; v0.3.24
-// didn't; the next release does: HOENN trainers use Pokemon EMERALD's teams, CHAMPION WALLACE's rule, STEVEN in the SKY PILLAR act).
+// didn't; the next release does: HOENN trainers use Pokemon EMERALD's teams, CHAMPION WALLACE's rule, STEVEN in the SKY PILLAR act;
+// every Pokedex species is catchable (wild pools, rare finds)).
 // (Further logic changes for the same release fold into this id; once it ships, the next change needs a new one.)
 export const LOGIC_ID = 'v0325';
 // Actions from before v0.3.6 carry no stamp: they were played on v0.3.5 (or, for older rooms, earlier; the

@@ -180,6 +180,46 @@ export const JOHTO_ACTS = [
   },
 ];
 
+// v0.3.25: species the pools above leave out, added to JOHTO's wild areas (act id -> area name; every time of day) so
+// every Pokédex species can be caught somewhere (regions.js withFinds: extra = half as common as an average species there,
+// rare = a rare find). Strong and special species are rare finds, and late: the starters' final forms in act 4.
+export const JOHTO_FINDS = {
+  1: {
+    'ROUTE 29': { rare: ['CYNDAQUIL'] },
+    'ROUTE 30': { extra: ['LEDYBA'], rare: ['CHIKORITA'] },
+    'DARK CAVE': { extra: ['TEDDIURSA'] },
+    'ROUTE 32': { extra: ['TOGEPI'], rare: ['TOTODILE'] },
+    'RUINS OF ALPH': { extra: ['UNOWN'] },
+  },
+  2: {
+    'ILEX FOREST': { extra: ['PINECO'] },
+    'ROUTE 34': { rare: ['QUILAVA'] },
+    'ROUTE 35': { rare: ['BAYLEEF'] },
+    'NATIONAL PARK': { extra: ['SUNFLORA'], rare: ['TOGETIC'] },
+    'ROUTE 36': { extra: ['PHANPY'], rare: ['SUDOWOODO'] },
+    'ROUTE 37': { rare: ['CROCONAW'] },
+    'BURNED TOWER': { extra: ['HOUNDOUR'] },
+  },
+  3: {
+    'ROUTE 38': { rare: ['UMBREON', 'JUMPLUFF'] },
+    'ROUTE 39': { rare: ['ESPEON'] },
+    'ROUTE 41 SEA': { extra: ['QWILFISH'] },
+    'MT. MORTAR': { extra: ['TYROGUE'], rare: ['HITMONTOP', 'LARVITAR'] },
+    'ROUTE 42': { extra: ['GLIGAR'] },
+    'ROUTE 44': { rare: ['POLITOED', 'BELLOSSOM', 'FORRETRESS'] },
+    "DRAGON'S DEN": { rare: ['KINGDRA'] },
+  },
+  4: {
+    'ROUTE 27': { rare: ['TYPHLOSION', 'MEGANIUM'] },
+    'ROUTE 26': { rare: ['FERALIGATR', 'HOUNDOOM'] },
+    'TOHJO FALLS': { rare: ['SLOWKING'] },
+  },
+  5: {
+    'ROUTE 28': { extra: ['URSARING'] },
+  },
+};
+for (const a of JOHTO_ACTS) for (const ar of a.areas) Object.assign(ar, JOHTO_FINDS[a.id]?.[ar.name]);
+
 export const JOHTO_LEGENDS = {
   // (LEGEND_RAIKOU / ENTEI / SUICUNE / LUGIA / HO_OH already exist in acts.js LEGENDS; CELEBI in hoenn.js)
 };

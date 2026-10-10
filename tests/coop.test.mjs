@@ -388,10 +388,10 @@ t('v0.0.5: wild no-repeat in co-op (two different foes, never met again while th
     const c = duoConfig(w, { id: 'n' + i, floor: 2, type: 'wild' });
     const sp = c.enemies.map(e => e.species);
     assert.notEqual(sp[0], sp[1], 'the two wild foes differ');
-    // (this early pool has 6 POKéMON: the first 3 battles never repeat, later ones may)
+    // (this early pool has 6 POKéMON + 2 rare finds (v0.3.25): the first 3 battles never repeat, later ones may)
     if (i < 3) for (const x of sp) { assert.ok(!seen.has(x), `${x} repeated`); seen.add(x); }
   }
-  assert.equal(w.wildSeen.length, 6);
+  assert.equal(w.wildSeen.length, 8);
 });
 
 // ------------------------------------------------------------------------- v0.0.6 rival / legendary nodes

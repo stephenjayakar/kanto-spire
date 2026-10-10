@@ -163,6 +163,11 @@ export function botTurn(b, run, skill) {
   }
   if (b.result) return [];
   const { best, value } = chooseHand(b, skill);
+  // a wild foe the hand can't hurt (a rare-find SHEDINJA's WONDER GUARD): throw a ball, else run
+  if (e.ability === 'WONDER_GUARD' && b.canFlee() && (!best || dryScore(b, best) <= 0)) {
+    const ball = b.canCatch() ? bestBall(run, e, b) : null;
+    return ball ? b.throwBall(ball) : b.flee();
+  }
   if (!best) {
     if (b.discardsLeft > 0 && b.deck.hand.length) return b.discard(b.deck.hand.slice(0, 5).map(c => c.id));
     return b.pass ? b.pass() : [];

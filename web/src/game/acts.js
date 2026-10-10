@@ -108,6 +108,41 @@ export const ACTS = [
   },
 ];
 
+// v0.3.25: species FireRed's tables leave out, added to KANTO's wild areas (by map) so every Pokédex species can be
+// caught somewhere (regions.js withFinds: extra = half as common as an average species there, rare = a rare find). Strong
+// and special species are rare finds, and late: the starters' final forms in act 4, DRAGONITE in the post-game.
+export const KANTO_FINDS = {
+  MAP_ROUTE2: { rare: ['BULBASAUR'] },
+  MAP_VIRIDIAN_FOREST: { extra: ['PICHU'] },
+  MAP_ROUTE22: { rare: ['SQUIRTLE'] },
+  MAP_ROUTE3: { extra: ['IGGLYBUFF'], rare: ['CHARMANDER'] },
+  MAP_MT_MOON_1F: { extra: ['CLEFFA'] },
+  MAP_MT_MOON_B2F: { rare: ['OMANYTE', 'KABUTO'] },
+  MAP_ROUTE24: { rare: ['CHARMELEON'] },
+  MAP_ROUTE25: { rare: ['IVYSAUR'] },
+  MAP_ROUTE6: { rare: ['WARTORTLE'] },
+  MAP_ROUTE7: { extra: ['EEVEE'] },
+  MAP_ROUTE11: { rare: ['MR_MIME'] },
+  MAP_ROUTE12: { rare: ['VICTREEBEL'] },
+  MAP_ROUTE15: { rare: ['VILEPLUME'] },
+  MAP_SAFARI_ZONE_CENTER: { rare: ['KANGASKHAN'] },
+  MAP_SAFARI_ZONE_NORTH: { rare: ['EXEGGUTOR', 'SCIZOR'] },
+  MAP_POWER_PLANT: { extra: ['ELEKID', 'PORYGON'], rare: ['RAICHU', 'JOLTEON', 'PORYGON2'] },
+  MAP_SEAFOAM_ISLANDS_B3F: { extra: ['STARYU', 'SMOOCHUM'], rare: ['LAPRAS', 'CLOYSTER', 'STARMIE', 'VAPOREON'] },
+  MAP_POKEMON_MANSION_1F: { extra: ['MAGBY'], rare: ['NINETALES', 'FLAREON'] },
+  MAP_POKEMON_MANSION_B1F: { rare: ['MUK', 'AERODACTYL'] },
+  MAP_ROUTE23: { extra: ['WIGGLYTUFF'], rare: ['VENUSAUR', 'CHARIZARD', 'BLASTOISE'] },
+  MAP_VICTORY_ROAD_1F: { rare: ['CLEFABLE', 'HITMONLEE', 'NIDOQUEEN'] },
+  MAP_VICTORY_ROAD_2F: { rare: ['GOLEM', 'HITMONCHAN', 'NIDOKING'] },
+  MAP_VICTORY_ROAD_3F: { rare: ['MACHAMP', 'POLIWRATH'] },
+  MAP_ONE_ISLAND_KINDLE_ROAD: { rare: ['ARCANINE'] },
+  MAP_SIX_ISLAND_RUIN_VALLEY: { rare: ['OMASTAR', 'KABUTOPS'] },
+  MAP_FIVE_ISLAND_LOST_CAVE_ROOM1: { rare: ['GENGAR'] },
+  MAP_SEVEN_ISLAND_SEVAULT_CANYON: { rare: ['DRAGONITE'] },
+  MAP_CERULEAN_CAVE_B1F: { rare: ['ALAKAZAM', 'RHYDON', 'BLISSEY'] },
+};
+for (const a of ACTS) for (const ar of a.areas) Object.assign(ar, KANTO_FINDS[ar.map]);
+
 // Legendary encounters used as elites/bosses: wild battles that can be caught.
 export const LEGENDS = {
   LEGEND_ZAPDOS: { species: 'ZAPDOS', title: 'ZAPDOS', terrain: 'building', music: 'mus_vs_legend' },

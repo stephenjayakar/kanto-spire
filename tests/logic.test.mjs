@@ -10,10 +10,10 @@ import { Run, movePool, MOVE_POOL, FALLBACK_MOVES } from '../web/src/game/run.js
 import { Battle, makeEnemy, isSelfKO, SELF_KO_HP, withoutSelfKO } from '../web/src/game/battle.js';
 import { makeMon, maxHp, gainExp, defaultMoves, canLearn, defaultCopies, replacedCopies, DECK_RULES, NO_PLAYER_MOVES, movesLearnedAt } from '../web/src/game/pokemon.js';
 import { generateMap, reachable } from '../web/src/game/map.js';
-import { ACTS, STARTERS, GEN3_TYPES, BIRDS, LEGENDS, BIRD_PARTNER, counterStarter } from '../web/src/game/acts.js';
+import { ACTS, STARTERS, GEN3_TYPES, BIRDS, LEGENDS, BIRD_PARTNER, counterStarter, KANTO_FINDS } from '../web/src/game/acts.js';
 import { NUZLOCKE_ASC, ASCENSIONS, MAX_ASCENSION, TUNING } from '../web/src/game/run.js';
 import { unlockShiny, shinyUnlocked } from '../web/src/game/state.js';
-import { HOENN_ACTS } from '../web/src/game/hoenn.js';
+import { HOENN_ACTS, HOENN_FINDS } from '../web/src/game/hoenn.js';
 import { RNG } from '../web/src/game/rng.js';
 import { RELICS, BADGES, CONSUMABLES } from '../web/src/game/items.js';
 import { generateShop, buyItem } from '../web/src/game/shop.js';
@@ -1393,7 +1393,7 @@ t('ascension: the shiny unlock (A5+) and Nuzlocke (A8) rules are unchanged', () 
   });
 
   // ---- v0.1.1 JOHTO (third spire region, HeartGold) ------------------------------------------------------------
-  const { JOHTO_ACTS, JOHTO_TRAINERS } = await import('../web/src/game/johto.js');
+  const { JOHTO_ACTS, JOHTO_TRAINERS, JOHTO_FINDS } = await import('../web/src/game/johto.js');
   const { BOSS_RULES } = await import('../web/src/game/bosses.js');
   const { SILVER_STARTER, rivalParty } = await import('../web/src/game/acts.js');
   const ITEMS = await import('../web/src/game/items.js');
@@ -1572,7 +1572,8 @@ t('ascension: the shiny unlock (A5+) and Nuzlocke (A8) rules are unchanged', () 
         assert.equal(r.timeOfDay(f), tod);
         const c = r.wildConfig(new RNG(`w${a}${f}${s}`), f);
         assert.equal(c.timeOfDay, tod);
-        const open = new Set(act.areas.filter(ar => ar.from <= f / act.floors + 0.001).flatMap(ar => RG.areaPool(ar, tod)));
+        // (+ the areas' extra species and rare finds, v0.3.25)
+        const open = new Set(act.areas.filter(ar => ar.from <= f / act.floors + 0.001).flatMap(ar => [...RG.areaPool(ar, tod), ...(ar.extra || []), ...(ar.rare || [])]));
         assert.ok(open.has(c.enemies[0].wildBase), `${act.short} F${f} ${tod}: ${c.enemies[0].wildBase} not in that pool`);
       }
     }
@@ -1647,6 +1648,95 @@ t('ascension: the shiny unlock (A5+) and Nuzlocke (A8) rules are unchanged', () 
     const seen = [new Set(), new Set(), new Set(), new Set()];
     for (let i = 0; i < 300; i++) RG.drawSpire('J' + i, [Kt, Ht, J]).acts.forEach((id, k) => seen[k].add(id));
     for (const s of seen) assert.deepEqual([...s].sort(), [Ht, J, Kt]);
+  });
+
+  // ---- v0.3.25 every Pokédex species is catchable ---------------------------------------------------------------
+  // An area's wild entries as run.js wildConfig sees them (every time of day): [{ species, rare }].
+  const wildEntries = (ar) => {
+    const enc = D.encounters[ar.map] || {};
+    const base = ar.pool ? RG.areaPool(ar) : (enc.land && enc.land.length ? enc.land : enc.water || enc.fishing || []).map(e => e.species);
+    return [...base.map(species => ({ species, rare: false })), ...(ar.extra || []).map(species => ({ species, rare: false })), ...(ar.rare || []).map(species => ({ species, rare: true }))];
+  };
+  // The levels act slot t's wild POKéMON can have (levelFor -1..+1, +2 at the top ascensions; the post-game keeps its own).
+  const wildLevels = (t, act) => { const lv = t < RG.TIERS.length ? RG.TIERS[t].levels : act.levels; return [lv[0] - 1, lv[1] + 3]; };
+  const EV_LEGENDARY = ['ARTICUNO', 'ZAPDOS', 'MOLTRES', 'MEWTWO', 'MEW', 'RAIKOU', 'ENTEI', 'SUICUNE', 'LUGIA', 'HO_OH', 'CELEBI', 'REGIROCK', 'REGICE', 'REGISTEEL', 'LATIAS', 'LATIOS', 'KYOGRE', 'GROUDON', 'RAYQUAZA', 'JIRACHI', 'DEOXYS'];
+  const bstOf = (sp) => Object.values(D.species[sp].stats).reduce((a, x) => a + x, 0);
+
+  t('v0.3.25 catch-all: every species #1-386 but the legendaries can be caught as itself on a wild node (or a legendary node)', () => {
+    const src = fs.readFileSync(new URL('../web/src/game/events.js', import.meta.url), 'utf8');
+    const legendary = new Set(JSON.parse(src.match(/const LEGENDARY = new Set\((\[[^\]]*\])\)/)[1].replace(/'/g, '"')));
+    assert.deepEqual([...legendary].sort(), [...EV_LEGENDARY].sort(), 'events.js LEGENDARY');
+    const catchable = new Set();
+    for (const rid of RG.REGION_IDS) RG.REGIONS[rid].acts.forEach((act, t) => {
+      const [lo, hi] = wildLevels(t, act);
+      for (const ar of act.areas) for (const { species } of wildEntries(ar)) {
+        if (!D.species[species]) continue;
+        // a pick shows up as its LEVEL evolution once the level is 6+ past it (run.js wildConfig)
+        const evo = D.species[species].evolutions?.find(e => e.method === 'LEVEL');
+        if (!evo || !D.species[evo.into] || lo < evo.param + 6) catchable.add(species);
+        if (evo && D.species[evo.into] && hi >= evo.param + 6) catchable.add(evo.into);
+      }
+      for (const k of [act.bird, ...(act.elites || []), ...(act.bosses || [])]) if (LEGENDS[k]) catchable.add(LEGENDS[k].species);
+    });
+    const missing = Object.values(D.species).filter(s => s.dex >= 1 && s.dex <= 386 && !legendary.has(s.key) && !catchable.has(s.key)).map(s => `#${s.dex} ${s.key}`);
+    assert.deepEqual(missing, [], 'no direct catch source');
+  });
+
+  t('v0.3.25 catch-all: every region\'s pools name real Gen 1-3 species; added species are new to their area, never legendary, and strong ones rare and late', () => {
+    for (const rid of RG.REGION_IDS) RG.REGIONS[rid].acts.forEach((act, t) => {
+      for (const ar of act.areas) {
+        const where = `${rid} act ${t + 1} ${ar.name}`;
+        const all = wildEntries(ar);
+        for (const { species } of all) {
+          assert.ok(D.species[species], `${where}: unknown species ${species}`);
+          assert.ok(D.species[species].dex >= 1 && D.species[species].dex <= 386, `${where}: ${species} is not Gen 1-3`);
+        }
+        const added = [...(ar.extra || []), ...(ar.rare || [])];
+        const base = new Set(all.slice(0, all.length - added.length).map(e => e.species));
+        assert.equal(new Set(added).size, added.length, `${where}: a species added twice`);
+        for (const sp of added) {
+          assert.ok(!base.has(sp), `${where}: ${sp} is already in the area's pool`);
+          assert.ok(!EV_LEGENDARY.includes(sp), `${where}: ${sp} is legendary (legendary nodes only)`);
+          // strength by act slot: act 1 only weak species; act 2 extras < 450 BST, rares < 500; acts 3-4 extras < 500,
+          // rares < 600 (BST 600: DRAGONITE / SALAMENCE / METAGROSS only in the post-game)
+          if (act.postgame) continue;
+          const b = bstOf(sp), rare = (ar.rare || []).includes(sp);
+          const cap = t === 0 ? 400 : t === 1 ? (rare ? 500 : 450) : (rare ? 600 : 500);
+          assert.ok(b < cap, `${where}: ${sp} (BST ${b}) too strong for act ${t + 1}${rare ? ' even as a rare find' : ' unless a rare find'}`);
+        }
+      }
+    });
+    // KANTO_FINDS / HOENN_FINDS / JOHTO_FINDS only name areas that exist
+    const kantoMaps = new Set(ACTS.flatMap(a => a.areas.map(ar => ar.map)));
+    for (const m of Object.keys(KANTO_FINDS)) assert.ok(kantoMaps.has(m), 'KANTO_FINDS ' + m);
+    for (const [acts, finds, name] of [[HOENN_ACTS, HOENN_FINDS, 'HOENN'], [JOHTO_ACTS, JOHTO_FINDS, 'JOHTO']]) {
+      for (const [id, areas] of Object.entries(finds)) for (const n of Object.keys(areas)) assert.ok(acts.find(a => a.id === +id)?.areas.some(ar => ar.name === n), `${name}_FINDS act ${id} ${n}`);
+    }
+  });
+
+  t('v0.3.25 catch-all: rare finds are rare, flagged and named in battle; extras are half as common as an average species', () => {
+    const base = [{ species: 'PIDGEY', rate: 30 }, { species: 'PIDGEY', rate: 20 }, { species: 'RATTATA', rate: 50 }];
+    const out = RG.withFinds({ extra: ['PICHU'], rare: ['DRAGONITE'] }, base);
+    assert.deepEqual(out.slice(0, 3), base);
+    assert.deepEqual(out[3], { species: 'PICHU', rate: 50 * RG.EXTRA_WEIGHT }); // (2 species, 100 in all: 50 on average)
+    assert.deepEqual(out[4], { species: 'DRAGONITE', rate: 100 * RG.RARE_SHARE, rare: true });
+    assert.equal(RG.withFinds({ pool: ['A'] }, base), base, 'no finds: the same list');
+    // wild configs over many seeds: a rare find shows up now and then, and is flagged
+    const r = spireRun(SP([Kt, Kt, Kt, Kt]), { act: 0, seed: 'RAREFIND' });
+    let rare = 0, cfg = null;
+    const N = 600;
+    for (let i = 0; i < N; i++) {
+      r.wildSeen = [];
+      const c = r.wildConfig(new RNG('rf' + i), 14);
+      const e = c.enemies[0];
+      const isRare = r.act.areas.some(ar => (ar.rare || []).includes(e.wildBase));
+      assert.equal(!!e.rareFind, isRare, `${e.wildBase}: rareFind flag`);
+      if (isRare) { rare++; cfg ||= c; }
+    }
+    assert.ok(rare > 0 && rare / N < 0.1, `rare finds ${rare}/${N}`);
+    const b = new Battle(r, cfg);
+    const evs = b.start();
+    assert.ok(evs.some(ev => ev.t === 'msg' && /appeared! A rare find!/.test(ev.text)), 'battle names the rare find');
   });
 
   t('v0.1.1 Apricorn balls: price + catch rule each, never change damage', () => {
