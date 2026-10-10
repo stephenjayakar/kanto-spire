@@ -12,7 +12,7 @@ import { BOSS_RULES, bossTypes, bossTypeLabel } from '../game/bosses.js';
 import { CONSUMABLES, RELICS } from '../game/items.js';
 import { Sound } from '../audio/sound.js';
 import { monName } from '../game/pokemon.js';
-import { drawHUD, drawPartyPanel, drawIcon, drawPortrait, drawTrainer, DeckModal, PartyPicker, MessageBox, MoveReplaceModal, ChoiceModal, monTooltip, drawTypeTags } from './common.js';
+import { drawHUD, drawPartyPanel, drawIcon, drawPortrait, drawTrainer, DeckModal, PartyPicker, MessageBox, MoveReplaceModal, ChoiceModal, monTooltip, drawTypeTags, monSprite } from './common.js';
 import { enterNode } from './flow.js';
 import { useConsumableOutside } from './items_ui.js';
 import { showPendingStarterOffer } from './unlock.js';
@@ -358,7 +358,7 @@ export class MapScene {
       text(ctx, 'ELITE FOUR', x + w / 2, 104, { align: 'center', color: 'gold' });
     } else if (LEGENDS[run.boss]) {
       import('./common.js').then(() => {});
-      draw(ctx, `gfx/pokemon/${LEGENDS[run.boss].species.toLowerCase()}/front.png`, x + w / 2 - 32, 46);
+      draw(ctx, monSprite(LEGENDS[run.boss].species), x + w / 2 - 32, 46);
       text(ctx, this.bossTitle(), x + w / 2, 112, { align: 'center', color: 'gold' });
     } else {
       const t = D.trainers[run.boss];

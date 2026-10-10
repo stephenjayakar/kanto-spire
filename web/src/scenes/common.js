@@ -21,11 +21,13 @@ export function monFolder(species) {
   const g = D.species[species]?.gfx || species.toLowerCase();
   return g.replace('/', '_');
 }
-export function monSprite(species, kind = 'front', shiny = false) { return `gfx/pokemon/${monFolder(species)}/${kind}${shiny ? '_shiny' : ''}.png`; }
+// A species' sprite folder: gfx/pokemon/<folder>, or its own gfxDir (the hidden Gen 4 species: gfx/gen4/pokemon/<mon>).
+export function monDir(species) { return D.species[species]?.gfxDir || `gfx/pokemon/${monFolder(species)}`; }
+export function monSprite(species, kind = 'front', shiny = false) { return `${monDir(species)}/${kind}${shiny ? '_shiny' : ''}.png`; }
 
 // 32x32 party icon (2 frames stacked vertically), animated.
 export function drawIcon(ctx, species, x, y, opts = {}) {
-  const path = `gfx/pokemon/${monFolder(species)}/icon.png`;
+  const path = `${monDir(species)}/icon.png`;
   const frame = opts.still ? 0 : Math.floor((Engine.time * (opts.fast ? 6 : 3)) % 2);
   const im = img(path);
   if (!ready(im)) return;

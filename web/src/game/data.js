@@ -8,6 +8,7 @@ import { MOVE_DESC, ABILITY_DESC } from './text_overrides.js';
 import { applyGen4Moves } from './gen4_moves.js';
 import { RELICS, BALLS } from './items.js';
 import * as GEN4_DATA from './gen4_data.js';
+import { GEN4_ENABLED, loadGen4, applyGen4 } from './gen4.js';
 
 export const D = {
   species: {}, moves: {}, types: { list: [], chart: {} }, items: {}, trainers: {},
@@ -25,6 +26,8 @@ export async function loadData(loader) {
   await Promise.all(Object.entries(FILES).map(async ([k, f]) => {
     try { D[k] = await loader(f); } catch (e) { console.warn('data load failed', f, e); }
   }));
+  // Gen 4 species (gen4.js): hidden, so with the flag off this file isn't even read.
+  if (GEN4_ENABLED) { try { applyGen4(D, await loadGen4(loader)); } catch (e) { console.warn('data load failed', 'gen4', e); } }
   indexData();
   return D;
 }

@@ -1,8 +1,11 @@
 // Packs web/assets/ into files and uploads the changed ones to Convex file storage, where GET /pack serves them
 // to allowlisted accounts only (the hosted static site has no assets).
-// Usage: node tools/upload_packs.cjs [--prod] [--dry] [--out <dir>]
+// Usage: node tools/upload_packs.cjs [--prod] [--dry] [--out <dir>] [--gen4]
 //   --dry        build and print the packs, upload nothing
 //   --out <dir>  also write every pack as <dir>/<name>-<hash>.ksp (the test pack cache, tests/pack_cache.cjs)
+//   --gen4       include the 'gen4' pack (data/gfx/sound under gen4/: the hidden Gen 4 species, game/gen4.js).
+//                Without it those files are left out entirely, so nobody downloads them while GEN4_ENABLED is
+//                false; pass it with the release that turns the flag on.
 //
 // v0.3.21, to keep downloads small (Convex egress):
 // - PNGs are stored losslessly re-encoded (tools/pngopt.cjs: palette PNGs for the 16-colour sprites, about half
@@ -19,15 +22,16 @@ const { optimizePng } = require('./pngopt.cjs');
 
 const root = path.join(__dirname, '..'), assets = path.join(root, 'web', 'assets');
 const args = process.argv.slice(2);
-const prod = args.includes('--prod'), dry = args.includes('--dry');
+const prod = args.includes('--prod'), dry = args.includes('--dry'), withGen4 = args.includes('--gen4');
 const outDir = args.includes('--out') ? path.resolve(args[args.indexOf('--out') + 1]) : null;
 if (!fs.existsSync(path.join(assets, 'data'))) { console.error('web/assets is missing; run the extract tools first.'); process.exit(1); }
 
 const POKEMON_BUCKETS = 8;
-const LAZY = new Set(['sound', 'anims', 'hgss']);
+const LAZY = new Set(['sound', 'anims', 'hgss', 'gen4']);
 function fnv1a(s) { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619) >>> 0; return h; }
 // Which pack a file goes in (each stays far under the 20 MB HTTP action response limit).
 function packOf(rel) {
+  if (/^(data|gfx|sound)\/gen4\//.test(rel)) return 'gen4';
   if (rel.includes('/hgss/')) return 'hgss';
   if (rel.startsWith('anims/')) return 'anims';
   if (rel.startsWith('sound/')) return 'sound';
@@ -63,7 +67,9 @@ function build() {
   const groups = {};
   for (const f of walk(assets).sort()) {
     const rel = path.relative(assets, f).split(path.sep).join('/');
-    (groups[packOf(rel)] ||= []).push([rel, f]);
+    const pack = packOf(rel);
+    if (pack === 'gen4' && !withGen4) continue;
+    (groups[pack] ||= []).push([rel, f]);
   }
   return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b)).map(([name, list]) => {
     const files = {}, bufs = [];

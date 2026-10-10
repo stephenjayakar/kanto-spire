@@ -11,7 +11,7 @@ fs.mkdirSync(out, { recursive: true });
 for (const e of fs.readdirSync(out)) fs.rmSync(path.join(out, e), { recursive: true, force: true });
 const skip = s => {
   const rel = path.relative(web, s).split(path.sep).join('/');
-  return rel === 'assets' || rel.startsWith('assets/') || rel === 'cloud.json' || /(audio-test|animlab)\.html$/.test(rel);
+  return rel === 'assets' || rel.startsWith('assets/') || rel === 'cloud.json' || /(audio-test|animlab|gen4lab)\.html$/.test(rel);
 };
 fs.cpSync(web, out, { recursive: true, dereference: true, filter: s => !skip(s) });
 fs.writeFileSync(path.join(out, 'cloud.json'), JSON.stringify({ convexUrl: url, packs: true }, null, 2) + '\n');

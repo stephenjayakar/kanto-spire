@@ -1,0 +1,26 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Kanto Spire - Gen 4 lab (hidden species)</title>
+<style>
+body{background:#1c2024;color:#ddd;font:12px monospace;margin:10px}
+h1{font-size:15px;margin:4px 0} h2{font-size:13px;margin:14px 0 6px;color:#f8d030}
+#ui{margin:6px 0} #ui label{margin-right:12px}
+.grid{display:flex;flex-wrap:wrap;gap:4px}
+.card{width:136px;background:#c8d8c8;color:#222;border:2px solid #586858;padding:2px;text-align:center;cursor:pointer;position:relative}
+.card.leg{background:#e8d8a8} .card.myth{background:#e0c0e0}
+.spr{width:128px;height:128px;margin:0 auto;background-repeat:no-repeat;image-rendering:pixelated}
+.ico{position:absolute;right:2px;top:2px;width:32px;height:32px;background-repeat:no-repeat;image-rendering:pixelated}
+.nm{font-weight:bold} .tp{font-size:10px;color:#444}
+.row{display:flex;align-items:flex-end;gap:6px;background:#c8d8c8;color:#222;border:2px solid #586858;padding:4px;margin:0 6px 6px 0}
+.row img{width:128px;height:128px;image-rendering:pixelated}
+.rows{display:flex;flex-wrap:wrap}
+.arrow{font-size:20px;align-self:center} .cap{font-size:10px;text-align:center}
+</style>
+</head><body>
+<h1>Gen 4 lab: the hidden HeartGold species (GEN4_ENABLED = <span id="flag"></span>)</h1>
+<div id="ui"><label><input type="checkbox" id="shiny"> shiny</label><label><input type="checkbox" id="back"> back</label><label><input type="checkbox" id="still"> still (frame 0)</label><span id="info"></span></div>
+<h2>National dex 387-493 at 2x (the in-battle scale), front sprites animated with HGSS's 2-frame idle; click to play the cry</h2>
+<div class="grid" id="grid"></div>
+<h2>Cross-gen evolutions: the FireRed sprite in the game today, then the Gen 4 form (same 2x scale)</h2>
+<div class="rows" id="cross"></div>
+<script type="module" src="src/dev/gen4lab.js"></script>
+</body></html>

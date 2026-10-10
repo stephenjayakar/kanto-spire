@@ -8,7 +8,7 @@ import { G, shinyUnlocked } from '../game/state.js';
 import { familyOf } from '../game/run.js';
 import { NO_PLAYER_MOVES } from '../game/pokemon.js';
 import { Sound } from '../audio/sound.js';
-import { drawIcon, drawMon, drawTypeTags, monFolder, Modal } from './common.js';
+import { drawIcon, drawMon, drawTypeTags, monDir, Modal } from './common.js';
 import { TitleScene } from './title.js';
 
 const DEX_MAX = 386, PER_PAGE = 120, COLS = 15;
@@ -320,7 +320,7 @@ export class DexEntry extends Modal {
         if (cur) pixBox(ctx, ix - 1, ey + 2, 30, 28, '#f8f0d0', '#d0a030', 2);
         if (seen) drawIcon(ctx, n.key, ix - 2, ey - 2, { still: !cur });
         else {
-          const sil = tinted(`gfx/pokemon/${monFolder(n.key)}/icon.png`, '#3a3428', 1); // (not seen yet: a silhouette)
+          const sil = tinted(`${monDir(n.key)}/icon.png`, '#3a3428', 1); // (not seen yet: a silhouette)
           if (sil) ctx.drawImage(sil, 0, 0, 32, 32, Math.round(ix - 2), Math.round(ey - 2), 32, 32);
         }
         if (hover(ex, ey + 2, c.ew, Math.min(26, pitch))) {
