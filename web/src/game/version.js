@@ -8,6 +8,9 @@ export const PATCH_NOTES = [
   {
     v: 'v0.3.23',
     sections: [
+      ['NEW', [
+        'Click a POKéMON in the Pokédex for its entry: description, stats, abilities, evolutions and moves',
+      ]],
       ['CHANGES', [
         'After FLY, DIG, DIVE or BOUNCE dodges, your POKéMON spends the next turn LANDING: no dodging or protecting',
       ]],
