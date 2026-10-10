@@ -292,8 +292,6 @@ export class Battle {
     else if (ms.recharge > 0) { playable = false; reason = ms.rechargeKind === 'charging' ? 'CHARGING' : 'RECHARGING'; }
     else if (ms.drowsy) { playable = false; reason = 'DROWSY'; }
     else if (card.frozen) { playable = false; reason = 'ICED'; }
-    // v0.3.23: the turn after a FLY / DIG / DIVE / BOUNCE dodge the lead is landing: no dodging or protecting again
-    else if (ms.landing === this.turn && (move.effect === 'SEMI_INVULNERABLE' || PROTECT_EFFECTS.has(move.effect))) { playable = false; reason = 'LANDING'; }
     else if (abilityOf(owner) === 'TRUANT' && this.handsPlayed % 2 === 1) { playable = false; reason = 'LOAFING'; }
     const power = move.power || 0;
     const statVal = physical ? st.atk : st.spa;
@@ -784,7 +782,6 @@ export class Battle {
     }
     // If the lead fainted to a faster enemy, cards from it fizzle; others still go.
     this.resolveHand(infos);
-    this.markLanding(!enemyFirst);
     // Played cards go back to their owner's discard pile (even if it was knocked out meanwhile).
     for (const c of cards) {
       if (kickers.has(c) && c.uid === this.leadUid) this.deck.hand.push(c);
@@ -796,13 +793,6 @@ export class Battle {
     if (!this.result) this.endTurn();
     if (!this.result) this.startTurn();
     return this.takeEvents();
-  }
-
-  // A dodge this hand (FLY / DIG / DIVE / BOUNCE) that came before the foe's move: that POKéMON lands next turn, so
-  // its dodging and protecting cards wait a turn (v0.3.23: no endless FLY / PROTECT loop). foeStillToAct: a foe moves after.
-  markLanding(foeStillToAct) {
-    const ps = this.sides.player;
-    if (foeStillToAct && ps.dodge && ps.dodgeUid) this.ms(ps.dodgeUid).landing = this.turn + 1;
   }
 
   // Nothing in hand can legally be played (asleep, frozen, recharging, boss rules...): give up the hand

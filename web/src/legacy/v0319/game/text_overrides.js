@@ -7,10 +7,10 @@ export const MOVE_DESC = {
   TELEPORT: 'Ends a wild battle at once (no rewards). Against trainers and bosses, the foe hesitates instead.',
   ROAR: 'Scares off a wild foe, ending the battle (no rewards). Against trainers and bosses, the foe hesitates instead.',
   WHIRLWIND: 'Blows away a wild foe, ending the battle (no rewards). Against trainers and bosses, the foe hesitates instead.',
-  FLY: 'Hits at once. If the foe acts after you, your lead flies out of reach and dodges its attack, then spends the next turn landing (no dodging or protecting).',
-  DIG: 'Hits at once. If the foe acts after you, your lead burrows underground and dodges its attack, then spends the next turn landing (no dodging or protecting).',
-  DIVE: 'Hits at once. If the foe acts after you, your lead dives underwater and dodges its attack, then spends the next turn landing (no dodging or protecting).',
-  BOUNCE: 'Hits at once. If the foe acts after you, your lead springs out of reach and dodges its attack, then spends the next turn landing (no dodging or protecting).',
+  FLY: 'Hits at once. If the foe acts after you, your lead flies out of reach and dodges its attack.',
+  DIG: 'Hits at once. If the foe acts after you, your lead burrows underground and dodges its attack.',
+  DIVE: 'Hits at once. If the foe acts after you, your lead dives underwater and dodges its attack.',
+  BOUNCE: 'Hits at once. If the foe acts after you, your lead springs out of reach and dodges its attack.',
 
   // ---- charge / rampage / delayed moves that resolve in one turn ----
   SOLAR_BEAM: "Blasts the foe at once, then the user's cards rest next turn. No rest in sunlight; weakened in rain.",

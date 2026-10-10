@@ -503,13 +503,13 @@ export class DuoBattle {
     }
     const order = (a) => (a.kind === 'enemy' ? 1 : 0);
     actors.sort((a, b) => (b.prio - a.prio) || (b.quick - a.quick) || (b.spd - a.spd) || (order(a) - order(b)) || ((a.p ?? a.i) - (b.p ?? b.i)));
-    for (const [ai, a] of actors.entries()) {
+    for (const a of actors) {
       if (this.result) {
         // (the battle ended before this hand: a REST in it still heals and cures, v0.3.7)
         if (a.kind === 'hand') { const s = this.subs[a.p]; if (!this.out(a.p)) s.lateRest(a.cards.map(c => s.cardInfo(c))); s.returnPlayed(a.cards); }
         continue;
       }
-      if (a.kind === 'hand') { this.execHand(a); this.subs[a.p].markLanding(actors.slice(ai + 1).some(x => x.kind === 'enemy' && this.intents[x.i]?.target === a.p)); }
+      if (a.kind === 'hand') this.execHand(a);
       else if (a.kind === 'ball') this.execBall(a);
       else this.execEnemy(a);
     }

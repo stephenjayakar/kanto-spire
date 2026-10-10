@@ -1912,5 +1912,24 @@ t('PROTECT only moves the hand first when it works (v0.3.19)', () => {
   assert.ok(ev.some(e => e.t === 'msg' && /failed/i.test(e.text)), 'it still says it failed');
 });
 
+t('FLY: after a dodge the lead is LANDING for a turn: no FLY / DIG / PROTECT (v0.3.23)', () => {
+  const { b, lead } = soloWith(slowFoe(['TACKLE']), [], 'LAND1'); // the foe is slower: the hand goes first, FLY dodges
+  b.play(handOf(b, ['FLY']));
+  assert.equal(b.ms(lead.uid).landing, b.turn, 'landing this turn');
+  const infoOf = (m) => { const id = handOf(b, [m])[0]; return b.cardInfo(b.deck.hand.find(c => c.id === id)); };
+  for (const m of ['FLY', 'DIG', 'PROTECT', 'DETECT', 'ENDURE']) {
+    const info = infoOf(m);
+    assert.ok(!info.playable && info.reason === 'LANDING', m + ' waits while landing');
+  }
+  assert.ok(infoOf('GUST').playable, 'attacks still work while landing');
+  b.play(handOf(b, ['GUST']));
+  assert.ok(infoOf('FLY').playable, 'FLY is back the turn after');
+  // a faster foe moved first: no dodge happened, so no landing
+  const fast = slowFoe(['TACKLE']); fast.stats.spe = 999;
+  const r2 = soloWith(fast, [], 'LAND2');
+  r2.b.play(handOf(r2.b, ['FLY']));
+  assert.notEqual(r2.b.ms(r2.lead.uid).landing, r2.b.turn, 'no landing when the foe already moved');
+});
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
