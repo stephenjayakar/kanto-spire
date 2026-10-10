@@ -1662,10 +1662,9 @@ t('ascension: the shiny unlock (A5+) and Nuzlocke (A8) rules are unchanged', () 
   const EV_LEGENDARY = ['ARTICUNO', 'ZAPDOS', 'MOLTRES', 'MEWTWO', 'MEW', 'RAIKOU', 'ENTEI', 'SUICUNE', 'LUGIA', 'HO_OH', 'CELEBI', 'REGIROCK', 'REGICE', 'REGISTEEL', 'LATIAS', 'LATIOS', 'KYOGRE', 'GROUDON', 'RAYQUAZA', 'JIRACHI', 'DEOXYS'];
   const bstOf = (sp) => Object.values(D.species[sp].stats).reduce((a, x) => a + x, 0);
 
-  t('v0.3.25 catch-all: every species #1-386 but the legendaries can be caught as itself on a wild node (or a legendary node)', () => {
-    const src = fs.readFileSync(new URL('../web/src/game/events.js', import.meta.url), 'utf8');
-    const legendary = new Set(JSON.parse(src.match(/const LEGENDARY = new Set\((\[[^\]]*\])\)/)[1].replace(/'/g, '"')));
-    assert.deepEqual([...legendary].sort(), [...EV_LEGENDARY].sort(), 'events.js LEGENDARY');
+  t('v0.3.25 catch-all: every species #1-386 but the legendaries can be caught as itself on a wild node (or a legendary node)', async () => {
+    const legendary = new Set((await import('../web/src/game/pokemon.js')).LEGENDARY);
+    assert.deepEqual([...legendary].sort(), [...EV_LEGENDARY].sort(), 'pokemon.js LEGENDARY');
     const catchable = new Set();
     for (const rid of RG.REGION_IDS) RG.REGIONS[rid].acts.forEach((act, t) => {
       const [lo, hi] = wildLevels(t, act);
