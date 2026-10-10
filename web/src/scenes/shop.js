@@ -66,7 +66,7 @@ export class ShopScene {
     const m = Engine.mouse, over = m.x >= left && m.x <= right && m.y >= top && m.y <= bottom;
     const maxScroll = Math.max(0, (this.contentH || 0) - viewH);
     let sc = this.scroll || 0;
-    if (over && m.wheel) sc += m.wheel * 24;
+    if (over && m.wheelPx) sc += m.wheelPx;
     if (keyPressed('ArrowDown')) sc += 24;
     if (keyPressed('ArrowUp')) sc -= 24;
     if (m.justPressed && over) this.drag = { y: m.y, moved: false };

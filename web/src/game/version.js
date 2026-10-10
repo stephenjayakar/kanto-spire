@@ -9,7 +9,8 @@ export const PATCH_NOTES = [
     v: 'v0.4.1',
     sections: [
       ['CHANGES', [
-        'The Pokédex scrolls slower: one page per few wheel notches, and a trackpad swipe no longer skips pages',
+        'Scrolling is the same everywhere: the map, records, info, shop and patch notes move the same distance per wheel notch, and with your fingers on a trackpad',
+        'The Pokédex turns one page per few wheel notches, so a swipe no longer skips pages',
       ]],
     ],
   },

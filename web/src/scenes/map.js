@@ -103,7 +103,7 @@ export class MapScene {
     this.t += dt;
     this.msg.update(dt, G.meta.settings.fast);
     if (this.walk) this.scroll = this.walk.scroll0 + (this.walk.scroll1 - this.walk.scroll0) * this.walk.o.k;
-    else if (Engine.mouse.wheel && inMap()) this.scroll = Math.max(0, Math.min((this.mapRun().act.floors + 1) * FLOOR_H - 200, this.scroll - Engine.mouse.wheel * 30));
+    else if (Engine.mouse.wheelPx && inMap()) this.scroll = Math.max(0, Math.min((this.mapRun().act.floors + 1) * FLOOR_H - 200, this.scroll - Engine.mouse.wheelPx));
     this.updateSketch();
   }
   // ---- map sketches (scenes/sketch.js): right-drag, or a plain drag with PEN on ----

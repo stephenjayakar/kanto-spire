@@ -5,7 +5,7 @@ export const W = 640, H = 360;
 export const Engine = {
   canvas: null, ctx: null, scale: 1, time: 0, dt: 0, frame: 0,
   scene: null, overlays: [],
-  mouse: { x: -1, y: -1, down: false, clicked: false, rclicked: false, wheel: 0, justPressed: false, rdown: false, rjustPressed: false },
+  mouse: { x: -1, y: -1, down: false, clicked: false, rclicked: false, wheel: 0, wheelPx: 0, justPressed: false, rdown: false, rjustPressed: false },
   keys: new Set(), pressed: new Set(),
   shake: 0, cursor: 'default', hoverAny: false,
   timeScale: 1,
@@ -20,7 +20,8 @@ export const Engine = {
 //           effect-free pass ("sharp bilinear": crisp, evenly sized pixels with a soft 1px seam where needed)
 const DISPLAY_MODES = ['auto', 'pixel', 'fill'];
 let displayMode = 'fill';
-let wheelAcc = 0, lastWheelAt = 0; // wheel ticks not yet handed out, and when the last wheel event came (see the wheel listener)
+let wheelAcc = 0, wheelPxAcc = 0, lastWheelAt = 0; // wheel ticks / game pixels not yet handed out, and when the last wheel event came (see the wheel listener)
+export const WHEEL_NOTCH_PX = 24; // game pixels one mouse-wheel notch scrolls, on every screen
 export function setDisplayMode(mode) {
   displayMode = DISPLAY_MODES.includes(mode) ? mode : 'fill';
   if (Engine.canvas) resizeCanvas();
@@ -82,6 +83,8 @@ export function initEngine(canvas) {
   // Wheel input becomes whole ticks (Engine.mouse.wheel, read each frame). A mouse wheel notch is one tick; a trackpad
   // (Mac: a stream of small pixel deltas plus momentum) adds up to one tick per ~100px instead of one per event, which
   // made every scroll on a Mac far too fast.
+  // Engine.mouse.wheelPx is the same input in game pixels, which every scrolling screen uses so they all scroll alike:
+  // a notch is WHEEL_NOTCH_PX, and a trackpad moves the content with the fingers (its CSS pixels in game pixels).
   canvas.addEventListener('wheel', e => {
     e.preventDefault();
     // (an event on its own, not part of a stream, is a wheel notch too: some Mac mice report only a few pixels each)
@@ -91,6 +94,8 @@ export function initEngine(canvas) {
     const ticks = notch ? -e.wheelDeltaY / 120 : alone ? Math.sign(px) * Math.max(1, Math.abs(px) / 100) : px / 100;
     if (Math.sign(ticks) !== Math.sign(wheelAcc)) wheelAcc = 0; // (a change of direction drops the leftover)
     wheelAcc += ticks;
+    const gpx = notch || e.deltaMode ? ticks * WHEEL_NOTCH_PX : px * W / canvas.getBoundingClientRect().width;
+    wheelPxAcc += alone && Math.abs(gpx) < WHEEL_NOTCH_PX ? Math.sign(gpx) * WHEEL_NOTCH_PX : gpx;
   }, { passive: false });
   // Touch: one finger taps and drags like the mouse; two fingers belong to the browser (pinch to zoom,
   // pan around), so a gesture that ever had 2+ fingers never turns into a click.
@@ -132,6 +137,7 @@ function tick(dt) {
   const ctx = Engine.ctx;
   const wt = Math.trunc(wheelAcc); // (whole ticks this frame, at most 3; the rest carries over)
   Engine.mouse.wheel = Math.max(-3, Math.min(3, wt)); wheelAcc -= wt;
+  Engine.mouse.wheelPx = Math.max(-240, Math.min(240, wheelPxAcc)); wheelPxAcc = 0;
   Engine.hoverAny = false;
   updateTweens(dt);
   updateTimers(dt);
@@ -158,7 +164,7 @@ function tick(dt) {
   } catch (e) { console.error(e); }
   ctx.restore();
   Engine.canvas.style.cursor = Engine.hoverAny ? 'pointer' : 'default';
-  Engine.mouse.clicked = false; Engine.mouse.rclicked = false; Engine.mouse.justPressed = false; Engine.mouse.rjustPressed = false; Engine.mouse.wheel = 0;
+  Engine.mouse.clicked = false; Engine.mouse.rclicked = false; Engine.mouse.justPressed = false; Engine.mouse.rjustPressed = false; Engine.mouse.wheel = 0; Engine.mouse.wheelPx = 0;
   Engine.pressed.clear();
 }
 

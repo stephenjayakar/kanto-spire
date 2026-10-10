@@ -189,13 +189,13 @@ export const BG_THEMES = {
 
 // A scrollable area (long text panes, record lists): mouse wheel, arrow keys, or drag (touch too).
 // m keeps the scroll state; drawContent(y) draws from y and returns the y where the content ends.
-// wheelStep: pixels per mouse-wheel tick.
-export function scrollArea(ctx, m, x, top, w, bottom, drawContent, wheelStep = 24) {
+// The wheel scrolls Engine.mouse.wheelPx, the same on every screen.
+export function scrollArea(ctx, m, x, top, w, bottom, drawContent) {
   const viewH = bottom - top;
   const maxScroll = Math.max(0, (m.contentH || 0) - viewH);
   const over = Engine.mouse.x >= x && Engine.mouse.x <= x + w && Engine.mouse.y >= top && Engine.mouse.y <= bottom;
   let sc = m.scroll || 0;
-  if (over && Engine.mouse.wheel) sc += Engine.mouse.wheel * wheelStep;
+  if (over && Engine.mouse.wheelPx) sc += Engine.mouse.wheelPx;
   if (keyPressed('ArrowDown')) sc += 24;
   if (keyPressed('ArrowUp')) sc -= 24;
   if (keyPressed('PageDown')) sc += viewH - 20;

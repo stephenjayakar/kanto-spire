@@ -1,5 +1,5 @@
 // Persistent Pokédex across runs + run history. Click a seen POKéMON for its entry page (DexEntry).
-import { Engine, W, H, hover, clicked, keyPressed, pushOverlay, setScene } from '../engine/core.js';
+import { Engine, W, H, hover, clicked, keyPressed, pushOverlay, setScene, WHEEL_NOTCH_PX } from '../engine/core.js';
 import { text, textFit, textBlock, measure } from '../engine/font.js';
 import { swirlBackground, button, closeButton, pixBox, rect, drawTips, tip, THEME } from '../engine/ui.js';
 import { draw, tinted } from '../engine/assets.js';
@@ -18,11 +18,11 @@ export class DexScene {
   enter() { this.page = 0; this.t = 0; this.wheelAcc = 0; this.wheelWait = 0; }
   update(dt) {
     this.t += dt;
-    // Wheel: a page turn takes 3 ticks, and at most one turn per 0.6 s, so a trackpad swipe doesn't fly through the dex
+    // Wheel: a page turn takes 3 notches' worth of scrolling, and at most one turn per 0.6 s, so a swipe doesn't fly through the dex
     this.wheelWait = Math.max(0, this.wheelWait - dt);
-    const w = Engine.mouse.wheel;
+    const w = Engine.mouse.wheelPx;
     if (w && !this.wheelWait) { if (Math.sign(w) !== Math.sign(this.wheelAcc)) this.wheelAcc = 0; this.wheelAcc += w; } // (ticks during the wait are dropped)
-    if (Math.abs(this.wheelAcc) >= 3 && !this.wheelWait) {
+    if (Math.abs(this.wheelAcc) >= 3 * WHEEL_NOTCH_PX && !this.wheelWait) {
       this.page = Math.max(0, Math.min(Math.floor((DEX_MAX - 1) / PER_PAGE), this.page + Math.sign(this.wheelAcc)));
       this.wheelAcc = 0; this.wheelWait = 0.6;
     }
