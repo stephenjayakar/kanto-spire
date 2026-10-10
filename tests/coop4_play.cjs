@@ -956,6 +956,7 @@ async function sitOut(pages, tag) {
         await c.addInitScript(TEST_PATCH_INIT);
         if (!process.env.AUDIO) await c.addInitScript(STUB_AUDIO);
         if (REAL) await c.addInitScript(t => localStorage.setItem('kantospire.auth.v1', JSON.stringify({ token: t, refreshToken: 'e2e' })), tokens[i]);
+        await require('./pack_cache.cjs').routePacks(c); // (asset packs from the shared test cache, not Convex egress)
         ctxs.push(c);
         return c;
       };

@@ -2,6 +2,7 @@ import { internalMutation, MutationCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
 import { normEmail } from "./lib";
+import { deleteSavesFor } from "./progress";
 
 // DEV-ONLY helpers for the co-op integration tests (tests/coop_auth.cjs). Internal functions, so only
 // the CLI / dashboard can call them, and they refuse to run unless the deployment has COOP_TEST=1:
@@ -76,6 +77,7 @@ export const cleanup = internalMutation({
           await ctx.db.delete(p._id);
         }
         for (const p of await ctx.db.query("progress").withIndex("by_userId", (q) => q.eq("userId", u._id)).collect()) await ctx.db.delete(p._id);
+        await deleteSavesFor(ctx, u); // (v0.3.21 save tables)
         await ctx.db.delete(u._id);
         out.users++;
       }
