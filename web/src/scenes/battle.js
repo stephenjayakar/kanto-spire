@@ -4,7 +4,7 @@ import { draw, img, ready, itemPath, trainerPath, tinted, ballSprite } from '../
 import { text, textBlock, measure, textFit } from '../engine/font.js';
 import { swirlBackground, BG_THEMES, button, panel, pixBox, rect, drawTips, tip, hpBar, THEME, shade } from '../engine/ui.js';
 import { burst, floatText, drawFx, clearFx, doFlash, drawFlash } from '../engine/fx.js';
-import { D, TYPE_COLORS, speciesName, typeEffect } from '../game/data.js';
+import { D, TYPE_COLORS, speciesName } from '../game/data.js';
 import { Battle, abilityOf } from '../game/battle.js';
 import { COMBOS } from '../game/hands.js';
 import { BOSS_RULES } from '../game/bosses.js';
@@ -12,7 +12,7 @@ import { CONSUMABLES, BALLS, BADGES } from '../game/items.js';
 import { maxHp, monName, typesOf, isFainted, stats, DECK_RULES, LEGENDARY } from '../game/pokemon.js';
 import { G, saveRun, saveMeta } from '../game/state.js';
 import { Sound } from '../audio/sound.js';
-import { drawTrainer, drawHUD, drawCard, drawCardBack, cardTooltip, drawPartyPanel, drawMon, drawIcon, CARD_W, CARD_H, MessageBox, ChoiceModal, PartyPicker, DeckModal, monTooltip, consumableDesc, monSprite, drawNoComboTag, STATUS_SEL, ordinal, orderTagWidth, drawOrderTag, ORDER_RULE, foeSprite, foeAnimFrame } from './common.js';
+import { drawTrainer, drawHUD, drawCard, drawCardBack, cardTooltip, drawPartyPanel, drawMon, drawIcon, CARD_W, CARD_H, MessageBox, ChoiceModal, PartyPicker, DeckModal, matchupText, monTooltip, consumableDesc, monSprite, drawNoComboTag, STATUS_SEL, ordinal, orderTagWidth, drawOrderTag, ORDER_RULE, foeSprite, foeAnimFrame } from './common.js';
 import { battleFinished } from './flow.js';
 import { STAT_NAMES, PROTECT_EFFECTS } from '../game/effects.js';
 import { MoveAnims } from '../anim/player.js';
@@ -865,10 +865,7 @@ export class BattleScene {
     const st = e.stats;
     const ab = e.ability ? (D.abilities[e.ability]?.name || e.ability) : '';
     const rule = (e.bossRule && BOSS_RULES[e.bossRule] ? `\n\n${BOSS_RULES[e.bossRule].name}: ${BOSS_RULES[e.bossRule].desc}` : '') + (e.forme ? `\nNow in its ${e.forme} FORME.` : '');
-    const all = Object.keys(TYPE_COLORS).filter(t => D.types.chart[t]);
-    const by = f => all.filter(t => f(typeEffect(t, e.types)));
-    const weak4 = by(x => x >= 4), weak = by(x => x === 2), res = by(x => x > 0 && x < 1), imm = by(x => x === 0);
-    const matchup = `\n\nWEAK TO: ${[...weak4.map(t => t + ' x4'), ...weak].join(', ') || 'nothing'}\nRESISTS: ${res.join(', ') || 'nothing'}${imm.length ? `\nIMMUNE TO: ${imm.join(', ')}` : ''}`;
+    const matchup = matchupText(e.types);
     tip(`${speciesName(e.species)}  Lv${e.level}`, `${e.types.join('/')}  ·  ${ab}${ab && D.abilities[e.ability] ? ': ' + D.abilities[e.ability].desc : ''}\nATK ${st.atk} DEF ${st.def} SPA ${st.spa} SPD ${st.spd} SPE ${st.spe}\nMoves: ${G.run.ascension >= 2 ? '??? (hidden at A2+)' : e.moves.map(m => D.moves[m]?.name).join(', ')}${matchup}${rule}`, { width: 230, accent: TYPE_COLORS[e.types[0]] });
   }
 

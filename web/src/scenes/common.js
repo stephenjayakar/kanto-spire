@@ -525,13 +525,21 @@ export function drawPartyPanel(ctx, run, x, y, w, opts = {}) {
   return clickedMon;
 }
 
+// The WEAK TO / RESISTS / IMMUNE TO lines of a POKéMON tooltip (the foe's and your own read the same).
+export function matchupText(types) {
+  const all = Object.keys(TYPE_COLORS).filter(t => D.types.chart[t]);
+  const by = f => all.filter(t => f(typeEffect(t, types)));
+  const weak4 = by(x => x >= 4), weak = by(x => x === 2), res = by(x => x > 0 && x < 1), imm = by(x => x === 0);
+  return `\n\nWEAK TO: ${[...weak4.map(t => t + ' x4'), ...weak].join(', ') || 'nothing'}\nRESISTS: ${res.join(', ') || 'nothing'}${imm.length ? `\nIMMUNE TO: ${imm.join(', ')}` : ''}`;
+}
+
 export function monTooltip(mon, x, y) {
   const s = D.species[mon.species];
   const st = stats(mon);
   const ab = mon.ability || s.abilities?.[(mon.ivs.spe) % Math.max(1, s.abilities.length)];
   const body = `${typesOf(mon).join('/')}  ·  ${ab ? D.abilities[ab]?.name || ab : ''}\nHP ${mon.hp}/${st.hp}  ATK ${st.atk}  DEF ${st.def}\nSPA ${st.spa}  SPD ${st.spd}  SPE ${st.spe}\n` +
-    `Moves: ${mon.moves.map(m => `${D.moves[m.move]?.name}${m.copies > 1 ? ' x' + m.copies : ''}`).join(', ')}` + (ab && D.abilities[ab] ? `\n${D.abilities[ab].name}: ${D.abilities[ab].desc}` : '');
-  tip(`${monName(mon)}${mon.shiny ? ' ★' : ''}  Lv${mon.level}`, body, { width: 200, x, y, accent: TYPE_COLORS[typesOf(mon)[0]] });
+    `Moves: ${mon.moves.map(m => `${D.moves[m.move]?.name}${m.copies > 1 ? ' x' + m.copies : ''}`).join(', ')}` + (ab && D.abilities[ab] ? `\n${D.abilities[ab].name}: ${D.abilities[ab].desc}` : '') + matchupText(typesOf(mon));
+  tip(`${monName(mon)}${mon.shiny ? ' ★' : ''}  Lv${mon.level}`, body, { width: 230, x, y, accent: TYPE_COLORS[typesOf(mon)[0]] });
 }
 
 // ---- generic modal overlays -----------------------------------------------------------------
