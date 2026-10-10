@@ -1,5 +1,5 @@
 // Image loading with a cache. img() returns an Image immediately; draw helpers skip it until loaded.
-import { assetUrl } from '../net/assetpack.js';
+import { assetUrl, assetPending } from '../net/assetpack.js';
 import { RELICS, BALLS } from '../game/items.js';
 const cache = new Map();
 export const BASE = 'assets/';
@@ -8,9 +8,12 @@ export function img(path) {
   let im = cache.get(path);
   if (!im) {
     im = new Image();
-    im.src = assetUrl(path);
     im.onerror = () => { im._failed = true; };
     cache.set(path, im);
+    // (art in a pack that is still loading in the background: the image gets its source once the pack is in)
+    const wait = assetPending(path);
+    if (wait) wait.then(() => { im.src = assetUrl(path); });
+    else im.src = assetUrl(path);
   }
   return im;
 }

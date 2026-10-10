@@ -43,7 +43,7 @@ async function boot() {
     const loading = document.getElementById('loading');
     try {
       await loadPacks({
-        siteUrl: Cloud.siteUrl, token: await authToken(), list: await packManifest(),
+        siteUrl: Cloud.siteUrl, token: authToken, list: await packManifest(),
         onProgress: (n, total) => { if (loading) loading.textContent = `Loading game data... ${(n / 1048576).toFixed(1)} / ${(total / 1048576).toFixed(1)} MB`; },
       });
     } catch (e) {

@@ -34,6 +34,15 @@ export default defineSchema({
     size: v.number(),
     uploadedAt: v.number(),
   }).index("by_name", ["name"]),
+  // v0.3.21: more about a pack (a table of its own, so assetPacks rows keep the shape older server code expects).
+  assetPackExtras: defineTable({
+    name: v.string(),
+    hash: v.string(), // the assetPacks row (name + hash) this belongs to
+    zStorageId: v.optional(v.id("_storage")), // the same pack gzipped (GET /pack?enc=gzip; the plain one stays for older clients)
+    zsize: v.optional(v.number()),
+    lazy: v.optional(v.boolean()), // not needed to reach the title: newer clients load it in the background
+    dirs: v.optional(v.array(v.string())), // lazy packs: the path prefixes of their files (what waits for them)
+  }).index("by_name", ["name"]),
 
   // A trainer: one per signed-in Google account.
   players: defineTable({
@@ -66,6 +75,29 @@ export default defineSchema({
   })
     .index("by_userId", ["userId"])
     .index("by_email", ["email"]),
+
+  // v0.3.21 save storage (convex/progress.ts): per account one small head row pointing at its two parts, each part
+  // stored deflated in its own row, so a push writes only the part that changed. Accounts without a head row are
+  // still served from the progress table above (their first new-format save copies it over).
+  saveHeads: defineTable({
+    userId: v.id("users"),
+    email: v.string(), // lowercase; the save key
+    metaId: v.optional(v.id("saveBlobs")),
+    metaHash: v.optional(v.string()), // hash of the meta JSON (progress.ts saveHash): unchanged pushes write nothing
+    runId: v.optional(v.id("saveBlobs")), // unset when no run is in progress
+    runHash: v.optional(v.string()), // "-" = no run in progress
+    updatedAt: v.number(),
+  })
+    .index("by_userId", ["userId"])
+    .index("by_email", ["email"]),
+  saveBlobs: defineTable({
+    email: v.string(),
+    part: v.union(v.literal("meta"), v.literal("run")),
+    enc: v.string(), // "deflate" (fflate deflateSync of the UTF-8 JSON)
+    data: v.bytes(),
+    size: v.number(), // length of the JSON text
+    updatedAt: v.number(),
+  }),
 
   // The full log of a finished run (battles, picks, purchases, events), for balance analysis.
   runLogs: defineTable({

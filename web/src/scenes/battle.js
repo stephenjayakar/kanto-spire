@@ -589,7 +589,7 @@ export class BattleScene {
   async finish() {
     this.exit();
     G.run.logBattle(this.b);
-    G.meta.hintBattles = (G.meta.hintBattles || 0) + 1; saveMeta();
+    if ((G.meta.hintBattles || 0) < 3) { G.meta.hintBattles = (G.meta.hintBattles || 0) + 1; saveMeta(); } // (only counts up to the hint's limit: a meta upload per battle otherwise)
     const r = this.b.result;
     this.busy = true;
     // The closing music and line are cosmetic: whatever happens there, the battle must hand over.

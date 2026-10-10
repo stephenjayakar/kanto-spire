@@ -3,12 +3,14 @@
 // 2. A signed-out browser gets the plain sign-in page and requests nothing from the ROM.
 // 3. With E2E_MINT=1 (dev only): mints a short-lived token for the allowlisted dev user, checks the
 //    packs download and match their hashes, and that the game boots with every asset served from
-//    memory (the static site has none).
+//    memory (the static site has none). The browser's packs come from the shared test cache
+//    (tests/pack_cache.cjs) rather than from Convex every run.
 // Usage: CONVEX_URL=https://<dev>.convex.cloud node tools/build_site.cjs && node serve.cjs 8091 dist &
 //        E2E_MINT=1 node tests/cloud.e2e.cjs
 const { chromium } = require('playwright');
 const fs = require('fs'), path = require('path'), crypto = require('crypto');
 const { execFileSync } = require('child_process');
+const { routePacks, packCacheStats } = require('./pack_cache.cjs');
 const BASE = process.env.BASE || 'http://localhost:8091/';
 const root = path.join(__dirname, '..');
 const ok = (cond, msg) => { console.log((cond ? 'PASS ' : 'FAIL ') + msg); if (!cond) process.exitCode = 1; };
@@ -38,7 +40,7 @@ async function mintDevToken(convexUrl) {
     ok(r.status === 404 || /text\/html/.test(r.headers.get('content-type') || ''), `static site does not serve ${p} (${r.status} ${r.headers.get('content-type')})`);
   }
   for (const [kind, fn] of [['query', 'runs:leaderboard'], ['query', 'runs:mine'], ['query', 'players:top'], ['query', 'progress:get'], ['query', 'packs:manifest'],
-    ['mutation', 'players:me'], ['mutation', 'progress:save'], ['mutation', 'runs:submit'], ['mutation', 'runlogs:submit'], ['mutation', 'access:allow'], ['query', 'access:list'], ['mutation', 'packs:uploadUrl'],
+    ['mutation', 'players:me'], ['mutation', 'progress:save'], ['mutation', 'progress:put'], ['mutation', 'runs:submit'], ['mutation', 'runlogs:submit'], ['mutation', 'access:allow'], ['query', 'access:list'], ['mutation', 'packs:uploadUrl'],
     ['mutation', 'coop:create'], ['mutation', 'coop:join'], ['query', 'coop:mine'], ['mutation', 'coopTest:ensureTestUser']]) {
     const args = fn === 'progress:save' ? { meta: '{}', run: null } : fn === 'access:allow' ? { email: 'x@example.com' } : fn === 'runlogs:submit' ? { clientRunId: 'x', log: '{}' }
       : fn === 'coop:join' ? { code: 'ABCDE' } : fn === 'coopTest:ensureTestUser' ? { email: 'x@example.com', name: 'X' } : {};
@@ -76,17 +78,26 @@ async function mintDevToken(convexUrl) {
     const token = await mintDevToken(convexUrl);
     const list = await fetch(`${convexUrl}/api/query`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ path: 'packs:manifest', args: {}, format: 'json' }) }).then(r => r.json());
     ok(list.status === 'success' && list.value.length >= 3, `allowed user gets the pack list (${list.value?.map(p => p.name).join(',')})`);
-    const one = list.value?.find(p => p.name === 'data');
-    const res = await fetch(`${siteUrl}/pack?name=data`, { headers: { Authorization: `Bearer ${token}`, Origin: BASE.replace(/\/$/, '') } });
-    const buf = Buffer.from(await res.arrayBuffer());
-    ok(res.status === 200 && crypto.createHash('sha256').update(buf).digest('hex') === one?.hash, 'allowed user downloads a pack that matches its hash');
+    // (the smallest pack, to keep test egress down)
+    const one = list.value?.filter(p => p.zsize).sort((a, b) => a.zsize - b.zsize)[0] || list.value?.sort((a, b) => a.size - b.size)[0];
+    const res = await fetch(`${siteUrl}/pack?name=${one.name}&h=${one.hash}&enc=gzip`, { headers: { Authorization: `Bearer ${token}`, Origin: BASE.replace(/\/$/, '') } });
+    let buf = Buffer.from(await res.arrayBuffer());
+    const zipped = res.headers.get('x-pack-enc') === 'gzip';
+    if (zipped) buf = require('zlib').gunzipSync(buf);
+    ok(res.status === 200 && crypto.createHash('sha256').update(buf).digest('hex') === one?.hash, `allowed user downloads a pack that matches its hash (${one.name}${zipped ? ', gzipped' : ''})`);
     ok(res.headers.get('access-control-allow-origin') === BASE.replace(/\/$/, ''), 'pack response allows the game origin (CORS)');
+    ok(/immutable/.test(res.headers.get('cache-control') || '') && /X-Pack-Enc/.test(res.headers.get('access-control-expose-headers') || ''), `a pack asked for by hash may be cached for good (${res.headers.get('cache-control')})`);
+    // clients from before v0.3.21 ask by name only: the plain pack, never cached
+    const old = await fetch(`${siteUrl}/pack?name=${one.name}`, { headers: { Authorization: `Bearer ${token}` } });
+    const oldBuf = Buffer.from(await old.arrayBuffer());
+    ok(old.status === 200 && crypto.createHash('sha256').update(oldBuf).digest('hex') === one.hash && /no-store/.test(old.headers.get('cache-control') || ''), 'an older client (name only) still gets the plain pack, uncached');
 
     const p2 = await browser.newPage({ viewport: { width: 1280, height: 720 } });
     const err2 = [], req2 = [];
     p2.on('pageerror', e => err2.push(e.message));
     p2.on('request', r => { if (/\/assets\//.test(new URL(r.url()).pathname) && r.url().startsWith(BASE)) req2.push(r.url()); });
     await p2.addInitScript(t => localStorage.setItem('kantospire.auth.v1', JSON.stringify({ token: t, refreshToken: 'e2e' })), token);
+    await routePacks(p2); // (packs from the shared test cache: tests/pack_cache.cjs)
     await p2.goto(BASE);
     await p2.waitForFunction(() => window.__ready, null, { timeout: 60000 });
     const scene = await p2.evaluate(() => window.__engine.Engine.scene?.constructor?.name);
@@ -97,6 +108,7 @@ async function mintDevToken(convexUrl) {
     await p2.waitForTimeout(1500);
     await p2.screenshot({ path: path.join(__dirname, 'out', 'cloud_title.png') });
     ok(err2.length === 0, 'no page errors when signed in ' + err2.join(' | '));
+    console.log(`  (pack cache: ${packCacheStats.hits} hits, ${packCacheStats.misses} downloads, ${(packCacheStats.bytes / 1048576).toFixed(2)} MB)`);
 
     // Take the account off the allowlist: the same valid token must now be refused, then restore it.
     const cli = path.join(root, 'node_modules', 'convex', 'bin', 'main.js');

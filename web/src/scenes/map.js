@@ -521,7 +521,7 @@ export function openRunMenu() {
     onClose: async (v) => {
       if (v === 1) { const { SettingsModal } = await import('./title.js'); pushOverlay(new SettingsModal({})); }
       if (v === 4) { const { openHowToPlay } = await import('./tutorial.js'); openHowToPlay(); }
-      if (v === 2) { saveRun(); const { TitleScene } = await import('./title.js'); setScene(new TitleScene()); }
+      if (v === 2) { saveRun('checkpoint'); const { TitleScene } = await import('./title.js'); setScene(new TitleScene()); }
       if (v === 3) pushOverlay(new ChoiceModal({ title: 'Really abandon this run?', options: [{ label: 'Yes, abandon', value: 1, color: THEME.discard }, { label: 'No', value: 0 }], onClose: async (c) => {
         if (c === 1) { const st = await import('../game/state.js'); st.endRun(G.run, 'lose'); const { TitleScene } = await import('./title.js'); setScene(new TitleScene()); }
       } }));

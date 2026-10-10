@@ -3,6 +3,7 @@
 // in localStorage first, so nothing is lost while offline.
 import { spireCode } from '../game/regions.js';
 import { VERSION } from '../game/version.js';
+import { SaveSync } from './savesync.js';
 
 const AUTH_KEY = 'kantospire.auth.v1';
 const VERIFIER_KEY = 'kantospire.authVerifier.v1';
@@ -151,36 +152,60 @@ export const packManifest = () => call('query', 'packs:manifest', {});
 export function dropAuth(message) { setAuth(null); Cloud.error = message || null; }
 
 // ---- save sync ------------------------------------------------------------------------------
-// The account's save on the server wins at sign-in; after that every local save is pushed up.
+// The account's save on the server wins at sign-in; after that local saves are pushed up, only what changed and
+// only at the moments web/src/net/savesync.js describes (v0.3.21; before, every save meant an upload).
+const sync = new SaveSync({
+  read: () => ({ meta: localStorage.getItem(Cloud.saveKeys.meta) || '{}', run: localStorage.getItem(Cloud.saveKeys.run) }),
+  send: (parts, { keepalive }) => sendProgress(parts, keepalive),
+  onError: (e) => { console.warn('progress sync failed', e); Cloud.online = false; },
+});
+if (typeof window !== 'undefined') window.__saveSync = sync; // (debug console / tests)
+
+async function sendProgress(parts, keepalive) {
+  if (!Cloud.me || !Cloud.saveKeys) return null;
+  let r;
+  try {
+    r = await call('mutation', 'progress:put', parts, { keepalive });
+  } catch (e) {
+    if (!missingFn(e)) throw e;
+    // a server from before progress:put: the whole save, the old way
+    const { meta, run } = sync.read();
+    r = await call('mutation', 'progress:save', { meta, run }, { keepalive });
+    Object.assign(parts, { meta, run }); // (what it now has)
+  }
+  Cloud.online = true;
+  return r;
+}
+
 async function pullProgress() {
   if (!Cloud.saveKeys) return;
   const p = await call('query', 'progress:get', {});
   if (p) {
     localStorage.setItem(Cloud.saveKeys.meta, p.meta);
     if (p.run) localStorage.setItem(Cloud.saveKeys.run, p.run); else localStorage.removeItem(Cloud.saveKeys.run);
+    sync.base(p.meta, p.run || null);
   } else {
+    sync.reset();
     await pushProgress();
   }
 }
 
-async function pushProgress(keepalive = false) {
-  clearTimeout(pushTimer); pushTimer = null;
-  if (!Cloud.me || !Cloud.saveKeys) return;
-  const meta = localStorage.getItem(Cloud.saveKeys.meta) || '{}';
-  const run = localStorage.getItem(Cloud.saveKeys.run);
-  await call('mutation', 'progress:save', { meta, run }, { keepalive });
-  Cloud.online = true;
+function pushProgress() {
+  if (!Cloud.me || !Cloud.saveKeys) return Promise.resolve();
+  return sync.flush();
 }
 
-let pushTimer = null;
-// Called by the game after every save; batches bursts of saves into one upload.
-export function queueProgressSync() {
-  if (!hasStorage || !Cloud.me) return;
-  clearTimeout(pushTimer);
-  pushTimer = setTimeout(() => pushProgress().catch(e => { console.warn('progress sync failed', e); Cloud.online = false; }), 1500);
+// Called by the game after every save. mode: 'checkpoint' (push now: back on the map, a run's end) | 'defer'
+// (no upload of its own: entering a node) | undefined (pushed within SYNC_DELAY).
+export function queueProgressSync(mode) {
+  if (!hasStorage || !Cloud.me || !Cloud.saveKeys) return;
+  sync.queue(mode);
 }
+// Hiding the tab (switching apps on a phone, which may then kill it) or closing it: push what is left.
 if (typeof addEventListener !== 'undefined') {
-  addEventListener('pagehide', () => { if (pushTimer) pushProgress(true).catch(() => {}); });
+  const leave = () => { if (Cloud.me && Cloud.saveKeys) sync.flushNow(); };
+  addEventListener('pagehide', leave);
+  if (typeof document !== 'undefined') document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') leave(); });
 }
 
 // ---- finished runs --------------------------------------------------------------------------
