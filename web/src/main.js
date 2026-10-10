@@ -84,10 +84,15 @@ function showSignIn() {
   const btn = document.getElementById('signin-btn'), err = document.getElementById('signin-error');
   err.textContent = Cloud.error || '';
   if (pendingInvite()) document.getElementById('signin-msg').textContent = 'You have been invited! Sign in with Google to join.';
+  const ready = () => { btn.disabled = false; btn.textContent = 'Sign in with Google'; };
   btn.onclick = () => {
-    btn.disabled = true; btn.textContent = 'Opening Google...';
-    signIn().catch(e => { err.textContent = e.message; btn.disabled = false; btn.textContent = 'Sign in with Google'; });
+    btn.disabled = true; btn.textContent = 'Opening Google...'; err.textContent = '';
+    signIn().catch(e => { err.textContent = e.message; ready(); });
+    setTimeout(ready, 8000); // (the redirect never happened, e.g. it was blocked: let them try again)
   };
+  // Back from Google's page (closed, cancelled, a stray click): browsers restore this page as it was left, with the
+  // button stuck on "Opening Google...". Reset it so a second try works.
+  addEventListener('pageshow', (e) => { if (e.persisted) { ready(); err.textContent = Cloud.error || ''; } });
   window.__ready = true;
 }
 

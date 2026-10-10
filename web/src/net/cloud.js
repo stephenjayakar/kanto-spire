@@ -96,7 +96,16 @@ export async function initCloud({ saveKeys, onAccount } = {}) {
     try {
       const r = await post('action', 'auth:signIn', { params: { code }, verifier: load(VERIFIER_KEY, undefined) });
       setAuth(r.tokens || null);
-    } catch (e) { Cloud.error = e.message; }
+      if (!r.tokens) throw new Error('no tokens for that code');
+    } catch (e) {
+      // (a stale code: the sign-in was started again elsewhere, or interrupted; a fresh one fixes it)
+      console.warn('sign-in code exchange failed', e);
+      Cloud.error = "Sign-in didn't finish. Please sign in again.";
+    }
+    store(VERIFIER_KEY, null);
+  } else if (load(VERIFIER_KEY, null) && !Cloud.auth) {
+    // Back without a code: Google was closed or cancelled (the auth server sends you back with nothing)
+    Cloud.error = 'Sign-in was cancelled. Try again whenever you like.';
     store(VERIFIER_KEY, null);
   }
   if (!Cloud.auth) return;
