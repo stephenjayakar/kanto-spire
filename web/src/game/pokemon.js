@@ -42,6 +42,10 @@ export function replaceMoves(speciesKey, level, moves, bad) {
 }
 const noPlayerMove = (m) => NO_PLAYER_MOVES.has(m);
 
+// Legendary and mythical POKéMON (v0.3.25: ONE LEGENDARY PER RUN, see Run.hasLegendary). SNORLAX isn't one.
+export const LEGENDARY = new Set(['ARTICUNO', 'ZAPDOS', 'MOLTRES', 'MEWTWO', 'MEW', 'RAIKOU', 'ENTEI', 'SUICUNE', 'LUGIA', 'HO_OH', 'CELEBI', 'REGIROCK', 'REGICE', 'REGISTEEL', 'LATIAS', 'LATIOS', 'KYOGRE', 'GROUDON', 'RAYQUAZA', 'JIRACHI', 'DEOXYS']);
+export const isLegendary = (sp) => LEGENDARY.has(sp);
+
 export function makeMon(speciesKey, level, opts = {}) {
   const rng = opts.rng;
   const ivs = opts.ivs || randomIVs(rng, opts.minIV || 0);

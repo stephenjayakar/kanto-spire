@@ -9,7 +9,7 @@ import { Battle, abilityOf } from '../game/battle.js';
 import { COMBOS } from '../game/hands.js';
 import { BOSS_RULES } from '../game/bosses.js';
 import { CONSUMABLES, BALLS, BADGES } from '../game/items.js';
-import { maxHp, monName, typesOf, isFainted, stats, DECK_RULES } from '../game/pokemon.js';
+import { maxHp, monName, typesOf, isFainted, stats, DECK_RULES, LEGENDARY } from '../game/pokemon.js';
 import { G, saveRun, saveMeta } from '../game/state.js';
 import { Sound } from '../audio/sound.js';
 import { drawTrainer, drawHUD, drawCard, drawCardBack, cardTooltip, drawPartyPanel, drawMon, drawIcon, CARD_W, CARD_H, MessageBox, ChoiceModal, PartyPicker, DeckModal, monTooltip, consumableDesc, monSprite, drawNoComboTag, STATUS_SEL, ordinal, orderTagWidth, drawOrderTag, ORDER_RULE, foeSprite, foeAnimFrame } from './common.js';
@@ -151,6 +151,7 @@ export class BattleScene {
         await this.wait(0.35);
         break;
       }
+      case 'forme': this.bossBanner = { name: `${e.forme} FORME`, a: 1 }; break; // (DEOXYS, v0.3.25)
       case 'bossRule':
         this.bossBanner = { name: e.name, desc: e.desc, a: 1 };
         Sound.playSE('se_m_screech');
@@ -600,6 +601,9 @@ export class BattleScene {
         Sound.playBGM(song, { ctx: this.cfg });
         if (this.cfg.trainer) { this.trainerX = 0; tween(this, { trainerX: 140 }, 0.5); }
         await this.say(this.cfg.trainer ? `You defeated ${this.cfg.trainer.title}!` : 'You won the battle!');
+      } else if (r.outcome === 'lose' && this.cfg.softLose) {
+        Sound.fadeOutBGM(60);
+        await this.say(`${this.cfg.legend || 'The foe'} threw your team out! Everyone lost 30% HP, but the run goes on.`);
       } else if (r.outcome === 'lose') {
         Sound.fadeOutBGM(60);
         await this.say('You blacked out!');
@@ -695,7 +699,7 @@ export class BattleScene {
     if (this.bossBanner && this.bossBanner.a > 0.05 && b.bossRule) {
       ctx.save(); ctx.globalAlpha = Math.min(1, this.bossBanner.a * 2);
       pixBox(ctx, SCENE_X + 290, SCENE_Y + 8, 180, 18, '#5a1018', '#f8d038', 3);
-      text(ctx, b.bossRule.name, SCENE_X + 380, SCENE_Y + 10, { align: 'center', color: 'gold', font: 'small' });
+      text(ctx, this.bossBanner.name || b.bossRule.name, SCENE_X + 380, SCENE_Y + 10, { align: 'center', color: 'gold', font: 'small' });
       ctx.restore();
     }
     // messages
@@ -860,7 +864,7 @@ export class BattleScene {
   enemyTooltip(e) {
     const st = e.stats;
     const ab = e.ability ? (D.abilities[e.ability]?.name || e.ability) : '';
-    const rule = e.bossRule && BOSS_RULES[e.bossRule] ? `\n\n${BOSS_RULES[e.bossRule].name}: ${BOSS_RULES[e.bossRule].desc}` : '';
+    const rule = (e.bossRule && BOSS_RULES[e.bossRule] ? `\n\n${BOSS_RULES[e.bossRule].name}: ${BOSS_RULES[e.bossRule].desc}` : '') + (e.forme ? `\nNow in its ${e.forme} FORME.` : '');
     const all = Object.keys(TYPE_COLORS).filter(t => D.types.chart[t]);
     const by = f => all.filter(t => f(typeEffect(t, e.types)));
     const weak4 = by(x => x >= 4), weak = by(x => x === 2), res = by(x => x > 0 && x < 1), imm = by(x => x === 0);
@@ -937,13 +941,14 @@ DECK: cards left in the draw pile / cards in your lead's deck.`, { width: 200 })
     if (this.cfg.kind === 'wild' && !this.b.result) {
       const bw = 70;
       const en = b.enemy();
-      const weak = en && (en.hp < en.maxHp * 0.5 || en.status === 'SLP' || en.status === 'FRZ' || (D.species[en.species]?.catchRate || 0) >= 190);
+      const weak = en && (en.hp < en.maxHp * 0.5 || en.status === 'SLP' || en.status === 'FRZ' || (D.species[en.species]?.catchRate || 0) * (this.cfg.catchMult || 1) >= 180);
       const by2 = Math.min(H - 26, by);
       const pct = weak && run.totalBalls() ? Math.round(b.catchChance(Object.keys(run.balls).find(k => run.balls[k] > 0)) * 100) : 0;
-      if (button(ctx, weak && run.totalBalls() ? `BALL ${pct}%` : 'BALL', x, by2, bw, 22, { color: '#d04040', font: 'small', disabled: this.busy || run.totalBalls() === 0 || !weak || !b.canCatch() })) this.chooseBall();
+      if (button(ctx, weak && run.totalBalls() && b.canCatch() ? `BALL ${pct}%` : 'BALL', x, by2, bw, 22, { color: '#d04040', font: 'small', disabled: this.busy || run.totalBalls() === 0 || !weak || !b.canCatch() })) this.chooseBall();
       if (en && hover(x, by2, bw, 22)) {
         const ball = Object.keys(run.balls).find(k => run.balls[k] > 0);
-        tip('CATCH', !b.canCatch() ? b.catchBlockReason() : !run.totalBalls() ? 'You have no POKé BALLS.' : !weak ? 'Weaken it below 50% HP (or put it to sleep) first.' : `${(D.species[en.species]?.catchRate || 0) >= 190 && en.hp >= en.maxHp * 0.5 ? 'Easy to catch! ' : ''}Catch chance with ${D.items[ball]?.name}: about ${Math.round(b.catchChance(ball) * 100)}%. Throwing uses your turn.`);
+        const legend = LEGENDARY.has(en.species) && b.canCatch() ? `\n${run.legendRuleText()}` : ''; // (ONE LEGENDARY PER RUN)
+        tip('CATCH', !b.canCatch() ? b.catchBlockReason() : !run.totalBalls() ? 'You have no POKé BALLS.' : !weak ? 'Weaken it below 50% HP (or put it to sleep) first.' : `${(D.species[en.species]?.catchRate || 0) * (this.cfg.catchMult || 1) >= 180 && en.hp >= en.maxHp * 0.5 ? 'Easy to catch! ' : ''}Catch chance with ${D.items[ball]?.name}: about ${Math.round(b.catchChance(ball) * 100)}%. Throwing uses your turn.${legend}`);
       }
       if (button(ctx, 'RUN', x + w - bw, Math.min(H - 26, by), bw, 22, { color: '#607080', font: 'small', disabled: this.busy || !b.canFlee() })) this.doFlee();
     }

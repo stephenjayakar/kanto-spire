@@ -24,7 +24,7 @@ import { pickHandAnim, resolveAnimMove, GEN4_ANIM, orderTurnEvents } from '../we
 
 await loadData(async f => JSON.parse(fs.readFileSync('web/assets/data/' + f, 'utf8')));
 let pass = 0, fail = 0;
-const t = (name, fn) => { try { fn(); pass++; } catch (e) { fail++; console.log('FAIL', name, '-', e.message); } };
+const t = (name, fn) => { try { fn(); pass++; } catch (e) { fail++; console.log('FAIL', name, '-', e.message, process.env.STACK ? e.stack : ''); } };
 
 t('data counts', () => { assert.equal(Object.keys(D.species).length, 386); assert.ok(Object.keys(D.moves).length >= 354); });
 t('type chart', () => { assert.equal(typeEffect('WATER', ['FIRE']), 2); assert.equal(typeEffect('ELECTRIC', ['GROUND']), 0); assert.equal(typeEffect('GRASS', ['FIRE', 'FLYING']), 0.25); assert.equal(typeEffect('NORMAL', ['GHOST']), 0); });
@@ -952,7 +952,7 @@ t('ascension: the shiny unlock (A5+) and Nuzlocke (A8) rules are unchanged', () 
         n++;
         assert.ok(!bad(res.text), `${ev.id} result text: ${res.text}`);
         if (res.battle) {
-          assert.ok(mode !== 'coop', `${ev.id}: a battle in co-op`);
+          assert.ok(mode !== 'coop' || ev.mythic, `${ev.id}: a battle in co-op`); // (v0.3.25: a mythic is the room's battle)
           assert.ok(res.battle.enemies?.length && res.battle.enemies.every(e => e.hp > 0 && e.level >= 2), ev.id);
           if (a >= 3) assert.ok(res.battle.noMoney, `${ev.id}: event battle pays money in act ${a + 1}`);
         }
@@ -971,14 +971,14 @@ t('ascension: the shiny unlock (A5+) and Nuzlocke (A8) rules are unchanged', () 
         const r = evRun(world, a, { seed: 'P' + i });
         r.seenEvents = [];
         const ev = EV.pickEvent(r, new RNG(`pick${world}${a}:${i}`));
-        assert.ok(ev.shrine || (ev.world === world && ev.acts.includes(a)), `${world} act ${a + 1} got ${ev.id}`);
+        assert.ok(ev.shrine || ev.mythic || (ev.world === world && ev.acts.includes(a)), `${world} act ${a + 1} got ${ev.id}`); // (v0.3.25: a mythic can turn up in any region)
         if (ev.shrine) { shrines++; assert.ok(r.seenEvents.includes(`${ev.id}@${a}`)); }
       }
       assert.ok(shrines > 300 * 0.17 && shrines < 300 * 0.33, `${world} act ${a + 1}: ${shrines}/300 shrines`);
     }
     // a shrine seen in act 2 can't come back in act 2, but can in act 3; act events never repeat
     const r = evRun('kanto', 1);
-    r.seenEvents = EV.EVENTS.filter(e => e.shrine && e.id !== 'copycat').map(e => `${e.id}@1`).concat(['copycat@1']);
+    r.seenEvents = EV.EVENTS.filter(e => e.shrine && e.id !== 'copycat').map(e => `${e.id}@1`).concat(['copycat@1'], EV.EVENTS.filter(e => e.mythic).map(e => e.id)); // (a mythic due here would take every pick)
     for (let i = 0; i < 100; i++) { const rr = Object.assign(Object.create(Object.getPrototypeOf(r)), r, { seenEvents: r.seenEvents.slice() }); const ev = EV.pickEvent(rr, new RNG('s' + i)); assert.ok(!ev.shrine, ev.id); }
     r.startAct(2); r.floor = 5;
     let back = false;
@@ -2080,6 +2080,233 @@ t('HOENN music (display only): Emerald songs by act / battle, FireRed elsewhere'
   assert.equal(hoennSong(h, 'mus_vs_legend', { kind: 'wild', legend: 'LATIOS' }), null);
   assert.equal(hoennSong(k, 'mus_vs_trainer', aqua), null);
 });
+// ------------------------------------------------------------------------------------ v0.3.25: ONE LEGENDARY PER RUN, mythic events
+{
+  const EVM = await import('../web/src/game/events.js');
+  const { MYTHICS, swapBoss } = await import('../web/src/game/acts.js');
+  const { DEOXYS_FORMES, MEW_TURNS } = await import('../web/src/game/bosses.js');
+  const { LEGENDARY } = await import('../web/src/game/pokemon.js');
+  const strong = (run, lvl = 45) => { run.party = ['BLASTOISE', 'SNORLAX', 'LAPRAS'].map(sp => makeMon(sp, lvl, { rng: new RNG('st' + sp) })); return run; };
+  // a spire run sitting in act `a` of the given regions (acts 1-4, E4 region, post-game region)
+  const spireRun = (seed, acts = ['kanto', 'kanto', 'kanto', 'kanto'], post = 'kanto', a = 0, o = {}) => {
+    const r = Run.create({ starter: 'CHARMANDER', seed, world: 'spire', regions: { acts, summit: acts[3], post }, champ: !!o.champ, ascension: o.asc || 0 });
+    if (a) r.startAct(a);
+    r.floor = o.floor ?? 6; r.nodeId = '6,3';
+    return r;
+  };
+
+  t('v0.3.25 one legendary per run: a caught legendary blocks every later catch offer (node, ball, gift)', () => {
+    const run = strong(spireRun('ONE1', undefined, 'kanto', 1));
+    assert.equal(run.legendTaken, null);
+    assert.equal(run.legendRuleText(), 'Catching it is your one legendary this run.');
+    const cfg = run.legendConfig(new RNG('z'), 6, 'LEGEND_ZAPDOS');
+    const [zap] = run.legendCatches(cfg);
+    assert.equal(zap.species, 'ZAPDOS');
+    assert.ok(run.takeLegend(zap, true));
+    assert.equal(run.legendTaken, 'ZAPDOS');
+    assert.ok(run.hasLegendary() && /already have a legendary this run \(ZAPDOS\)/.test(run.legendRuleText()));
+    // another legendary node: the fight (and its held item) stays, the catch is gone
+    const cfg2 = run.legendConfig(new RNG('a'), 6, 'LEGEND_ARTICUNO');
+    assert.equal(cfg2.rewardRelic, 'FROST_FEATHER');
+    assert.deepEqual(run.legendCatches(cfg2), []);
+    assert.equal(run.legendCatch(cfg2), null);
+    // a mythic too
+    assert.deepEqual(run.legendCatches(run.mythicConfig(new RNG('m'), 6, 'MEWTWO')), []);
+    // balls: no throwing at a legendary (a legendary elite is a wild battle), still fine at anything else
+    const lat = makeEnemy('LATIOS', 40, { rng: new RNG('l'), legendary: true });
+    const b = new Battle(run, { kind: 'wild', elite: true, enemies: [lat], rng: new RNG('lb') });
+    b.start();
+    assert.equal(b.canCatch(), false);
+    assert.equal(b.catchBlockReason(), 'You already have a legendary this run.');
+    const b2 = new Battle(run, { kind: 'wild', enemies: [makeEnemy('PIDGEY', 10, { rng: new RNG('p') })], rng: new RNG('pb') });
+    b2.start();
+    assert.equal(b2.canCatch(), true);
+    // gifts: LATIAS / CELEBI are greyed out with the reason in the label
+    const latias = EVM.EVENTS.find(e => e.id === 'southern_island');
+    const c = EVM.eventChoices(latias, run).find(x => x.legend === 'LATIAS');
+    assert.ok(c && c.cond && !c.cond(run), 'LATIAS gift disabled');
+    assert.match(EVM.choiceLabel(c, run), /already have a legendary/);
+    const fresh = strong(spireRun('ONE2'));
+    const c2 = EVM.eventChoices(latias, fresh).find(x => x.legend === 'LATIAS');
+    assert.ok(!c2.cond || c2.cond(fresh));
+    assert.match(EVM.choiceLabel(c2, fresh), /your one legendary/);
+    const res = c2.run(fresh, new RNG('g'));
+    assert.equal(res.newMon.species, 'LATIAS');
+    assert.equal(fresh.legendTaken, 'LATIAS', 'the gift is the run\'s legendary');
+  });
+
+  t('v0.3.25 one legendary per run: a legendary caught with a ball counts; turning an offer down does not', () => {
+    const run = strong(spireRun('ONE3'));
+    const cfg = run.legendConfig(new RNG('z'), 6, 'LEGEND_ZAPDOS');
+    run.takeLegend(run.legendCatch(cfg), false);
+    assert.equal(run.legendTaken, null, 'letting it go keeps your one legendary');
+    assert.equal(run.legendCatch(cfg), null, '(that offer is used up)');
+    const e = makeEnemy('SUICUNE', 30, { rng: new RNG('s'), legendary: true });
+    const b = new Battle(run, { kind: 'wild', elite: true, enemies: [e], rng: new RNG('sb') });
+    b.start();
+    run.balls.MASTER_BALL = 1;
+    b.throwBall('MASTER_BALL');
+    assert.equal(b.result.outcome, 'caught');
+    run.afterBattle(b);
+    assert.equal(run.legendTaken, 'SUICUNE');
+    assert.ok(LEGENDARY.has('MEW') && LEGENDARY.has('DEOXYS') && !LEGENDARY.has('SNORLAX'));
+  });
+
+  t('v0.3.25 mythics: catch offers join at the fight\'s level under the A5 level cap, with their own decks', () => {
+    const run = strong(spireRun('MY1', undefined, 'kanto', 2), 20);
+    const cfg = run.mythicConfig(new RNG('m2'), 6, 'MEWTWO');
+    assert.equal(cfg.kind, 'elite');
+    assert.ok(cfg.softLose && cfg.legend === 'MEWTWO' && cfg.enemies[0].bossRule === 'MEWTWO');
+    const [m] = run.legendCatches(cfg);
+    assert.equal(m.species, 'MEWTWO');
+    assert.equal(m.level, cfg.enemies[0].level, 'the fight\'s level (not capped at your best POKéMON like the birds)');
+    assert.deepEqual(m.moves.map(x => x.move), MYTHICS.MEWTWO.catchMoves);
+    const a5 = strong(spireRun('MY2', undefined, 'kanto', 2, { asc: 5, floor: 14 }), 20);
+    const c5 = a5.mythicConfig(new RNG('m3'), 14, 'MEWTWO');
+    const cap = a5.levelCap();
+    a5.legendOffers(c5)[0].level = cap + 5;
+    assert.equal(a5.legendCatch(c5).level, cap, 'A5: at most the act\'s level cap');
+    // MEW: random TM moves under the act's power cap, the same deck it joins with
+    const mew = run.mythicConfig(new RNG('mw'), 6, 'MEW');
+    assert.equal(mew.kind, 'wild');
+    assert.ok(mew.catchMult > 1);
+    const mv = mew.enemies[0].moves;
+    assert.ok(mv.length === 4 && mv.every(k => D.moves[k] && !NO_PLAYER_MOVES.has(k) && !(D.moves[k].power > MOVE_POOL.maxPower[2])), mv.join());
+    assert.deepEqual(run.legendCatch(mew).moves.map(x => x.move), mv);
+  });
+
+  t('v0.3.25 MEW flees after 3 turns unless asleep or paralyzed; it is easy to catch', () => {
+    const run = strong(spireRun('MEW1', undefined, 'kanto', 1));
+    const cfg = run.mythicConfig(new RNG('mew'), 6, 'MEW');
+    cfg.dmgScale = 0.01;
+    const b = new Battle(run, cfg); b.start();
+    for (let i = 1; i < MEW_TURNS; i++) { b.pass(); assert.equal(b.result, null, 'still here after turn ' + i); }
+    b.pass();
+    assert.equal(b.result?.outcome, 'enemyFled', 'gone after turn 3');
+    for (const st of ['SLP', 'PAR']) {
+      const c2 = run.mythicConfig(new RNG('mew' + st), 6, 'MEW'); c2.dmgScale = 0.01;
+      const b2 = new Battle(run, c2); b2.start();
+      const e = b2.enemy();
+      for (let i = 0; i < 5; i++) { e.status = st; e.sleepTurns = 9; b2.pass(); }
+      assert.equal(b2.result, null, `a ${st} MEW stays`);
+    }
+    const c3 = run.mythicConfig(new RNG('mewc'), 6, 'MEW');
+    const b3 = new Battle(run, c3); b3.start();
+    const plain = new Battle(run, { ...c3, catchMult: 1 }); plain.start();
+    assert.ok(b3.catchChance('POKE_BALL') > plain.catchChance('POKE_BALL') * 2, 'catchMult');
+  });
+
+  t('v0.3.25 DEOXYS switches ATTACK / DEFENSE / SPEED forme every turn', () => {
+    const run = strong(spireRun('DEO1', ['kanto', 'kanto', 'hoenn', 'hoenn'], 'kanto', 2));
+    const cfg = run.mythicConfig(new RNG('deo'), 6, 'DEOXYS');
+    cfg.dmgScale = 0.01;
+    const b = new Battle(run, cfg); b.start();
+    const e = b.enemy(), base = { ...e.baseStats };
+    const seen = [];
+    for (let i = 0; i < 6 && !b.result; i++) {
+      const f = DEOXYS_FORMES[i % 3];
+      assert.equal(e.forme, f.key, 'turn ' + b.turn);
+      for (const k of ['atk', 'def', 'spe']) assert.equal(e.stats[k], Math.max(1, Math.round(base[k] * f[k])), `${f.key} ${k}`);
+      seen.push(e.forme);
+      b.pass();
+    }
+    assert.deepEqual(seen.slice(0, 4), ['ATTACK', 'DEFENSE', 'SPEED', 'ATTACK']);
+  });
+
+  t('v0.3.25 mythic events: spawn conditions, forced at the first "?" once due, never in the pools', () => {
+    const due = (p, id) => EVM.mythicDue(p, id);
+    // find seeds whose roll comes up (and one where it doesn't)
+    const seedFor = (id, a, want) => { for (let i = 0; i < 4000; i++) { const p = { seed: 'SP' + i, actIndex: a, flags: {} }; if (EVM.MYTHIC_ROLL[id](p) === want) return 'SP' + i; } throw new Error('no seed'); };
+    const mtSeed = seedFor('MEWTWO', 2, true);
+    const k3 = spireRun(mtSeed, undefined, 'kanto', 2, { champ: true });
+    assert.ok(due(k3, 'MEWTWO'), 'KANTO act 3 + a CHAMPION beaten before');
+    assert.equal(EVM.pickEvent(k3, new RNG('pk')).id, 'cerulean_cave');
+    assert.ok(!due(spireRun(mtSeed, undefined, 'kanto', 2), 'MEWTWO'), 'no CHAMPION beaten: never');
+    assert.ok(!due(spireRun(mtSeed, undefined, 'kanto', 1, { champ: true }), 'MEWTWO'), 'act 2: never');
+    assert.ok(!due(spireRun(mtSeed, ['kanto', 'kanto', 'hoenn', 'kanto'], 'kanto', 2, { champ: true }), 'MEWTWO'), 'a HOENN act 3: never');
+    assert.ok(!due(spireRun(seedFor('MEWTWO', 2, false), undefined, 'kanto', 2, { champ: true }), 'MEWTWO'), 'the roll');
+    // DEOXYS: the METEORITE, HOENN act 3+ or the SEVII post-game
+    const dSeed = seedFor('DEOXYS', 2, true);
+    const h3 = spireRun(dSeed, ['kanto', 'kanto', 'hoenn', 'hoenn'], 'kanto', 2);
+    assert.ok(!due(h3, 'DEOXYS'), 'no METEORITE');
+    h3.addRelic('METEORITE');
+    assert.ok(due(h3, 'DEOXYS'));
+    assert.equal(EVM.pickEvent(h3, new RNG('pd')).id, 'birth_island');
+    const h2 = spireRun(seedFor('DEOXYS', 1, true), ['kanto', 'hoenn', 'hoenn', 'hoenn'], 'kanto', 1); h2.addRelic('METEORITE');
+    assert.ok(!due(h2, 'DEOXYS'), 'HOENN act 2: too early');
+    const sevii = spireRun(seedFor('DEOXYS', 4, true), undefined, 'kanto', 4); sevii.addRelic('METEORITE');
+    assert.ok(sevii.act.postgame && due(sevii, 'DEOXYS'), 'the SEVII ISLANDS post-game');
+    // RAYQUAZA: an ORB or GROUDON / KYOGRE met, HOENN act 3+
+    const rSeed = seedFor('RAYQUAZA', 2, true);
+    const rq = spireRun(rSeed, ['kanto', 'kanto', 'hoenn', 'hoenn'], 'kanto', 2);
+    assert.ok(!due(rq, 'RAYQUAZA'));
+    rq.addRelic('BLUE_ORB'); assert.ok(due(rq, 'RAYQUAZA'));
+    const rq2 = spireRun(rSeed, ['kanto', 'kanto', 'hoenn', 'hoenn'], 'kanto', 2); rq2.addSeen('GROUDON', false);
+    assert.ok(due(rq2, 'RAYQUAZA'), 'met GROUDON');
+    const rq3 = spireRun(rSeed, undefined, 'kanto', 2); rq3.addRelic('RED_ORB');
+    assert.ok(!due(rq3, 'RAYQUAZA'), 'KANTO act 3: no SKY PILLAR');
+    // MEW: any act and region; MEW'S JOURNAL's funding raises the odds
+    const mSeed = seedFor('MEW', 0, true);
+    assert.ok(due(spireRun(mSeed, ['johto', 'kanto', 'kanto', 'kanto'], 'kanto', 0), 'MEW'), 'JOHTO act 1 too');
+    let plain = 0, funded = 0;
+    for (let i = 0; i < 4000; i++) { const p = { seed: 'MW' + i, actIndex: 1, flags: {} }; if (EVM.MYTHIC_ROLL.MEW(p)) plain++; p.flags.mewJournal = 'funded'; if (EVM.MYTHIC_ROLL.MEW(p)) funded++; }
+    assert.ok(plain > 4000 * EVM.MYTHIC_ODDS.MEW * 0.6 && plain < 4000 * EVM.MYTHIC_ODDS.MEW * 1.4 && funded > plain * 3, `${plain} ${funded}`);
+    const journal = EVENTS.find(e => e.id === 'mansion');
+    const fr = strong(spireRun('MJ1', undefined, 'kanto', 2)); fr.money = 5000;
+    journal.choices[0].run(fr, new RNG('j'));
+    assert.equal(fr.flags.mewJournal, 'funded');
+    // shown once per run, never in an ordinary pick
+    k3.seenEvents = ['cerulean_cave'];
+    for (let i = 0; i < 40; i++) assert.notEqual(EVM.pickEvent({ ...k3, seenEvents: ['cerulean_cave'], acts: k3.acts, act: k3.act }, new RNG('again' + i)).id, 'cerulean_cave');
+    let quiet = null; for (let i = 0; i < 4000 && !quiet; i++) { const p = { seed: 'Q' + i, actIndex: 2, flags: {} }; if (!EVM.MYTHIC_ROLL.MEWTWO(p) && !EVM.MYTHIC_ROLL.MEW(p)) quiet = 'Q' + i; }
+    const noRoll = spireRun(quiet, undefined, 'kanto', 2, { champ: true }); // (no mythic due: never one from the pool)
+    for (let i = 0; i < 60; i++) assert.ok(!EVM.pickEvent(Object.assign(Object.create(Object.getPrototypeOf(noRoll)), noRoll, { seenEvents: [] }), new RNG('pool' + i)).mythic || false);
+    // the rough odds per eligible act (MEWTWO ~20% roll), checked on the rolls themselves
+    let mt = 0; for (let i = 0; i < 2000; i++) if (EVM.MYTHIC_ROLL.MEWTWO({ seed: 'R' + i, actIndex: 2, flags: {} })) mt++;
+    assert.ok(mt > 2000 * EVM.MYTHIC_ODDS.MEWTWO * 0.8 && mt < 2000 * EVM.MYTHIC_ODDS.MEWTWO * 1.2, 'MEWTWO roll ' + mt);
+  });
+
+  t('v0.3.25 boss swap: nobody fights their own MEWTWO / DEOXYS / RAYQUAZA', () => {
+    assert.equal(swapBoss('LEGEND_MEWTWO', ['MEWTWO']), 'LEGEND_DEOXYS');
+    assert.equal(swapBoss('LEGEND_DEOXYS', ['DEOXYS']), 'LEGEND_MEWTWO');
+    assert.equal(swapBoss('LEGEND_MEWTWO', ['MEWTWO', 'DEOXYS']), 'LEGEND_LUGIA', 'a co-op room owning both: a stand-in');
+    assert.equal(swapBoss('LEGEND_RAYQUAZA', ['RAYQUAZA']), 'LEGEND_GROUDON');
+    assert.equal(swapBoss('LEGEND_RAYQUAZA', ['RAYQUAZA', 'GROUDON']), 'LEGEND_KYOGRE');
+    assert.equal(swapBoss('LEGEND_MEWTWO', ['ZAPDOS']), 'LEGEND_MEWTWO');
+    assert.equal(swapBoss('LEADER_BROCK', ['MEWTWO']), 'LEADER_BROCK');
+    // a run that caught MEWTWO in act 3 meets DEOXYS at the end of the SEVII ISLANDS
+    let r = null;
+    for (let i = 0; i < 60 && !r; i++) { const x = spireRun('BS' + i, undefined, 'kanto', 0); const y = Run.fromJSON(JSON.parse(JSON.stringify(x))); y.startAct(4); if (y.boss === 'LEGEND_MEWTWO') r = x; }
+    assert.ok(r, 'a seed whose post-game boss is MEWTWO');
+    r.legendTaken = 'MEWTWO';
+    r.startAct(4);
+    assert.equal(r.boss, 'LEGEND_DEOXYS');
+    assert.equal(r.bossConfig(new RNG('b')).enemies[0].species, 'DEOXYS');
+    // caught during the act whose boss it is (BIRTH ISLAND in the post-game): swapped right away
+    const s = spireRun('BS2', undefined, 'kanto', 4); s.boss = 'LEGEND_DEOXYS';
+    s.takeLegend(s.legendCatch(s.mythicConfig(new RNG('d'), 6, 'DEOXYS')), true);
+    assert.equal(s.boss, 'LEGEND_MEWTWO');
+    const h = spireRun('BS3', ['hoenn', 'hoenn', 'hoenn', 'hoenn'], 'hoenn', 4);
+    assert.equal(h.boss, 'LEGEND_RAYQUAZA');
+    h.markLegendary('RAYQUAZA');
+    assert.equal(h.boss, 'LEGEND_GROUDON');
+  });
+
+  t('v0.3.25 a lost mythic fight: the run goes on, the team -30% HP from where it came in, nobody released', () => {
+    const run = strong(spireRun('SL1', undefined, 'kanto', 2), 8);
+    run.ascension = NUZLOCKE_ASC;
+    run.party[1].hp = 5;
+    const before = run.party.map(m => m.hp);
+    const cfg = run.mythicConfig(new RNG('sl'), 6, 'MEWTWO');
+    const b = new Battle(run, cfg); b.start();
+    for (let i = 0; i < 40 && !b.result; i++) b.pass();
+    assert.equal(b.result.outcome, 'lose');
+    run.softLoss(b);
+    run.party.forEach((m, i) => assert.equal(m.hp, Math.max(1, before[i] - Math.floor(maxHp(m) * 0.3)), m.species));
+    assert.ok(run.party.every(m => !m.lost) && run.releaseLost().length === 0, 'NUZLOCKE: nobody lost');
+    assert.ok(run.seen.includes('MEWTWO'));
+  });
+}
 
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

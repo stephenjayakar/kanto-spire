@@ -50,7 +50,10 @@ export function startBattle(cfg, node, extra = {}) {
 export function battleFinished(battle, scene) {
   const run = G.run;
   const out = battle.result.outcome;
+  // a lost mythic "?" fight (v0.3.25): the run goes on, the team thrown out with 30% less HP (Run.softLoss)
+  if (out === 'lose' && scene.cfg?.softLose) { run.softLoss(battle); return goToMap(); }
   if (out === 'lose') { endRun(run, 'lose'); return setScene(new GameOverScene()); }
+  if (out === 'enemyFled' && scene.cfg?.mythic) for (const e of battle.enemies) run.addSeen(e.species, false); // (MEW got away: seen)
   if (out === 'fled' || out === 'enemyFled') {
     // Nuzlocke: POKéMON that fainted before you got away are gone too.
     const released = run.releaseLost ? run.releaseLost() : [];

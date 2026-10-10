@@ -466,6 +466,7 @@ export class CoopSession {
       for (const e of g.events.slice(before.events)) {
         if (e?.t === 'away') coopToast(e.p === this.mySlot ? 'You were sat out (offline).' : `${this.nameOf(e.p)} sits out: carrying on without them`, { t: 4 });
         else if (e?.t === 'back') coopToast(e.p === this.mySlot ? 'You are back in the game!' : `${this.nameOf(e.p)} is back!`, { good: true });
+        else if (e?.t === 'softLoss') coopToast(`${e.foe || 'The mythic'} threw every team out! Everyone lost 30% HP, but the run goes on.`, { t: 5 }); // (v0.3.25)
         else if (e?.t === 'revive') coopToast(e.p === this.mySlot ? 'Your team is back on its feet!' : `${this.nameOf(e.p)}'s team is back on its feet!`, { good: true });
         else if (e?.t === 'actClear') {
           // the next act's region and its possible GYM LEADERS (One Spire), so the team can plan for it
@@ -642,6 +643,7 @@ export class CoopSession {
     if (!g || this.stopped) return;
     const p = this.mySlot;
     this.recordDex();
+    this.postChamp();
     let key, make;
     switch (g.phase) {
       case 'map': key = 'map'; make = () => { G.run = g.runs[p]; return new CoopMapScene(this); }; break;
@@ -660,6 +662,15 @@ export class CoopSession {
     if (!force && this.routeKey === 'battle' && key !== 'battle' && Engine.scene?.holdRoute?.()) return;
     this.routeKey = key;
     setScene(this.wrap(make()));
+  }
+
+  // v0.3.25: a player who has beaten a CHAMPION in an earlier run tells the room once (CoopGame.setChamp): CERULEAN CAVE's
+  // MEWTWO can then show up. Only once in sync on a live room (a replay or a resume must not post).
+  postChamp() {
+    const g = this.game;
+    if (this.champPosted || !this.synced || !g?.world || g.world.flags?.champ || !G.meta?.unlocks?.win || g.phase === 'over' || g.phase === 'victory' || g.phase === 'init') return;
+    this.champPosted = true;
+    this.post({ type: 'champ' });
   }
 
   // The local player's Pokédex (meta.dexSeen / dexCaught): what this player has met and caught so far (game/coop/dex.js;

@@ -1124,5 +1124,172 @@ t('co-op Pokédex: every player (P2 too) records what they met and caught', () =
   assert.deepEqual(meta, { dexSeen: ['MEW', 'PIDGEY', 'RATTATA'], dexCaught: ['MEW', 'RATTATA'] });
 });
 
+// ------------------------------------------------------------------------------------ v0.3.25: one legendary per run, mythics in co-op
+{
+  const EVM = await import('../web/src/game/events.js');
+  const { mythicDuoConfig, legendPairConfig } = await import('../web/src/game/coop/coop.js');
+  const { MYTHICS } = await import('../web/src/game/acts.js');
+  const INITN2 = (seed, n, world = 'kanto') => ({ seq: 1, type: 'init', seed, ascension: 0, world, starters: ['BULBASAUR', 'CHARMANDER', 'SQUIRTLE', 'PIKACHU'].slice(0, n), names: ['A', 'B', 'C', 'D'].slice(0, n) });
+  const rollSeed = (id, a, pre) => { for (let i = 0; i < 4000; i++) if (EVM.MYTHIC_ROLL[id]({ seed: pre + i, actIndex: a, flags: {} })) return pre + i; throw new Error('no seed'); };
+
+  t('v0.3.25 co-op legendary node: each player picks one of the two; with 3-4 players several may take the same one', () => {
+    for (const n of [3, 4]) {
+      const g = CoopGame.fromInit(INITN2('PAIR' + n, n));
+      g.world.startAct(1);
+      for (const r of g.runs) r.startAct(1);
+      g.mirror();
+      const node = Object.values(g.world.map.nodes).find(x => x.type === 'legend');
+      const cfg = legendPairConfig(g.world, g.world.rng.fork('pair'), node.floor, 'LEGEND_ZAPDOS', n);
+      assert.deepEqual(cfg.catchOffers.map(o => o.species), ['ZAPDOS', 'ARTICUNO']);
+      // everyone but the last picks ZAPDOS (duplicates), the last one ARTICUNO; each gets their own copy
+      g.runs.forEach((r, p) => {
+        const offers = r.legendCatches(cfg);
+        assert.deepEqual(offers.map(m => m.species), ['ZAPDOS', 'ARTICUNO'], `P${p + 1} may pick either`);
+        const pick = offers[p === n - 1 ? 1 : 0];
+        assert.ok(r.takeLegend(pick, true) && r.addToParty(pick));
+        assert.equal(r.legendCatches(cfg).length, 0, 'one pick: the other one is gone for this player');
+      });
+      assert.equal(g.runs.filter(r => r.party.some(m => m.species === 'ZAPDOS')).length, n - 1, `${n} players: ${n - 1} ZAPDOS copies`);
+      assert.ok(g.runs[n - 1].party.some(m => m.species === 'ARTICUNO'));
+      const uids = g.runs.flatMap(r => r.party.filter(m => ['ZAPDOS', 'ARTICUNO'].includes(m.species)).map(m => m.uid));
+      assert.ok(g.runs.every(r => r.legendTaken));
+      assert.ok(uids.length === n, 'separate POKéMON');
+      // a player who already had a legendary gets no pick (the node's held item only)
+      const r2 = Run.create({ starter: 'BULBASAUR', seed: 'X' + n, world: 'kanto', coop: true });
+      r2.legendTaken = 'RAIKOU';
+      assert.deepEqual(r2.legendCatches(cfg), []);
+    }
+  });
+
+  t('v0.3.25 co-op mythic: every player gets their own catch offer (one legendary per run each)', () => {
+    for (const n of [2, 3, 4]) {
+      const g = CoopGame.fromInit(INITN2('MYC' + n, n));
+      g.world.startAct(2); for (const r of g.runs) r.startAct(2); g.world.floor = 6; g.mirror();
+      for (const id of Object.keys(MYTHICS)) {
+        const cfg = mythicDuoConfig(g.world, id, n);
+        assert.equal(cfg.coopKind, 'mythic'); assert.equal(cfg.slots, 1);
+        assert.equal(!!cfg.enemies[0].allTarget, id === 'MEWTWO', id + ' all-target only for MEWTWO');
+        const mons = g.runs.map(r => r.legendCatches(cfg));
+        assert.ok(mons.every(l => l.length === 1 && l[0].species === MYTHICS[id].species), `${n}: ${id} offered to everyone`);
+      }
+      g.runs[1].legendTaken = 'ZAPDOS';
+      const cfg = mythicDuoConfig(g.world, 'MEW', n);
+      assert.deepEqual(g.runs[1].legendCatches(cfg), [], 'a player with a legendary: no copy');
+      assert.equal(g.runs[0].legendCatches(cfg).length, 1);
+    }
+  });
+
+  t('v0.3.25 co-op MEWTWO attacks EVERY player each turn: one intent per player, all hit, 1.5x a single legendary', () => {
+    for (const n of [2, 3, 4]) {
+      const g = CoopGame.fromInit(INITN2('M2A' + n, n));
+      g.world.startAct(2); for (const r of g.runs) r.startAct(2); g.world.floor = 6; g.mirror();
+      for (const r of g.runs) for (const m of r.party) { m.level = 60; m.hp = maxHp(m); }
+      const cfg = mythicDuoConfig(g.world, 'MEWTWO', n);
+      cfg.enemies[0].moves = ['SWIFT']; // (never misses: every hit lands)
+      g.startBattle(cfg);
+      const d = g.battle;
+      const its = d.intents.filter(Boolean);
+      assert.equal(its.length, n, `${n} players: ${n} intents`);
+      assert.ok(its.every(it => it.spread && it.move.key === 'SWIFT' && it.damage), 'all the same all-target move, with damage previews');
+      assert.deepEqual(its.map(it => it.target).sort(), g.runs.map((_, p) => p), 'one per player');
+      const hp0 = g.runs.map(r => r.party[0].hp);
+      for (let p = 0; p < n; p++) post(g, { p, type: 'lock', pass: true });
+      const hits = g.lastEvents.filter(e => e.t === 'enemyMove');
+      assert.equal(hits.length, n, 'one move event (animation) per player');
+      assert.equal(hits.filter(e => e.spread).length, n - 1, 'announced once, then it spreads');
+      g.runs.forEach((r, p) => assert.ok(r.party[0].hp < hp0[p], `P${p + 1} was hit`));
+      // a player down: the others are still hit, nobody twice
+      // balance: each hit at COOP_TUNING.spread of the mythic's damage
+      const plain = mythicDuoConfig(g.world, 'MEW', n);
+      assert.ok(Math.abs(cfg.dmgScale / (COOP_TUNING.spread) - g.world.mythicConfig(g.world.rng.fork('mythic' + g.world.nodeId + ':' + g.world.actIndex), 6, 'MEWTWO').dmgScale * COOP_TUNING.dmg.mythic) < 1e-9, 'spread factor on the damage');
+      assert.ok(plain.enemies[0].allTarget === undefined);
+    }
+    // asleep: it can't move, so nobody is hit
+    const g = CoopGame.fromInit(INITN2('M2S', 3));
+    g.world.startAct(2); g.mirror();
+    const cfg = mythicDuoConfig(g.world, 'MEWTWO', 3); cfg.enemies[0].moves = ['SWIFT'];
+    g.startBattle(cfg);
+    g.battle.enemies[0].status = 'SLP'; g.battle.enemies[0].sleepTurns = 5;
+    const hp0 = g.runs.map(r => r.party[0].hp);
+    for (let p = 0; p < 3; p++) post(g, { p, type: 'lock', pass: true });
+    assert.deepEqual(g.runs.map(r => r.party[0].hp), hp0, 'asleep: no hits');
+    assert.equal(g.battle.enemies[0].sleepTurns, 4, 'one sleep turn used, not three');
+  });
+
+  // The whole flow through actions: CERULEAN CAVE forced at a KANTO act 3 "?" room (a 'champ' action in the log), every
+  // bot presses its battle button, the room fights MEWTWO, rewards; a second client replaying the log stays in sync.
+  function throughMythic(seed, n, strongTeams = true) {
+    const setup = () => {
+      const g = CoopGame.fromInit(INITN2(seed, n));
+      g.world.startAct(2); for (const r of g.runs) r.startAct(2);
+      const target = Object.values(g.world.map.nodes).find(x => x.prev.length && x.floor >= 3);
+      target.type = 'event';
+      g.world.nodeId = target.prev[0]; g.world.floor = target.floor - 1; g.mirror();
+      if (strongTeams) for (const r of g.runs) for (const m of r.party) { m.level = 70; m.hp = maxHp(m); }
+      if (!strongTeams) for (const r of g.runs) for (const m of r.party) { m.level = 5; m.hp = maxHp(m); }
+      return { g, target };
+    };
+    const { g, target } = setup();
+    const log = [], cks = [], bots = g.runs.map((_, p) => makeBot(seed, p));
+    const P = a => { const act = JSON.parse(JSON.stringify({ ...a, seq: g.seq + 1, nonce: 'n' + (g.seq + 1) })); log.push(act); const ok = g.apply(act); cks.push(g.checksum()); return ok; };
+    assert.equal(g.world.flags.champ, undefined, 'a KANTO-only room: nobody known to have beaten a CHAMPION yet');
+    assert.ok(P({ p: n - 1, type: 'champ' }), 'a player who has posts champ');
+    assert.equal(P({ p: 0, type: 'champ' }), false, 'once is enough');
+    for (let p = 0; p < n; p++) P({ p, type: 'vote', node: target.id });
+    assert.equal(g.phase, 'private'); assert.equal(g.sharedEvent.id, 'cerulean_cave');
+    let sawSpread = false, cfg = null, k = 0;
+    while (g.phase !== 'map' && !['over', 'victory'].includes(g.phase) && k++ < 4000) {
+      if (g.phase === 'battle') { cfg ||= g.battleCfg; if (g.battle.intents.some(it => it?.spread)) sawSpread = true; if (g.battle.turn > 80) break; }
+      let acted = false;
+      for (const bot of bots) { const a = botAction(g, bot); if (!a) continue; P(a); acted = true; break; }
+      if (!acted) break;
+    }
+    const { g: b } = setup();
+    log.forEach((a, i) => { b.apply(JSON.parse(JSON.stringify(a))); assert.equal(b.checksum(), cks[i], `${seed}: checksum differs after seq ${a.seq} (${a.type})`); });
+    return { g, cfg, sawSpread };
+  }
+  t('v0.3.25 co-op CERULEAN CAVE through actions: the room fights MEWTWO (all-target), lockstep in sync, a copy for everyone', () => {
+    for (const n of [2, 4]) {
+      const hp = COOP_TUNING.hp.mythic; COOP_TUNING.hp.mythic = 0.2; // (a quick win: this test is about the flow, the replay and the catch)
+      let res; try { res = throughMythic(rollSeed('MEWTWO', 2, 'CC' + n + '_'), n); } finally { COOP_TUNING.hp.mythic = hp; }
+      const { g, cfg, sawSpread } = res;
+      assert.ok(cfg && cfg.mythic === 'MEWTWO' && cfg.allTarget, 'the mythic duo battle started');
+      assert.ok(sawSpread, 'all-target intents');
+      assert.equal(g.phase, 'map', 'won and back on the map');
+      assert.ok(g.runs.every(r => r.seenEvents.includes('cerulean_cave')));
+      assert.ok(g.runs.every(r => r.legendTaken === "MEWTWO" && r.party.some(m => m.species === "MEWTWO")), "every bot took its own MEWTWO: " + JSON.stringify(g.runs.map(r => [r.legendTaken, r.party.map(m => m.species), (r.runLog?.events || []).slice(-4)])));
+    }
+  });
+  t('v0.3.25 co-op mythic loss: the run goes on (teams thrown out, -30% HP), back on the map', () => {
+    const { g, cfg } = throughMythic(rollSeed('MEWTWO', 2, 'CL_'), 2, false);
+    assert.ok(cfg?.mythic === 'MEWTWO');
+    assert.equal(g.phase, 'map', 'not game over');
+    assert.ok(g.events.some(e => e.t === 'softLoss'));
+    assert.ok(g.runs.every(r => r.party.every(m => m.hp >= 1)), 'everyone standing');
+    assert.ok(g.runs.every(r => !r.legendTaken));
+  });
+  t('v0.3.25 co-op boss swap is based on the room: anyone owning the post-game boss swaps it for everyone', () => {
+    const g = CoopGame.fromInit(INITN2('BSW', 3));
+    g.world.boss = 'LEGEND_MEWTWO';
+    g.runs[2].legendTaken = 'MEWTWO';
+    g.mirror();
+    assert.equal(g.world.boss, 'LEGEND_DEOXYS');
+    assert.ok(g.runs.every(r => r.boss === 'LEGEND_DEOXYS'));
+    g.runs[0].legendTaken = 'DEOXYS'; g.world.boss = 'LEGEND_MEWTWO'; g.mirror();
+    assert.equal(g.world.boss, 'LEGEND_LUGIA', 'both owned in the room: a stand-in');
+  });
+  t('v0.3.25 co-op: the champ flag comes from the host\'s world (HOENN acts = a CHAMPION beaten) or a champ action', () => {
+    assert.equal(CoopGame.fromInit(INITN2('CH1', 2, 'spire')).world.flags.champ, true);
+    assert.equal(CoopGame.fromInit(INITN2('CH2', 2, 'spire_kanto')).world.flags.champ, undefined);
+    const g = CoopGame.fromInit(INITN2('CH3', 3, 'spire_kanto'));
+    post(g, { p: 1, type: 'setAway', target: 2, away: true });
+    g.away[2] = true;
+    assert.ok(post(g, { p: 2, type: 'champ' }));
+    assert.equal(g.away[2], true, 'a champ post never brings a sat-out player back');
+    const probe = EVM.coopProbe(g.world, g.runs);
+    assert.equal(probe.flags.champ, true);
+  });
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

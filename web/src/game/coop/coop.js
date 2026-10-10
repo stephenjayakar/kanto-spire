@@ -6,8 +6,8 @@ import { Run } from '../run.js';
 import { setUidCounter, isFainted, maxHp } from '../pokemon.js';
 import { reachable } from '../map.js';
 import { BADGES, CONSUMABLES } from '../items.js';
-import { pickEvent, coopProbe } from '../events.js';
-import { STARTERS, LEGENDS, BIRD_PARTNER } from '../acts.js';
+import { pickEvent, coopProbe, eventById } from '../events.js';
+import { STARTERS, LEGENDS, BIRD_PARTNER, MYTHICS, swapBoss } from '../acts.js';
 import { REGIONS, SPIRE, COOP_POOLS } from '../regions.js';
 import { DuoBattle, padEnemies } from './duo.js';
 import { COOP_TUNING } from './tuning.js';
@@ -145,6 +145,23 @@ export function legendPairConfig(world, rng, floor, key, n = 2) {
   return scaleEnemies({ ...a, enemies: [a.enemies[0], b.enemies[0]], legend: `${a.legend} & ${b.legend}`, catchOffers: offers, queues: [[0], [1]], slotQueue: [0, 1], slots: 2, rng }, 'bird2', world, n);
 }
 
+// A mythic "?" event (v0.3.25, events.js MYTHIC_EVENTS): the whole room fights the act's mythic, one foe scaled like the
+// co-op legendary (COOP_TUNING 'mythic'). CERULEAN CAVE's MEWTWO attacks every player each turn (enemy.allTarget,
+// duo.js chooseIntents), each hit x COOP_TUNING.spread. Rewards: every player's own catch offer (ONE LEGENDARY PER RUN
+// still applies to each) and held item, in their own reward screen. A loss doesn't end the run (afterBattle).
+export function mythicDuoConfig(world, id, n = 2) {
+  const rng = world.rng.fork('mythic' + world.nodeId + ':' + world.actIndex);
+  const c = world.mythicConfig(rng, Math.max(0, world.floor), id);
+  const cfg = single({ ...c, rng }, 'mythic', world, n);
+  if (MYTHICS[id]?.coopHp) for (const e of cfg.enemies) { e.maxHp = Math.round(e.maxHp * MYTHICS[id].coopHp); e.hp = e.maxHp; e.coopHp = Math.round((e.coopHp || 1) * MYTHICS[id].coopHp * 100) / 100; }
+  if (MYTHICS[id]?.allTarget) {
+    for (const e of cfg.enemies) e.allTarget = true;
+    cfg.dmgScale *= COOP_TUNING.spread ?? 1;
+    cfg.allTarget = true;
+  }
+  return cfg;
+}
+
 export function gauntletDuoConfig(world, i, n = 2) {
   world.gauntletIndex = i;
   const rng = world.rng.fork('g' + i);
@@ -212,6 +229,7 @@ export class CoopGame {
     if (a.type === 'init') return this.init(a);
     if (this.phase === 'init' || this.phase === 'over' || this.phase === 'victory') return false;
     if (!this.inGame(p)) return false;
+    if (a.type === 'champ') return this.setChamp(); // (bookkeeping: never brings a sat-out player back)
     // anything a sat-out player does brings them back in
     if (this.away[p] && a.type !== 'away') this.setAway(p, false);
     switch (a.type) {
@@ -258,15 +276,31 @@ export class CoopGame {
     this.votes = starters.map(() => null);
     this.down = starters.map(() => false);
     this.away = starters.map(() => false);
+    // (v0.3.25) A room with HOENN acts was opened by a player who has beaten a CHAMPION (regions.js coopWorldFor): the
+    // CERULEAN CAVE mythic can show up. Any other player who has posts a 'champ' action (setChamp).
+    if ((COOP_POOLS[a.world] || []).length > 1) this.world.flags.champ = true;
     setUidCounter(1e9 + this.seq * 1000 + 500);
     this.mirror();
     this.phase = 'map';
     return true;
   }
 
+  // A player who has beaten a CHAMPION in an earlier run says so once (the session posts { type: 'champ' }): the
+  // room's mythic events may then include CERULEAN CAVE (events.js coopProbe reads world.flags.champ).
+  setChamp() {
+    if (!this.world || this.world.flags?.champ) return false;
+    (this.world.flags ||= {}).champ = true;
+    return true;
+  }
+
+  // The legendaries the room's players have (ONE LEGENDARY PER RUN, each): an act boss one of them owns is swapped out.
+  roomLegends() { return this.runs.map(r => r?.legendTaken).filter(Boolean); }
+
   // Copy the shared map position into both runs (private scenes read run.actIndex/floor/nodeId/boss).
   mirror() {
     const w = this.world;
+    const owned = this.roomLegends();
+    if (owned.length && w.boss) w.boss = swapBoss(w.boss, owned); // (nobody fights their own POKéMON)
     for (const r of this.runs) {
       r.map = w.map; r.actIndex = w.actIndex; r.nodeId = w.nodeId; r.floor = w.floor; r.boss = w.boss; r.gauntletIndex = w.gauntletIndex;
       r.ascension = this.ascension; r.world = this.worldName;
@@ -399,6 +433,14 @@ export class CoopGame {
     this.battleSubs = d.subs;
     this.down = d.down.slice();
     for (let p = 0; p < this.n; p++) if (d.down[p] && d.result.outcome === 'win') this.events.push({ seq: this.seq, t: 'revive', p });
+    if (d.result.outcome === 'lose' && cfg.softLose) {
+      // a mythic "?" fight (v0.3.25): the run goes on, every team thrown out with 30% less HP than it came in with
+      for (const s of d.subs) s.run.softLoss(s);
+      this.down = this.runs.map(() => false);
+      this.events.push({ seq: this.seq, t: 'softLoss', foe: cfg.mythic || null });
+      this.toMap();
+      return;
+    }
     if (d.result.outcome === 'lose') { this.phase = 'over'; this.result = 'lose'; this.events.push({ seq: this.seq, t: 'over' }); return; }
     const final = (cfg.gauntlet !== undefined && cfg.gauntlet === this.world.act.gauntlet.length - 1) || (cfg.legendBoss && this.world.act.postgame);
     if (final) { this.victory(); return; }
@@ -444,7 +486,17 @@ export class CoopGame {
       return this.actClear();
     }
     if (k === 'plateau') return this.startBattle(gauntletDuoConfig(this.world, this.world.gauntletIndex, this.activeCount()));
+    const mythic = k === 'event' ? this.sharedMythic() : null;
+    if (mythic) return this.startBattle(mythicDuoConfig(this.world, mythic, this.activeCount()));
     this.toMap();
+  }
+
+  // The mythic of this "?" room's shared event (v0.3.25: everyone has read it and pressed its battle button), or null.
+  sharedMythic() {
+    const se = this.sharedEvent, w = this.world;
+    if (!se || se.act !== w.actIndex || se.node !== w.nodeId) return null;
+    const id = eventById(se.id)?.mythic;
+    return id && MYTHICS[id] ? id : null;
   }
 
   // Between Elite Four rooms: partial heal, then a private Plateau Mart, then the next room.

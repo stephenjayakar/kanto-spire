@@ -315,6 +315,38 @@ export const BIRD_PARTNER = {
   LEGEND_RAIKOU: 'LEGEND_ENTEI', LEGEND_ENTEI: 'LEGEND_SUICUNE', LEGEND_SUICUNE: 'LEGEND_RAIKOU',
 };
 
+// ---- Mythic "?" events (v0.3.25: events.js CERULEAN CAVE, FARAWAY ISLAND, BIRTH ISLAND, SKY PILLAR) ------------------
+// A one-off fight scaled like the act's legendary node (Run.mythicConfig): lvl = levels over the floor's level, hp / dmg =
+// on top of the legendary node's HP and damage (TUNING.bird), moves = the foe's moves, catchMoves = the deck it joins
+// with (tmMoves: MEW's are random TM moves, the same ones it fought with), rule = its boss rule (bosses.js), coopHp = extra
+// co-op HP (balanced with tests/coop_mythic_bench.mjs: a smart-bot room at KANTO act 3 wins about 55-65% of these fights,
+// the act's legendary pair ~88%; MEW: more HP, though a room throwing 2-4 balls a turn catches it almost every time).
+//   MEWTWO  co-op: attacks EVERY player each turn (allTarget, coop/duo.js); solo: a normal fight
+//   MEW     a wild battle (balls work, catchMult x the catch rate); flees after 3 turns unless asleep or paralysed
+//   DEOXYS  switches ATTACK / DEFENSE / SPEED forme every turn
+export const MYTHICS = {
+  MEWTWO: { species: 'MEWTWO', title: 'MEWTWO', terrain: 'cave', music: 'mus_vs_mewtwo', lvl: 3, hp: 0.72, dmg: 0.8, coopHp: 0.7, rule: 'MEWTWO', allTarget: true,
+    moves: ['PSYCHIC', 'SHADOW_BALL', 'ICE_BEAM', 'THUNDERBOLT'], catchMoves: ['PSYCHIC', 'SWIFT', 'BARRIER', 'RECOVER'] },
+  MEW: { species: 'MEW', title: 'MEW', terrain: 'longgrass', music: 'mus_vs_legend', lvl: 0, hp: 0.5, dmg: 0.75, coopHp: 2.2, rule: 'MEW', wild: true, catchMult: 4, tmMoves: true },
+  DEOXYS: { species: 'DEOXYS', title: 'DEOXYS', terrain: 'mountain', music: 'mus_vs_deoxys', lvl: 3, hp: 1.5, dmg: 0.85, coopHp: 0.85, rule: 'DEOXYS',
+    moves: ['PSYCHO_BOOST', 'SUPERPOWER', 'PSYCHIC', 'COSMIC_POWER'], catchMoves: ['PSYCHIC', 'NIGHT_SHADE', 'SUPERPOWER', 'COSMIC_POWER'] },
+  RAYQUAZA: { species: 'RAYQUAZA', title: 'RAYQUAZA', terrain: 'mountain', music: 'mus_vs_legend', lvl: 3, hp: 0.75, dmg: 0.85, coopHp: 0.85, rule: 'LEGEND',
+    moves: ['DRAGON_CLAW', 'EXTREME_SPEED', 'CRUNCH', 'DRAGON_DANCE'], catchMoves: ['DRAGON_CLAW', 'TWISTER', 'CRUNCH', 'DRAGON_DANCE'] },
+};
+// Nobody fights their own POKéMON (v0.3.25): an act boss the run's player (co-op: anyone in the room) caught becomes the
+// first of these that nobody owns (owned: species). MEWTWO and DEOXYS share the SEVII post-game; RAYQUAZA's stand-ins
+// are the SKY PILLAR act's weather trio.
+export const BOSS_SWAPS = {
+  LEGEND_MEWTWO: ['LEGEND_DEOXYS', 'LEGEND_LUGIA', 'LEGEND_HO_OH'],
+  LEGEND_DEOXYS: ['LEGEND_MEWTWO', 'LEGEND_LUGIA', 'LEGEND_HO_OH'],
+  LEGEND_RAYQUAZA: ['LEGEND_GROUDON', 'LEGEND_KYOGRE', 'LEGEND_LATIOS'],
+};
+export function swapBoss(key, owned = []) {
+  const own = new Set(owned);
+  if (!key || !LEGENDS[key] || !BOSS_SWAPS[key] || !own.has(LEGENDS[key].species)) return key;
+  return BOSS_SWAPS[key].find(k => LEGENDS[k] && !own.has(LEGENDS[k].species)) || key;
+}
+
 export const MAP_NODE_WEIGHTS = {
   wild: 24, trainer: 25, event: 18, center: 10, mart: 9, elite: 10,
 };

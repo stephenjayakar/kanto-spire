@@ -33,6 +33,9 @@ export class RewardScene {
     const legendMons = b.result.outcome === 'win' && (cfg.catchOffer || cfg.catchOffers) ? run.legendCatches(cfg) : [];
     if (legendMons.length === 1) this.rewards.push({ kind: 'legend', mon: legendMons[0], label: `${speciesName(legendMons[0].species)} is watching you. Catch it? (Lv${legendMons[0].level})` });
     else if (legendMons.length > 1) this.rewards.push({ kind: 'legend', mon: legendMons[0], mons: legendMons, label: `${legendMons.map(m => speciesName(m.species)).join(' and ')} are watching you. Catch one? (Lv${legendMons[0].level})` });
+    // ONE LEGENDARY PER RUN (v0.3.25): no catch once you have one, and the screen says why
+    const offers = b.result.outcome === 'win' ? run.legendOffers(cfg) : [];
+    if (!legendMons.length && offers.length && run.hasLegendary?.()) this.rewards.push({ kind: 'legendNote', mon: { species: offers[0].species }, auto: true, claimed: true, label: `${offers.map(o => speciesName(o.species)).join(' & ')}: you already have a legendary this run.` });
     if (cfg.kind === 'boss' && !cfg.gauntlet && !cfg.legendBoss) {
       const badge = badgeForBoss(run.boss);
       if (badge && !run.badges.includes(badge)) this.rewards.push({ kind: 'badge', badge, label: BADGES[badge].name });
@@ -111,7 +114,7 @@ export class RewardScene {
           const names = r.mons.map(m => speciesName(m.species));
           const v = await pick(new ChoiceModal({
             title: 'Catch which one?',
-            body: `One time only: catch ${names.join(' or ')} (Lv${r.mon.level}, with its own deck). The other one flies away. Every player gets their own pick.`,
+            body: `One time only: catch ${names.join(' or ')} (Lv${r.mon.level}, with its own deck). The other one flies away. Every player gets their own pick (the same one is fine).\n${run.legendRuleText()}`,
             options: [...r.mons.map((m, i) => ({ label: `Catch ${names[i]}!`, value: i + 1, color: THEME.green, tip: `${(D.species[m.species]?.types || []).join('/')}  ·  Lv${m.level}\nDeck: ${m.moves.map(x => D.moves[x.move]?.name || x.move).join(', ')}` })), { label: 'Let them go', value: 0, color: THEME.discard }],
             cancelable: false,
           }));
@@ -122,7 +125,7 @@ export class RewardScene {
         const name = speciesName(r.mon.species);
         const v = r.mons === null ? 1 : await pick(new ChoiceModal({
           title: `Catch ${name}?`,
-          body: `One time only: ${name} joins your party at Lv${r.mon.level} with its own deck. If you let it go, it flies away for good.`,
+          body: `One time only: ${name} joins your party at Lv${r.mon.level} with its own deck. If you let it go, it leaves for good.\n${run.legendRuleText()} No other legendary will join you after it.`,
           options: [{ label: `Catch ${name}!`, value: 1, color: THEME.green }, { label: 'Let it go', value: 0, color: THEME.discard }],
           cancelable: false,
         }));
@@ -235,11 +238,12 @@ export class RewardScene {
       const hot = !r.claimed && !this.busy && hover(x + 10, ry, w - 20, 30);
       pixBox(ctx, x + 10, ry, w - 20, 30, r.claimed ? '#2a2a30' : hot ? '#4a5878' : '#323a50', r.claimed ? '#202024' : hot ? '#f8d038' : '#141820', 3);
       const icon = r.kind === 'money' ? itemPath('NUGGET') : r.kind === 'item' ? itemPath(r.key) : r.kind === 'relic' ? itemPath(r.choices[0]) : r.kind === 'moves' ? itemPath('TM_CASE') : r.kind === 'badge' ? badgeIcon(r.badge) : null;
-      if (r.kind === 'mon' || r.kind === 'legend' || r.kind === 'lost') drawIcon(ctx, r.mon.species, x + 14, ry - 3, { gray: r.kind === 'lost' });
+      if (r.kind === 'mon' || r.kind === 'legend' || r.kind === 'lost' || r.kind === 'legendNote') drawIcon(ctx, r.mon.species, x + 14, ry - 3, { gray: r.kind === 'lost' || r.kind === 'legendNote' });
       else if (r.kind === 'monPick') drawIcon(ctx, r.mons[0].species, x + 14, ry - 3);
       else if (icon) draw(ctx, icon, x + 16, ry + 3);
       textFit(ctx, r.label, x + 50, ry + 8, w - 90, { color: r.kind === 'lost' ? 'red' : r.claimed ? 'gray' : r.kind === 'legend' ? 'gold' : 'white' });
-      if (r.claimed && r.kind !== 'money' && r.kind !== 'lost') text(ctx, '✓', x + w - 24, ry + 8, { color: 'green' });
+      if (r.claimed && r.kind !== 'money' && r.kind !== 'lost' && r.kind !== 'legendNote') text(ctx, '✓', x + w - 24, ry + 8, { color: 'green' });
+      if (r.kind === 'legendNote' && hover(x + 10, ry, w - 20, 30)) tip('ONE LEGENDARY PER RUN', `${G.run.legendRuleText()} Once a legendary joins you, no other legendary can be caught for the rest of the run. Fights and their held items stay.`, { width: 200 });
       if (hot) {
         if (r.kind === 'item') tip(D.items[r.key]?.name, consumableDesc(r.key));
         if (r.kind === 'badge') tip(BADGES[r.badge].name, BADGES[r.badge].desc);

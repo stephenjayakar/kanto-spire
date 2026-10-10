@@ -1,6 +1,6 @@
 // Battle engine: pure logic, no rendering. The battle scene calls actions and animates the event list.
 import { D, typeEffect, isSpecialMove, stageMult, accStageMult, gen3Damage, expYield, monStats, speciesName } from './data.js';
-import { stats, maxHp, typesOf, monName, isFainted, nextUid, defaultMoves, randomIVs, speciesOf, DECK_RULES, replaceMoves } from './pokemon.js';
+import { stats, maxHp, typesOf, monName, isFainted, nextUid, defaultMoves, randomIVs, speciesOf, DECK_RULES, replaceMoves, LEGENDARY } from './pokemon.js';
 import { detectCombo, comboBonus, COMBOS } from './hands.js';
 import { EFFECTS, POWER_FN, FIXED_DAMAGE, hitCount, critStageOf, resolveCallMove, hiddenPower, STAT_NAMES, PROTECT_EFFECTS, preRollProtect } from './effects.js';
 import { RELICS, BADGES, CONSUMABLES, BALLS, ballRate } from './items.js';
@@ -140,6 +140,8 @@ export class Battle {
     this.mods = run.mods();
     this.discardsLeft = Math.max(0, DECK_RULES.discards + (this.mods.discards || 0) + (cfg.discardMod || 0));
     this.leadUid = (run.party.find(m => !isFainted(m)) || run.party[0]).uid;
+    // a mythic fight the run survives losing (Run.softLoss): everyone's HP coming in
+    if (cfg.softLose) this.preHp = Object.fromEntries(run.party.map(m => [m.uid, m.hp]));
   }
 
   // ---- helpers --------------------------------------------------------------------------
@@ -149,13 +151,16 @@ export class Battle {
   lead() { return this.run.party.find(m => m.uid === this.leadUid); }
   enemy() { return this.enemies[this.enemyIndex]; }
   monName(mon) { return this.isEnemyMon(mon) ? (this.wildLike ? 'Wild ' : 'Foe ') + speciesName(mon.species) : monName(mon); }
-  // Wild encounters, including the legendary bird nodes (those are kind 'elite': no balls, no running).
-  get wildLike() { return this.kind === 'wild' || !!this.cfg.legendNode; }
-  // Can a ball be thrown now? Nuzlocke: only in the act's first wild battle (cfg.nuzFirst).
-  canCatch() { return this.kind === 'wild' && !this.cfg.noCatch && (!this.run.nuzlocke || !!this.cfg.nuzFirst); }
+  // Wild encounters, including the legendary bird nodes and the mythic "?" fights (those are kind 'elite': no balls, no running).
+  get wildLike() { return this.kind === 'wild' || !!this.cfg.legendNode || !!this.cfg.mythic; }
+  // Can a ball be thrown now? Nuzlocke: only in the act's first wild battle (cfg.nuzFirst). ONE LEGENDARY PER RUN
+  // (v0.3.25): never at a legendary once you have one.
+  canCatch() { return this.kind === 'wild' && !this.cfg.noCatch && (!this.run.nuzlocke || !!this.cfg.nuzFirst) && !this.legendBlocked(); }
+  legendBlocked(e = this.enemy()) { return !!e && LEGENDARY.has(e.species) && !!this.run.hasLegendary?.(); }
   catchBlockReason() {
     if (this.kind !== 'wild') return 'You can only catch wild POKéMON.';
     if (this.run.nuzlocke && !this.cfg.nuzFirst) return 'NUZLOCKE: only the first wild POKéMON of each act can be caught.';
+    if (this.legendBlocked()) return 'You already have a legendary this run.';
     return null;
   }
   isEnemyMon(mon) { return this.enemies.includes(mon); }
@@ -1061,6 +1066,10 @@ export class Battle {
     const lead = this.lead();
     if (!e || isFainted2(e) || !lead || this.result) return;
     const es = this.sides.enemy, ps = this.sides.player;
+    // A co-op foe hitting every player (coop/duo.js allTarget): the first hit of the turn checks whether it can move
+    // (sleep, paralysis, flinch...) and announces the move; the hits on the other players just land (_spreadFollow).
+    const follow = !!this._spreadFollow;
+    if (follow) return this.enemyStrike(e, lead, es, ps, this.intent?.move || this.moveData('TACKLE'), true);
     // FOCUS ENERGY / LOCK-ON wear off for the foe too (they used to last forever)
     if (es.focus > 0) es.focus--;
     if (es.lockOn > 0) es.lockOn--;
@@ -1092,7 +1101,15 @@ export class Battle {
     if (es.disabled > 0) { es.disabled--; this.msg(`${this.monName(e)}'s ${move.name} is disabled!`); return; }
 
     this.msg(`${this.monName(e)} used ${move.name}!`);
-    this.emit({ t: 'enemyMove', move: move.key, type: move.type, name: move.name });
+    this.spreadMoved = true; // (read by coop/duo.js: the foe could move this turn)
+    return this.enemyStrike(e, lead, es, ps, move, false);
+  }
+
+  // The foe's move landing on the lead (enemyAct, once it can move). follow: a co-op all-target foe's hit on another
+  // player (the move was announced on the first one).
+  enemyStrike(e, lead, es, ps, move, follow) {
+    this.emit({ t: 'enemyMove', move: move.key, type: move.type, name: move.name, ...(follow ? { spread: true } : {}) });
+    if (follow) this.msg(`The ${move.name} spreads to ${monName(lead)}!`);
     es.lastMove = move.key;
     const isStatus = move.power === 0 && !FIXED_DAMAGE[move.effect];
     const ctx = { b: this, user: e, target: lead, userSide: es, targetSide: ps, us: 'enemy', them: 'player', move };
@@ -1521,7 +1538,7 @@ export class Battle {
     this.ballsThrown++;
     const e = this.enemy();
     this.msg(`You threw a ${D.items[ballKey]?.name || 'BALL'}!`);
-    const rate = (D.species[e.species].catchRate || 45);
+    const rate = (D.species[e.species].catchRate || 45) * (this.cfg.catchMult || 1);
     const bonus = ballBonus(ballKey, e, this);
     const statusB = e.status === 'SLP' || e.status === 'FRZ' ? 2 : e.status ? 1.5 : 1;
     const a = Math.floor(((3 * e.maxHp - 2 * e.hp) * rate * bonus) / (3 * e.maxHp) * statusB * (1 + (this.mods.catchBonus || 0)));
@@ -1549,7 +1566,7 @@ export class Battle {
     const e = this.enemy();
     if (!e || !ballKey) return 0;
     if (ballKey === 'MASTER_BALL') return 1;
-    const rate = D.species[e.species].catchRate || 45;
+    const rate = (D.species[e.species].catchRate || 45) * (this.cfg.catchMult || 1);
     const statusB = e.status === 'SLP' || e.status === 'FRZ' ? 2 : e.status ? 1.5 : 1;
     const a = Math.floor(((3 * e.maxHp - 2 * e.hp) * rate * ballBonus(ballKey, e, this)) / (3 * e.maxHp) * statusB * (1 + (this.mods.catchBonus || 0)));
     if (a >= 255) return 1;

@@ -1,8 +1,8 @@
 // Run state: party, money, items, map position, encounter generation, rewards, ascension.
 import { RNG, randomSeedString } from './rng.js';
 import { D, expYield, expForLevel, isSpecial, speciesName, typeEffect } from './data.js';
-import { canUseStone, makeMon, maxHp, healFull, healFrac, isFainted, gainExp, addLevels, teachMove, knowsMove, canLearn, typesOf, setUidCounter, nextUid, itemEvolution, evolve, monName, defaultMoves, defaultCopies, DECK_RULES, NO_PLAYER_MOVES } from './pokemon.js';
-import { LEGENDS, STARTERS, rivalKey, BIRDS, RIVAL_INTROS, counterStarter, rivalParty , blueParty } from './acts.js';
+import { canUseStone, makeMon, maxHp, healFull, healFrac, isFainted, gainExp, addLevels, teachMove, knowsMove, canLearn, typesOf, setUidCounter, nextUid, itemEvolution, evolve, monName, defaultMoves, defaultCopies, DECK_RULES, NO_PLAYER_MOVES, LEGENDARY } from './pokemon.js';
+import { LEGENDS, STARTERS, rivalKey, BIRDS, RIVAL_INTROS, counterStarter, rivalParty , blueParty, MYTHICS, swapBoss } from './acts.js';
 import { actsForRun, regionOf, drawSpire, rivalFor, validSpire, spireCode, SPIRE, timeOfDay, areaPool, withFinds } from './regions.js';
 import { HOENN_TRAINER_CLASSES } from './hoenn.js';
 import { generateMap } from './map.js';
@@ -96,7 +96,8 @@ export class Run {
 
   // world: 'spire' (v0.1.0: each act draws its region; pool = the regions it may draw, or pass regions/rival
   // to copy a draw, e.g. co-op's player runs), or a legacy 'kanto' / 'hoenn' world (old saves and tests).
-  static create({ starter = 'CHARMANDER', ascension = 0, seed = null, world = 'kanto', shiny = false, coop = false, pool = null, regions = null, rival = null } = {}) {
+  // champ: the player has beaten a CHAMPION in an earlier run (meta.unlocks.win): CERULEAN CAVE's MEWTWO can show up.
+  static create({ starter = 'CHARMANDER', ascension = 0, seed = null, world = 'kanto', shiny = false, coop = false, pool = null, regions = null, rival = null, champ = false } = {}) {
     const r = new Run();
     r.seed = seed || randomSeedString();
     r.rng = new RNG(r.seed);
@@ -123,11 +124,13 @@ export class Run {
     r.usedTrainers = [];
     r.log = [];
     r.flags = {}; // story threads across acts ("?" events: the OLD AMBER, TEAM ROCKET, ...), saved with the run
+    if (champ) r.flags.champ = true; // (v0.3.25: a CHAMPION beaten in an earlier run)
     r.maxConsumables = 3;
     r.gauntletIndex = -1;
     r.finished = false;
     r.victory = false;
     r.moveOffers = {}; // uid -> { move: times offered } (move rewards: repeats weigh less)
+    r.legendTaken = null; // (v0.3.25) the species of this run's ONE legendary (null: none yet), see hasLegendary
     const st = STARTERS.find(s => s.species === starter) || STARTERS[1];
     const lucky = r.rng.chance(1 / 64); // (rolled either way, so picking the shiny form doesn't change the run)
     const mon = makeMon(st.species, 6, { rng: r.rng, moves: st.moves.filter(m => D.moves[m]), minIV: 10, shiny: shiny || lucky });
@@ -157,6 +160,7 @@ export class Run {
     this.nodeId = null;
     this.floor = -1;
     this.boss = act.bosses ? this.rng.pick(act.bosses) : null;
+    this.swapOwnBoss(); // (v0.3.25: never your own legendary as the act's boss)
     this.gauntletIndex = -1;
     if (this.mods().parcel) this.balls.POKE_BALL = (this.balls.POKE_BALL || 0) + 3;
   }
@@ -630,17 +634,20 @@ export class Run {
   // The one-time catch offers of a won legendary battle: [{ species, key, ei }] (a co-op legendary node fields two
   // legendaries, cfg.catchOffers; you may catch one of them).
   legendOffers(cfg) { return cfg.catchOffers || (cfg.catchOffer ? [cfg.catchOffer] : []); }
-  // Every legendary you could catch from this battle (the ones you haven't had yet), ready to join.
-  legendCatches(cfg) { return this.legendOffers(cfg).map(o => this.legendCatch(cfg, o)).filter(Boolean); }
-  // The legendary from a won bird battle, ready to join: at most your best POKéMON's level, with its deck.
+  // Every legendary you could catch from this battle (the ones you haven't had yet), ready to join. ONE LEGENDARY PER
+  // RUN (v0.3.25): none once you have a legendary (hasLegendary), whatever the battle.
+  legendCatches(cfg) { return this.hasLegendary() ? [] : this.legendOffers(cfg).map(o => this.legendCatch(cfg, o)).filter(Boolean); }
+  // The legendary from a won bird battle, ready to join: at most your best POKéMON's level, with its deck. A mythic
+  // ("?" event, o.mythic) joins at the fight's level (o.level, set under the A5 level cap) with its own deck (o.moves).
   legendCatch(cfg, o = this.legendOffers(cfg)[0]) {
-    if (!o || (this.legendsCaught || []).includes(o.species)) return null;
+    if (!o || this.hasLegendary() || (this.legendsCaught || []).includes(o.species)) return null;
     const e = cfg.enemies[o.ei ?? 0] || cfg.enemies[0];
     const top = Math.max(5, ...this.party.map(m => m.level));
-    const moves = (BIRDS[o.key]?.moves || []).filter(m => D.moves[m]);
-    return makeMon(o.species, Math.min(e.level, top), { rng: this.rng.fork('legend' + o.species), ivs: e.ivs, moves: moves.length ? moves : null, caughtAct: this.actIndex, shiny: !!e.shiny });
+    const moves = (o.moves || BIRDS[o.key]?.moves || []).filter(m => D.moves[m] && !NO_PLAYER_MOVES.has(m));
+    const level = o.level ? Math.min(o.level, this.levelCap() ?? 100) : Math.min(e.level, top);
+    return makeMon(o.species, level, { rng: this.rng.fork('legend' + o.species), ivs: e.ivs, moves: moves.length ? moves : null, caughtAct: this.actIndex, shiny: !!e.shiny });
   }
-  // Takes (accept) or turns down the one-time catch; either way the offer is used up.
+  // Takes (accept) or turns down the one-time catch; either way the offer is used up. Taking it is the run's one legendary.
   takeLegend(mon, accept) {
     this.legendsCaught ||= [];
     if (!this.legendsCaught.includes(mon.species)) this.legendsCaught.push(mon.species);
@@ -648,7 +655,63 @@ export class Run {
     if (!accept) return false;
     this.addSeen(mon.species, true);
     this.stats.caught++;
+    this.markLegendary(mon.species);
     return true;
+  }
+
+  // ---- ONE LEGENDARY PER RUN (v0.3.25) --------------------------------------------------------
+  // Once a legendary or mythical POKéMON (pokemon.js LEGENDARY) joins you (a legendary node's catch, a ball, a "?"
+  // event's gift or mythic), no other legendary is offered for the rest of the run. Fights and held items stay.
+  hasLegendary() { return !!this.legendTaken; }
+  markLegendary(species) {
+    if (!LEGENDARY.has(species) || this.legendTaken) return false;
+    this.legendTaken = species;
+    this.swapOwnBoss();
+    return true;
+  }
+  // The line the UI shows wherever a legendary could join (legendary node tooltip, catch prompts, gifts).
+  legendRuleText() {
+    return this.hasLegendary() ? `You already have a legendary this run (${speciesName(this.legendTaken)}).` : 'Catching it is your one legendary this run.';
+  }
+  // The legendaries of this run's players (solo: yours; co-op: CoopGame passes the room's).
+  ownedLegends() { return this.legendTaken ? [this.legendTaken] : []; }
+  // Nobody fights their own POKéMON: an act boss you caught (MEWTWO / DEOXYS in the post-game, RAYQUAZA) becomes
+  // the other one or a stand-in (acts.js swapBoss). No RNG: the swap never changes the run's random stream.
+  swapOwnBoss(owned = this.ownedLegends()) {
+    if (this.boss) this.boss = swapBoss(this.boss, owned);
+    return this.boss;
+  }
+
+  // ---- mythic "?" events (v0.3.25: CERULEAN CAVE, FARAWAY ISLAND, BIRTH ISLAND, SKY PILLAR) ----------------------
+  // A rare one-off fight with a mythic (acts.js MYTHICS), scaled like the act's legendary node. Win: a one-time
+  // catch offer (one legendary per run), plus a held item choice. Lose: the run goes on (cfg.softLose, softLoss()).
+  mythicConfig(rng, floor, id) {
+    const M = MYTHICS[id];
+    if (!M) return null;
+    const lvl = this.levelFor(floor) + M.lvl;
+    const hp = this.hpScaleFor(floor, 'legend') * TUNING.bird.hp[Math.min(this.actIndex, TUNING.bird.hp.length - 1)] * M.hp;
+    const moves = M.tmMoves ? mythicTmMoves(M.species, rng, this.actIndex) : M.moves;
+    const e = makeEnemy(M.species, lvl, { rng, moves, hpScale: hp, isBoss: false, isElite: true, legendary: true, bossRule: M.rule, ivs: ivsFrom(220) });
+    e.legendary = true;
+    const offer = { species: M.species, key: 'MYTHIC_' + id, mythic: id, ei: 0, level: lvl, moves: M.tmMoves ? e.moves.slice() : M.catchMoves };
+    const cfg = { kind: M.wild ? 'wild' : 'elite', mythic: id, enemies: [e], terrain: M.terrain, music: M.music, dmgScale: this.dmgScale() * TUNING.bird.dmg * M.dmg, rng, legend: M.title, catchOffer: offer, softLose: true, rewardRelicW: { uncommon: 50, rare: 50 } };
+    if (M.catchMult) cfg.catchMult = M.catchMult;
+    return cfg;
+  }
+  // A lost mythic fight (cfg.softLose): the run goes on. The mythic throws your team out: everyone who could fight
+  // ends at the HP they came in with, minus 30% of their max HP (never below 1); nobody is lost (NUZLOCKE too).
+  softLoss(battle, frac = 0.3) {
+    const pre = battle.preHp || {};
+    this.stats.battles++;
+    for (const e of battle.enemies || []) this.addSeen(e.species, false);
+    for (const m of this.party) {
+      if (m.lost) delete m.lost;
+      const h0 = pre[m.uid];
+      if (h0 === undefined) continue;
+      m.hp = h0 > 0 ? Math.max(1, h0 - Math.floor(maxHp(m) * frac)) : 0;
+      m.status = null;
+    }
+    this.logEvent({ k: 'softLoss', foe: battle.cfg?.mythic || battle.cfg?.legend || null });
   }
 
   bossLevel() { return this.act.bossLevel + (this.ascension >= 3 ? (this.actIndex === 0 ? 1 : 2) : 0) + (this.ascension >= 10 && this.actIndex >= 1 ? 1 : 0); }
@@ -759,6 +822,7 @@ export class Run {
       this.addSeen(e.species, true);
       this.stats.caught++;
       r.newMon = mon;
+      this.markLegendary(e.species); // (a legendary caught with a ball is the run's one legendary)
     }
     // ambient heal
     const heal = TUNING.postBattleHeal + (mods.postHeal || 0);
@@ -972,6 +1036,12 @@ export class Run {
     def('finished', false);
     def('victory', false);
     def('moveOffers', {}); // (v0.3.7)
+    // (v0.3.25) ONE LEGENDARY PER RUN: an older save's legendary is the one it took at a legendary node (run log), else
+    // one in its party (a gift, a ball)
+    if (o.legendTaken === undefined) {
+      const took = (o.runLog?.events || []).find(e => e && e.k === 'legendCatch' && e.took && LEGENDARY.has(e.species));
+      o.legendTaken = took?.species || (Array.isArray(o.party) ? o.party.find(m => m && LEGENDARY.has(m.species))?.species : null) || null;
+    }
     if (typeof o.moveOffers !== 'object' || Array.isArray(o.moveOffers)) o.moveOffers = {};
     for (const x of o.relics) if (x && typeof x === 'object' && x.state === undefined) x.state = {};
     for (const m of o.party) {
@@ -1070,6 +1140,15 @@ export function movePool(mon, actIndex) {
     if (COPYCATS.has(mon.species)) for (const m of COPYCAT_FALLBACK) push(m, true);
   }
   return out;
+}
+
+// FARAWAY ISLAND's MEW "knows every move": 3 random TM attacks (under the act's power cap) and 1 random TM move.
+export function mythicTmMoves(species, rng, actIndex) {
+  const cap = MOVE_POOL.maxPower[actIndex] ?? 150;
+  const all = [...new Set((D.species[species]?.tmhm || []).map(m => m.replace(/^(?:TM|HM)\d\d_/, '')))].filter(m => D.moves[m] && !NO_PLAYER_MOVES.has(m) && !['EXPLOSION', 'SELFDESTRUCT', 'SELF_DESTRUCT', 'FOCUS_PUNCH'].includes(m) && !(D.moves[m].power > cap));
+  const atk = rng.sample(all.filter(m => D.moves[m].power > 1), 3);
+  const rest = all.filter(m => !atk.includes(m));
+  return rest.length ? [...atk, rng.pick(rest)] : atk;
 }
 
 function ivsFrom(iv) {

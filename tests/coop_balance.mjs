@@ -7,6 +7,7 @@ import { loadData, D } from '../web/src/game/data.js';
 import { playCoop } from './coop_bot.mjs';
 import { COOP_TUNING } from '../web/src/game/coop/tuning.js';
 import { REGIONS } from '../web/src/game/regions.js';
+import { maxHp } from '../web/src/game/pokemon.js';
 
 await loadData(async f => JSON.parse(fs.readFileSync('web/assets/data/' + f, 'utf8')));
 const arg = (k, d) => { const i = process.argv.indexOf('--' + k); return i >= 0 ? process.argv[i + 1] : d; };
@@ -22,12 +23,17 @@ for (const k of ['actHp', 'actDmg']) if (arg(k)) COOP_TUNING[k] = arg(k).split('
 if (arg('teamup')) COOP_TUNING.teamUp = +arg('teamup');
 if (arg('hpcomp')) COOP_TUNING.hpComp = +arg('hpcomp'); // --hpcomp 0.84
 if (arg('revive')) COOP_TUNING.reviveFrac = +arg('revive');
+// v0.3.25: --champ (a player has beaten a CHAMPION: CERULEAN CAVE can show up), --mythicodds MEWTWO=1,MEW=0.5 (force the
+// mythic events' rolls, events.js MYTHIC_ODDS, to bench their fights: they show up as "A3 mythic")
+const CHAMP = process.argv.includes('--champ');
+if (arg('mythicodds')) { const { MYTHIC_ODDS } = await import('../web/src/game/events.js'); for (const kv of arg('mythicodds').split(',')) { const [k, v] = kv.split('='); MYTHIC_ODDS[k] = +v; } }
 const STARTERS = arg('starters') ? arg('starters').split(',') : WORLD === 'hoenn' ? ['TREECKO', 'TORCHIC', 'MUDKIP'] : ['BULBASAUR', 'CHARMANDER', 'SQUIRTLE'];
 
 const fightKey = (g) => {
   const cfg = g.battleCfg, a = `A${g.world.actIndex + 1}${g.world.regions ? REGIONS[g.world.region]?.letter || '' : ''}`;
   if (cfg.gauntlet !== undefined) return `${a} E4:${cfg.trainer.name}`;
   if (cfg.kind === 'boss') return `${a} boss:${cfg.trainer?.name || cfg.legend}`;
+  if (cfg.mythic) return `${a} mythic:${cfg.mythic}`;
   return `${a} ${cfg.coopKind}`;
 };
 const M = { fights: {}, deaths: {}, wins: 0, downs: 0, revives: 0, ties: 0, votes: 0, actions: 0 };
@@ -35,14 +41,15 @@ const t0 = Date.now();
 for (let i = 0; i < RUNS; i++) {
   const starters = Array.from({ length: PLAYERS }, (_, k) => STARTERS[(i + k) % STARTERS.length]);
   let cur = null;
-  const { game, log } = playCoop({ seed: `${SEED}${i}`, ascension: ASC, world: WORLD, starters, onAction: (a, ok, g) => {
+  const { game, log } = playCoop({ seed: `${SEED}${i}`, ascension: ASC, world: WORLD, starters, champ: CHAMP, onAction: (a, ok, g) => {
     if (g.phase === 'battle' && g.battle && cur?.b !== g.battle) cur = { b: g.battle, key: fightKey(g) };
     if (cur && g.battle === cur.b && g.battle.result && !cur.done) {
       cur.done = true;
       const f = (M.fights[cur.key] ||= { n: 0, turns: 0, losses: 0, downs: 0, hp: 0 });
       f.gap = (f.gap || 0) + Math.max(...g.runs.flatMap(r => r.party.map(m => m.level))) - Math.max(...g.battle.enemies.map(e => e.level));
       f.n++; f.turns += g.battle.turn; f.downs += g.battle.down.filter(Boolean).length;
-      if (g.battle.result.outcome === 'lose') { f.losses++; M.deaths[cur.key] = (M.deaths[cur.key] || 0) + 1; }
+      if (g.battle.result.outcome === 'lose') { f.losses++; if (!g.battleCfg?.softLose) M.deaths[cur.key] = (M.deaths[cur.key] || 0) + 1; }
+      f.hpLost = (f.hpLost || 0) + g.runs.reduce((a, r) => a + r.party.reduce((x, m) => x + Math.max(0, m.hp) / maxHp(m), 0) / r.party.length, 0) / g.runs.length;
       M.downs += g.battle.down.filter(Boolean).length;
       if (g.battle.result.outcome === 'win') M.revives += g.battle.down.filter(Boolean).length;
     }
@@ -62,5 +69,5 @@ const bossF = Object.entries(M.fights).filter(([k]) => /boss:|E4:/.test(k));
 const agg = (fs_) => { const n = fs_.reduce((a, [, f]) => a + f.n, 0); return n ? (fs_.reduce((a, [, f]) => a + f.turns, 0) / n).toFixed(1) : '-'; };
 console.log(`avg turns: gym boss ${agg(bossF.filter(([k]) => /boss:/.test(k)))}  E4 ${agg(bossF.filter(([k]) => /E4:/.test(k)))}  elite ${agg(Object.entries(M.fights).filter(([k]) => / elite$/.test(k)))}  trainer ${agg(Object.entries(M.fights).filter(([k]) => / trainer$/.test(k)))}`);
 console.log('tuning:', JSON.stringify(COOP_TUNING));
-console.log('fights (n, avg turns, losses, downs, lvl gap):');
-for (const [k, f] of Object.entries(M.fights).sort()) console.log('  ' + k.padEnd(22), String(f.n).padStart(5), (f.turns / f.n).toFixed(1).padStart(5), String(f.losses).padStart(4), String(f.downs).padStart(4), (f.gap / f.n).toFixed(1).padStart(6));
+console.log('fights (n, avg turns, losses, downs, lvl gap, team HP left):');
+for (const [k, f] of Object.entries(M.fights).sort()) console.log('  ' + k.padEnd(22), String(f.n).padStart(5), (f.turns / f.n).toFixed(1).padStart(5), String(f.losses).padStart(4), String(f.downs).padStart(4), (f.gap / f.n).toFixed(1).padStart(6), (100 * (f.hpLost || 0) / f.n).toFixed(0).padStart(5) + '%');

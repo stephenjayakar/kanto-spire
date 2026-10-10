@@ -69,6 +69,10 @@ if (arg('bosshp')) for (const kv of arg('bosshp').split(',')) { const [k, v] = k
 // --rules copies=pp,hand=5,play=5,discards=3,kickersStay=1,... (see DECK_RULES in web/src/game/pokemon.js)
 if (arg('rules')) for (const kv of arg('rules').split(',')) { const [k, v] = kv.split('='); if (!(k in DECK_RULES)) throw new Error('unknown rule ' + k); DECK_RULES[k] = isNaN(+v) ? v : +v; }
 const GIVE = arg('give', null); // --give ITEM: every run starts holding this item (item impact test)
+// --champ: every run is played by someone who has beaten a CHAMPION before (v0.3.25: CERULEAN CAVE's MEWTWO can show up)
+const CHAMP = process.argv.includes('--champ');
+// --mythicodds MEWTWO=1,DEOXYS=1: force the mythic events' rolls (events.js MYTHIC_ODDS) to bench their fights
+if (arg('mythicodds')) { const { MYTHIC_ODDS } = await import('../web/src/game/events.js'); for (const kv of arg('mythicodds').split(',')) { const [k, v] = kv.split('='); MYTHIC_ODDS[k] = +v; } }
 
 const M = { fights: {}, relicPicks: [], deaths: {}, combos: {}, runs: [], startersWon: {}, startersRun: {}, events: {}, eventActs: {}, tiers: {}, seqs: {} };
 const LOGS = arg('logs', null) ? [] : null; // --logs out.json: write run logs for tools/analyze_runs.mjs
@@ -77,8 +81,8 @@ function simulate(i) {
   const starters = STARTERS_ARG || (SPIRE ? ['BULBASAUR', 'CHARMANDER', 'SQUIRTLE']
     : WORLD === 'hoenn' ? ['TREECKO', 'TORCHIC', 'MUDKIP'] : ['BULBASAUR', 'CHARMANDER', 'SQUIRTLE']);
   const starter = STARTER || starters[i % starters.length];
-  const run = SPIRE ? Run.create({ starter, ascension: ASC, seed: `${SEED}${i}`, world: 'spire', pool: POOL, regions: FORCED ? forcedRegions(`${SEED}${i}`) : null })
-    : Run.create({ starter, ascension: ASC, seed: `${SEED}${i}`, world: WORLD });
+  const run = SPIRE ? Run.create({ starter, ascension: ASC, seed: `${SEED}${i}`, world: 'spire', pool: POOL, regions: FORCED ? forcedRegions(`${SEED}${i}`) : null, champ: CHAMP })
+    : Run.create({ starter, ascension: ASC, seed: `${SEED}${i}`, world: WORLD, champ: CHAMP });
   const rng = run.rng.fork('bot');
   if (GIVE) for (const k of GIVE.split(',')) run.addRelic(k);
   const log = (...a) => VERBOSE && console.log(...a);
@@ -95,7 +99,7 @@ function simulate(i) {
       const sq = (M.seqs[spireCode(run.regions)] ||= { n: 0, w: 0 }); sq.n++; if (!died) sq.w++;
     }
     const lv = run.party.map(m => m.level).sort((a, b) => b - a);
-    const r = { starter, died, seed: `${SEED}${i}`, lv, nItems: run.relics.length, badges: run.badges.length, act: run.actIndex + 1, floor: run.floor, party: run.party.map(m => `${D.species[m.species].name}${m.level}`), relics: run.relics.map(r => r.key), best: run.stats.bestHand, combos: { ...run.comboPlays } };
+    const r = { starter, died, legend: run.legendTaken || null, seed: `${SEED}${i}`, lv, nItems: run.relics.length, badges: run.badges.length, act: run.actIndex + 1, floor: run.floor, party: run.party.map(m => `${D.species[m.species].name}${m.level}`), relics: run.relics.map(r => r.key), best: run.stats.bestHand, combos: { ...run.comboPlays } };
     M.runs.push(r);
     M.startersRun[starter] = (M.startersRun[starter] || 0) + 1;
     if (!died) M.startersWon[starter] = (M.startersWon[starter] || 0) + 1;
@@ -155,6 +159,17 @@ function simulate(i) {
       M.eventActs[run.actIndex + 1] = (M.eventActs[run.actIndex + 1] || 0) + 1;
       if (r.battle) {
         const b = fight(run, r.battle, SKILL, M);
+        if (r.battle.mythic) { // (v0.3.25 mythic events: per mythic, fights / wins / catches / soft losses)
+          const o = ((M.mythics ||= {})[r.battle.mythic] ||= { n: 0, won: 0, caught: 0, lost: 0, fled: 0, blocked: 0 });
+          o.n++; if (b.result.outcome === 'win' || b.result.outcome === 'caught') o.won++; if (b.result.outcome === 'lose') o.lost++; if (b.result.outcome === 'enemyFled') o.fled++;
+          if (run.hasLegendary()) o.blocked++;
+          const had = run.legendTaken;
+          if (b.result.outcome === 'lose') { run.softLoss(b); continue; } // the run goes on (Run.softLoss)
+          if (b.result.outcome === 'enemyFled') continue;
+          postBattle(run, b, rng, SKILL, M);
+          if (!had && run.legendTaken === r.battle.catchOffer?.species) o.caught++;
+          continue;
+        }
         if (b.result.outcome === 'lose') return finish(`A${run.actIndex + 1} event:${r.id}`);
         postBattle(run, b, rng, SKILL, M);
       }
@@ -177,6 +192,8 @@ if (M.post) console.log(`post-game: ${M.post.w}/${M.post.n} beat the post-game b
   console.log(`party at end: all ${line(M.runs)} | winners ${line(M.runs.filter(r => !r.died))}`);
 }
 console.log(`birds fought: ${M.birds || 0}, caught: ${M.legendCatches || 0}, released (nuzlocke): ${M.released || 0}`);
+if (M.mythics) console.log('mythics (fights, won, caught, lost, fled, had a legendary already):', Object.entries(M.mythics).map(([k, o]) => `${k} ${o.n}/${o.won}/${o.caught}/${o.lost}/${o.fled}/${o.blocked}`).join('  '));
+console.log(`legendaries held at the end: ${M.runs.filter(r => r.legend).length}/${RUNS} runs (${Object.entries(M.runs.reduce((a, r) => { if (r.legend) a[r.legend] = (a[r.legend] || 0) + 1; return a; }, {})).map(([k, v]) => `${k} ${v}`).join(', ')})`);
 console.log('starters:', Object.keys(M.startersRun).map(s => `${s} ${M.startersWon[s] || 0}/${M.startersRun[s]}`).join('  '));
 console.log('deaths:', Object.entries(M.deaths).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k}:${v}`).join('  '));
 console.log('fights (n, turns, hp lost/fight, losses, lvl gap, hands/enemy mon):');
