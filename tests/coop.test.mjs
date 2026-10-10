@@ -13,6 +13,7 @@ import { COOP_TUNING } from '../web/src/game/coop/tuning.js';
 import { playCoop, makeBot, botAction } from './coop_bot.mjs';
 import { chooseHand } from './bot.mjs';
 import { coopRunPayload } from '../web/src/net/cloud.js';
+import { recordCoopDex, coopDex, mergeDexLists } from '../web/src/game/coop/dex.js';
 
 await loadData(async f => JSON.parse(fs.readFileSync('web/assets/data/' + f, 'utf8')));
 let pass = 0, fail = 0;
@@ -1069,6 +1070,58 @@ t('co-op team run: one payload for the room (best floor(6/n) of each party, max/
   assert.ok(['win', 'lose'].includes(pl.result) && pl.party.every(m => typeof m.species === 'string' && m.level >= 1 && typeof m.shiny === 'boolean'));
   for (const key of ['clientRunId', 'world', 'actName', 'starter', 'seed']) assert.equal(typeof pl[key], 'string', key);
   for (const key of ['ascension', 'act', 'floor', 'durationMs', 'finishedAt']) assert.ok(Number.isFinite(pl[key]), key);
+});
+
+// ------------------------------------------------------------------------------------ v0.3.21 E4 reorder, co-op Pokédex
+// Between ELITE FOUR rooms each player gets the solo break screen (scenes/gameover.js ActClearScene, coop mode): it
+// reorders the player's private copy of the run and READY posts it with the existing privateDone action, so the new
+// order rides in the run snapshot (no new action type, no logic change).
+t('co-op E4: each player reorders their team between rooms (plateau privateDone), lockstep stays in sync', () => {
+  const mk = () => {
+    const g = CoopGame.fromInit(INIT('E4R'));
+    g.world.startAct(3); for (const r of g.runs) r.startAct(3);
+    g.runs.forEach((r, p) => { const b = JSON.parse(JSON.stringify(r.party[0])); ['PIDGEY', 'RATTATA'].forEach((sp, k) => r.party.push({ ...b, uid: 7000 + p * 10 + k, species: sp })); });
+    g.battleCfg = { kind: 'boss', gauntlet: 0 };
+    g.gauntletBreak(1);
+    return g;
+  };
+  const a = mk(), b = mk();
+  assert.ok(a.world.act.gauntlet, 'act 4 is the ELITE FOUR');
+  assert.equal(a.phase, 'private'); assert.equal(a.private.kind, 'plateau'); assert.equal(a.private.next, 1);
+  assert.equal(a.checksum(), b.checksum());
+  // what the break screen does: reorder this player's clone of the run, then READY = privateDone with the snapshot
+  const ready = (g, p, order) => { const r = g.privateRunClone(p); r.party = order(r.party); return { p, type: 'privateDone', run: g.snapshotRun(r) }; };
+  const both = (act) => { const x = post(a, act), y = post(b, act); assert.equal(x, y); assert.equal(a.checksum(), b.checksum(), 'checksums after ' + act.type); return x; };
+  assert.ok(both(ready(a, 1, ps => [ps[2], ps[0], ps[1]])), 'P2 READY with RATTATA first');
+  assert.equal(a.phase, 'private', 'waits for P1');
+  assert.ok(both(ready(a, 0, ps => [ps[1], ps[0], ps[2]])), 'P1 READY with PIDGEY first');
+  assert.equal(a.phase, 'battle'); assert.equal(a.battleCfg.gauntlet, 1, 'next room');
+  assert.deepEqual(a.runs[0].party.map(m => m.species), ['PIDGEY', 'BULBASAUR', 'RATTATA']);
+  assert.deepEqual(a.runs[1].party.map(m => m.species), ['RATTATA', 'CHARMANDER', 'PIDGEY']);
+  assert.equal(a.battle.subs[0].lead().species, 'PIDGEY'); assert.equal(a.battle.subs[1].lead().species, 'RATTATA');
+  assert.equal(digestNoSeq(a), digestNoSeq(b));
+});
+
+t('co-op Pokédex: every player (P2 too) records what they met and caught', () => {
+  const { game } = playCoop({ seed: 'DEX1', stopWhen: g => g.phase === 'map' && g.runs.every(r => r.stats.battles >= 3) });
+  assert.equal(game.phase, 'map');
+  for (const p of [0, 1]) {
+    const meta = { dexSeen: [], dexCaught: [] };
+    assert.ok(recordCoopDex(meta, game, p) > 0, `P${p + 1} gets entries`);
+    assert.ok(meta.dexCaught.includes(game.starters[p]), `P${p + 1}'s starter is caught`);
+    assert.ok(!meta.dexCaught.includes(game.starters[1 - p]) || game.runs[p].caughtSpecies.includes(game.starters[1 - p]), "the partner's starter isn't my catch");
+    assert.ok(meta.dexSeen.length >= 3, `P${p + 1} saw foes (${meta.dexSeen.join(' ')})`);
+    for (const s of game.runs[p].seen) assert.ok(meta.dexSeen.includes(s));
+    assert.equal(recordCoopDex(meta, game, p), 0, 'idempotent');
+  }
+  // the battle on screen: the foe in each player's slot is seen right away (before any reward screen)
+  const g = gameInBattle('wild', 'DEXW');
+  const foe = g.battle.enemies[g.battle.field[1]].species;
+  assert.ok(coopDex(g, 1).seen.includes(foe), 'P2 has seen the wild foe on the field');
+  // never removes
+  const meta = { dexSeen: ['MEW'], dexCaught: ['MEW'] };
+  mergeDexLists(meta, ['PIDGEY'], ['RATTATA']);
+  assert.deepEqual(meta, { dexSeen: ['MEW', 'PIDGEY', 'RATTATA'], dexCaught: ['MEW', 'RATTATA'] });
 });
 
 console.log(`${pass} passed, ${fail} failed`);

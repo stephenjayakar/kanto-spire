@@ -2,7 +2,8 @@
 // Lockstep: every client applies the room's action log (seq 1, 2, 3...) to its own CoopGame and routes
 // scenes by game.phase. Nothing is applied optimistically; our own actions come back through the log.
 import { Engine, setScene } from '../../engine/core.js';
-import { G } from '../../game/state.js';
+import { G, saveMeta } from '../../game/state.js';
+import { recordCoopDex } from '../../game/coop/dex.js';
 import * as Coop from '../../game/coop/coop.js';
 import { NODE_INFO } from '../../game/map.js';
 import { actTitle, actBosses, trainerName, orList } from '../../game/regions.js';
@@ -11,6 +12,7 @@ import { ShopScene } from '../shop.js';
 import { CenterScene } from '../center.js';
 import { EventScene } from '../event.js';
 import { TreasureScene } from '../treasure.js';
+import { ActClearScene } from '../gameover.js';
 import { coopToast, drawCoopOverlay, OFFLINE_MS, PCOL } from './ui.js';
 import { sketchFor } from '../sketch.js';
 import { eventById, markSeen } from '../../game/events.js';
@@ -487,7 +489,11 @@ export class CoopSession {
       case 'reward': return new RewardScene(rewardView(g.battleSubs?.[p]), g.battleCfg, {});
       case 'center': return new CenterScene();
       case 'mart': return new ShopScene();
-      case 'plateau': return new ShopScene({ key: pv.key || 'plateau' + (g.world?.gauntletIndex ?? ''), onLeave: () => this.privateDone() });
+      // between ELITE FOUR rooms: the solo break screen (reorder the team, PLATEAU MART, READY)
+      case 'plateau': {
+        const next = Number.isInteger(pv.next) ? pv.next : g.world?.gauntletIndex ?? 0;
+        return new ActClearScene({ gauntletBreak: true, coop: true, noHeal: true, next, martKey: pv.key || 'plateau' + next });
+      }
       case 'event': return new EventScene();
       case 'treasure': return new TreasureScene();
     }
@@ -502,6 +508,7 @@ export class CoopSession {
     const g = this.game;
     if (!g || this.stopped) return;
     const p = this.mySlot;
+    this.recordDex();
     let key, make;
     switch (g.phase) {
       case 'map': key = 'map'; make = () => { G.run = g.runs[p]; return new CoopMapScene(this); }; break;
@@ -520,6 +527,13 @@ export class CoopSession {
     if (!force && this.routeKey === 'battle' && key !== 'battle' && Engine.scene?.holdRoute?.()) return;
     this.routeKey = key;
     setScene(this.wrap(make()));
+  }
+
+  // The local player's Pokédex (meta.dexSeen / dexCaught): what this player has met and caught so far (game/coop/dex.js;
+  // local meta only, never part of the game state). Before v0.3.21 co-op never wrote to the Pokédex at all.
+  recordDex() {
+    try { if (G.meta && Number.isInteger(this.mySlot) && recordCoopDex(G.meta, this.game, this.mySlot)) saveMeta(); }
+    catch (e) { console.warn('[coop] dex', e); }
   }
 
   // Draw the banner + toasts on top of any scene (the solo private scenes don't know about co-op).
