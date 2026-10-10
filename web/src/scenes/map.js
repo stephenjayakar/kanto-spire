@@ -26,6 +26,8 @@ const BOSS_SPRITE = {
   LEADER_BROCK: 'brock', LEADER_MISTY: 'misty', LEADER_LT_SURGE: 'lt_surge', LEADER_ERIKA: 'erika', LEADER_KOGA: 'koga',
   LEADER_SABRINA: 'sabrina', LEADER_BLAINE: 'blaine', LEADER_GIOVANNI: 'giovanni', ELITE_FOUR_LORELEI: 'lorelei',
 };
+// legendaries with a FireRed overworld sprite in 32x32 frames (gfx/overworld/pokemon/<file>.png)
+const LEGEND_OW = { ZAPDOS: 'zapdos', ARTICUNO: 'articuno', MOLTRES: 'moltres', LUGIA: 'lugia', HO_OH: 'ho_oh', DEOXYS: 'deoxys_n' }; // (MEWTWO, ENTEI, RAIKOU, SUICUNE, CELEBI: 16x16 only)
 const MAP_X0 = 172, MAP_W = 296, FLOOR_H = 40;
 const NODE_COLORS = { wild: '#58b858', trainer: '#5878d8', elite: '#d84848', rival: '#38a0f8', legend: '#f8f8f8', center: '#e868a8', mart: '#f08830', event: '#a868d8', treasure: '#e8b838', boss: '#f8d038' };
 
@@ -435,7 +437,12 @@ export class MapScene {
         const sp = run.act.gauntlet ? regionOf(run.summitRegion).summit.sprite : BOSS_SPRITE[run.boss];
         if (sp) draw(ctx, `gfx/overworld/people/${sp}.png`, x - 16, y - 58 + bob, { sx: 0, sy: 0, sw: 16, sh: 32, scale: 2 });
         else if (!LEGENDS[run.boss]) { const t = D.trainers[run.act.gauntlet ? run.act.gauntlet[0] : run.boss]; if (t) drawTrainer(ctx, t.pic, x - 32, y - 60 + bob); } // 1x, as tall as the Kanto bosses' 2x overworld sprites
-        else if (LEGENDS[run.boss]) draw(ctx, `gfx/overworld/pokemon/${LEGENDS[run.boss].species.toLowerCase()}.png`, x - 16, y - 34 + bob, { sx: 0, sy: 0, sw: 32, sh: 32 });
+        else if (LEGENDS[run.boss]) {
+          // FireRed has overworld sprites for a few legendaries only (no RAYQUAZA, DEOXYS is deoxys_n): else its icon, 2x
+          const species = LEGENDS[run.boss].species, ow = LEGEND_OW[species];
+          if (ow) draw(ctx, `gfx/overworld/pokemon/${ow}.png`, x - 16, y - 34 + bob, { sx: 0, sy: 0, sw: 32, sh: 32 });
+          else drawIcon(ctx, species, x - 32, y - 62 + bob, { scale: 2 });
+        }
         break;
       }
     }

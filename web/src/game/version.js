@@ -11,6 +11,9 @@ export const PATCH_NOTES = [
       ['CHANGES', [
         'After FLY, DIG, DIVE or BOUNCE dodges, your POKéMON spends the next turn LANDING: no dodging or protecting',
       ]],
+      ['FIXES', [
+        'Fixed RAYQUAZA, MEWTWO and DEOXYS not showing as the boss on the map',
+      ]],
     ],
   },
   {
