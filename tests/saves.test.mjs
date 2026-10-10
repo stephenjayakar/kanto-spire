@@ -14,6 +14,8 @@ import { LOGIC_ID, UNSTAMPED, CURRENT, FROZEN, engineOrder, getEngine } from '..
 import { resumeRoom, replayOn, segmentStamp } from '../web/src/game/coop/resume.js';
 import { VERSION } from '../web/src/game/version.js';
 import { coopPlayer, playSoloNodes } from './save_helpers.mjs';
+import { RNG } from '../web/src/game/rng.js';
+import { diff, patch, encodePrivateDone, expandAction } from '../web/src/game/coop/wire.js';
 
 const dataLoader = async f => JSON.parse(fs.readFileSync('web/assets/data/' + f, 'utf8'));
 await loadData(dataLoader);
@@ -440,6 +442,116 @@ t('co-op checkpoint fixture (v0.3.6) loads and plays on', async () => {
 });
 
 // ------------------------------------------------------------------------- real rooms (local export)
+// --------------------------------------------------------------------------------- wire (compact privateDone)
+// A privateDone sent as a delta (game/coop/wire.js) must replay, resume and checkpoint exactly like the full one.
+const compactLog = (log) => {
+  const g = new CoopGame(), out = [];
+  let full = 0, small = 0, n = 0;
+  for (const a of log) {
+    let b = clone(a);
+    if (a.type === 'privateDone' && a.run && g.runs?.[a.p]) {
+      const enc = encodePrivateDone(g, a.p, a.run);
+      if (enc) {
+        const { run, ...rest } = clone(a);
+        b = { ...rest, ...enc };
+        assert.deepEqual(expandAction(g, clone(b)).run, a.run, `#${a.seq}: the delta rebuilds the run`);
+        n++; full += JSON.stringify(a).length; small += JSON.stringify(b).length;
+      }
+    }
+    out.push(b);
+    g.apply(expandAction(g, clone(b)));
+  }
+  return { log: out, game: g, n, full, small };
+};
+
+t('wire: diff/patch round trips JSON exactly, key order included', () => {
+  const cases = [
+    [{ a: 1, b: [1, 2, 3], c: { d: 'x' } }, { a: 1, b: [1, 2, 3, 4], c: { d: 'y', e: null } }],
+    [{ a: 1, b: 2 }, { b: 2, a: 1 }],
+    [{ a: 1, b: 2, c: 3 }, { a: 1, c: 4 }],
+    [{ p: [{ u: 1, hp: 3 }, { u: 2, hp: 4 }] }, { p: [{ u: 2, hp: 4 }, { u: 1, hp: 0 }] }],
+    [{ x: [1, 2, 3, 4] }, { x: [1, 2] }],
+    [{ x: { y: [] } }, { x: { y: [{ z: 1 }] } }],
+    [{ s: 'a' }, { s: 'a' }],
+    [{ k: 1.5, n: null }, { k: -0.25, n: { deep: [true, false] } }],
+  ];
+  for (const [a, b] of cases) {
+    const d = diff(a, b);
+    const back = d === undefined ? a : patch(a, d);
+    assert.equal(JSON.stringify(back), JSON.stringify(b), JSON.stringify(d));
+  }
+  // random nested values
+  const rng = new RNG(7);
+  const rnd = (depth) => {
+    const k = rng.int(0, depth > 2 ? 3 : 6);
+    if (k === 0) return rng.int(-5, 5);
+    if (k === 1) return ['a', 'b', 'c'][rng.int(0, 2)];
+    if (k === 2) return null;
+    if (k === 3) return rng.int(0, 1) === 1;
+    if (k === 4) return Array.from({ length: rng.int(0, 4) }, () => rnd(depth + 1));
+    const o = {}; for (let i = rng.int(0, 4); i > 0; i--) o['k' + rng.int(0, 5)] = rnd(depth + 1); return o;
+  };
+  for (let i = 0; i < 400; i++) {
+    const a = { r: rnd(0) }, b = rng.int(0, 1) ? { r: rnd(0) } : JSON.parse(JSON.stringify(a));
+    const d = diff(a, b);
+    assert.equal(JSON.stringify(d === undefined ? a : patch(a, d)), JSON.stringify(b));
+  }
+});
+
+t('wire: compact privateDone logs replay, resume and checkpoint exactly like the full log (2-4 players)', async () => {
+  for (const [seed, n, max] of [['WIRE2', 2, 4000], ['WIRE3', 3, 4000], ['WIRE4', 4, 3000]]) {
+    const { game, log, cks } = botGame(seed, { n, max });
+    const c = compactLog(log);
+    assert.ok(c.n >= 5, `${seed}: only ${c.n} compact privateDone actions`);
+    assert.ok(c.small * 3 < c.full, `${seed}: compact privateDone ${c.small} B vs ${c.full} B full`);
+    assert.equal(c.game.checksum() >>> 0, game.checksum() >>> 0, `${seed}: same end state`);
+    // the whole log through resumeRoom (replayOn expands them)
+    const res = await resumeRoom({ actions: c.log, dataLoader });
+    assert.equal(res.mode, 'replay', `${seed}: ${JSON.stringify(res.tried)}`);
+    assert.equal(res.game.checksum() >>> 0, cks.get(game.seq));
+    // from a checkpoint in the middle, with compact actions in the tail
+    const g = new CoopGame(); let S = null;
+    for (const a of c.log) { g.apply(expandAction(g, clone(a))); if (isSafePoint(g) && g.seq < game.seq * 0.6) S = cpRow(g); }
+    const tail = c.log.filter(a => a.seq > S.seq);
+    assert.ok(tail.some(a => a.runD), `${seed}: compact actions after the checkpoint`);
+    const r2 = await resumeRoom({ checkpoint: S, actions: tail, dataLoader });
+    assert.equal(r2.mode, 'checkpoint');
+    assert.equal(r2.game.checksum() >>> 0, cks.get(game.seq));
+    console.log(`  ${seed}: ${c.n} privateDone ${c.full} B -> ${c.small} B (${(c.full / c.small).toFixed(1)}x)`);
+  }
+});
+
+t('wire: a compact privateDone that does not match the game is refused the same way everywhere (never a wrong run)', () => {
+  const { log } = botGame('WIREBAD', { max: 3000 });
+  const c = compactLog(log);
+  const i = c.log.findIndex(a => a.runD);
+  const bad = c.log.map(clone);
+  bad[i].rb = 'zzz'; // base hash off: as if the sender's run before the screen differed
+  const play = () => { const g = new CoopGame(); let ok = null; for (const [k, a] of bad.entries()) { const r = g.apply(expandAction(g, clone(a))); if (k === i) ok = { r, done: g.private?.done?.slice(), cks: g.checksum() }; } return { g, ok }; };
+  const one = play(), two = play();
+  assert.equal(one.ok.r, false, 'refused');
+  assert.equal(one.ok.done[bad[i].p], false, 'the player is still in the private phase');
+  assert.equal(one.ok.cks, two.ok.cks, 'deterministic');
+  // the sender's full repost (what CoopSession does) puts it right
+  const g = new CoopGame();
+  for (const a of c.log.slice(0, i)) g.apply(expandAction(g, clone(a)));
+  assert.equal(g.apply(expandAction(g, clone(bad[i]))), false);
+  const { runD, rb, rt, ...rest } = clone(bad[i]);
+  assert.equal(g.apply({ ...rest, seq: bad[i].seq + 0.5 | 0, run: clone(log[i].run) }), false, '(same seq: ignored)');
+  const g2 = new CoopGame();
+  for (const a of c.log.slice(0, i)) g2.apply(expandAction(g2, clone(a)));
+  g2.apply(expandAction(g2, clone(bad[i])));
+  assert.equal(g2.apply({ ...rest, seq: bad[i].seq + 1, run: clone(log[i].run) }), true, 'the full repost applies');
+  assert.equal(g2.private ? g2.private.done[bad[i].p] : true, true);
+});
+
+t('wire: an old full privateDone is left as it is', () => {
+  const a = { type: 'privateDone', p: 0, seq: 9, run: { party: [] } };
+  assert.equal(expandAction(new CoopGame(), a), a);
+  const v = { type: 'vote', p: 1, seq: 3, node: 'x' };
+  assert.equal(expandAction(null, v), v);
+});
+
 const EXP = process.env.COOP_EXPORT;
 if (EXP && fs.existsSync(path.join(EXP, 'coopActions.jsonl'))) {
   const rooms = JSON.parse(fs.readFileSync(path.join(EXP, 'coopRooms.json'), 'utf8'));

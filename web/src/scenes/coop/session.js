@@ -26,8 +26,15 @@ import { resumeRoom, parseCheckpoint } from '../../game/coop/resume.js';
 import { isSafePoint, snapshotGame } from '../../game/coop/snapshot.js';
 import { loadJSON } from '../../engine/assets.js';
 import { coopRunPayload } from '../../net/cloud.js';
+import { NET_PROTO, encodePrivateDone, expandAction } from '../../game/coop/wire.js';
 
-const POLL_MS = 700, HEARTBEAT_MS = 5000, CK_HISTORY = 300;
+// Polling (only without live updates, see net/coopnet.js CoopPoller): fast while we wait on partners or a turn is
+// coming in, slow otherwise, very slow in a hidden tab.
+const POLL_FAST = 700, POLL_SLOW = 2500, POLL_HIDDEN = 10000, CK_HISTORY = 300;
+const HEARTBEAT_MS = 15000;     // (net.HEARTBEAT_MS when the net has one; ui.js OFFLINE_MS allows for it)
+const CONFIRM_DELAY_MS = 3000;  // a non-writer confirms a checkpoint this long after reaching the map
+const BURST_MS = 5000;          // actions arrived this recently: more are probably coming
+const HIDDEN_BEAT_MS = 45000;   // a hidden tab with nothing new beats this often (and tells the others, who wait longer)
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 // 'v0.3.7' > 'v0.3.6'
 const newerVersion = (a, b) => {
@@ -70,6 +77,10 @@ export class CoopSession {
     this.resumed = null;           // resumeRoom()'s summary (mode, engine, dropped...)
     this.cpBlocked = false;        // the resumed game couldn't be verified: no checkpoints until a partner's checksum agrees
     this.resumeSeq = 0;
+    this.presence = null;          // slot -> { lastSeen, lastSeq } from the last heartbeat (newer servers)
+    this.beatSeq = -1;             // lastSeq at the last heartbeat
+    this.lastApplyAt = 0;
+    this.hbMs = net.HEARTBEAT_MS || HEARTBEAT_MS;
   }
 
   // 2-4 players: n, the other slots, and partnerSlot = the first other player (THE partner with 2 players)
@@ -85,7 +96,26 @@ export class CoopSession {
     const m = this.member(p);
     if (!m || m.left) return false;
     const now = this.serverNow + (Date.now() - this.serverNowAt);
-    return now - (m.lastSeen || 0) < OFFLINE_MS;
+    // (presence comes with our heartbeat; older servers put lastSeen in the room view instead)
+    const pr = this.presence?.[p];
+    const seen = Math.max(pr?.lastSeen ?? 0, m.lastSeen ?? 0);
+    if (!seen) return Date.now() - (this.startedAt || 0) < OFFLINE_MS; // (no heartbeat of theirs seen yet: give them time)
+    // (someone who beats less often, a hidden tab, gets two of their heartbeats and some slack)
+    return now - seen < Math.max(OFFLINE_MS, 2 * (pr?.hb || 0) + 10000);
+  }
+  // Am I waiting on the others (or on the server)? Then polling, if we poll, goes fast.
+  waiting() {
+    if (this.outbox.length || this.flushing || !this.synced || Date.now() - this.lastApplyAt < BURST_MS) return true;
+    const g = this.game, p = this.mySlot;
+    if (!g) return true;
+    if (g.phase === 'battle') return !!(g.battle?.locks?.[p] || g.battle?.down?.[p] || g.down?.[p]);
+    if (g.phase === 'private') return !!g.private?.done?.[p] || this.privatePosted === this.privateId();
+    if (g.phase === 'map') return g.votes?.[p] != null;
+    return false;
+  }
+  pollMs() {
+    if (typeof document !== 'undefined' && document.hidden) return POLL_HIDDEN;
+    return this.waiting() ? POLL_FAST : POLL_SLOW;
   }
 
   // ---- lifecycle --------------------------------------------------------------------------------
@@ -96,8 +126,17 @@ export class CoopSession {
     if (typeof window !== 'undefined') window.__coop = this;
     this.routeKey = 'connect';
     setScene(new CoopWaitScene(this));
-    this.beat();
-    this.hbTimer = setInterval(() => this.beat(), HEARTBEAT_MS);
+    this.startedAt = Date.now();
+    this.beat(true);
+    // (a little jitter: partners' heartbeats that land together conflict on the server and get retried)
+    const tick = () => { this.hbTimer = setTimeout(() => { this.beat(); if (!this.stopped && this.hbTimer) tick(); }, this.hbMs * (0.85 + Math.random() * 0.3)); };
+    tick();
+    // back to the tab: say so right away, and catch up (a hidden tab polls slowly and skips idle heartbeats)
+    if (typeof document !== 'undefined') {
+      // (hidden: one beat right away that says it'll beat less often from now on)
+      this.onVisible = () => { if (this.stopped) return; this.beat(true); if (!document.hidden) this.poller?.kick(); };
+      document.addEventListener('visibilitychange', this.onVisible);
+    }
     this.resumeThenPoll();
     return this;
   }
@@ -114,7 +153,7 @@ export class CoopSession {
     if (this.stopped) return;
     this.poller?.stop();
     this.poller = new this.net.CoopPoller(this.roomId, {
-      intervalMs: POLL_MS, after: this.lastSeq,
+      intervalMs: POLL_FAST, interval: () => this.pollMs(), after: this.lastSeq,
       onActions: (acts) => this.receive(acts),
       onRoom: (room, members, info) => this.onRoom(room, members, info),
       onError: (e) => { this.netError ||= { since: Date.now(), msg: e?.message }; },
@@ -182,20 +221,42 @@ export class CoopSession {
   // At every safe point (the map) the game state goes to the server, so the room resumes from it, across updates.
   // -> Promise<boolean> (true: the server has a checkpoint at the game's current seq)
   // -> Promise<true | false | 'net'> ('net': a network failure, worth retrying)
+  // One client uploads each map checkpoint (the lowest slot that's in the game and online: cpWriter); the others
+  // confirm it a moment later with just their checksum (that adds their slot, or marks it disputed on a desync, as
+  // a full write would) and upload only if the server still has no state for that seq. SAVE & QUIT and resumes
+  // confirm first too: the state usually is there already.
   checkpointNow(reason = 'auto') {
     const g = this.game;
     if (!g || !isSafePoint(g) || this.desync || this.cpBlocked || (reason !== 'save' && (!this.synced || this.stopped))) return Promise.resolve(false);
     if (g.seq <= this.cpSeq) return Promise.resolve(g.seq === this.cpSeq);
-    return this.writeCheckpoint({ seq: g.seq, snap: snapshotGame(g), checksum: g.checksum() >>> 0 }, reason);
+    const s = { seq: g.seq, snap: snapshotGame(g), checksum: g.checksum() >>> 0 };
+    if (reason === 'auto' && !this.cpWriter()) {
+      const prev = this.cpSeq;
+      this.cpSeq = s.seq;
+      return sleep(CONFIRM_DELAY_MS).then(() => (this.stopped ? false : this.writeCheckpoint(s, reason, { prev })));
+    }
+    return this.writeCheckpoint(s, reason, { full: reason === 'auto' });
   }
-  writeCheckpoint(s, reason) {
+  // Do I upload the map checkpoints? The lowest slot that's in the game (not sat out) and online, as I see it.
+  cpWriter() {
+    const g = this.game;
+    for (let p = 0; p < this.n; p++) {
+      if (g?.away?.[p]) continue;
+      if (p === this.mySlot || this.isOnline(p)) return p === this.mySlot;
+    }
+    return true;
+  }
+  // full: upload the state right away; else confirm by checksum and upload only if the server needs it.
+  writeCheckpoint(s, reason, { full = false, prev = this.cpSeq } = {}) {
     if (!this.net.writeCheckpoint) return Promise.resolve(false);
-    const prev = this.cpSeq;
     this.cpSeq = Math.max(this.cpSeq, s.seq);
     const act = s.snap?.world?.o?.actIndex;
     const progress = Number.isInteger(act) ? `ACT ${act + 1}` : undefined;
-    return this.net.writeCheckpoint(this.roomId, { seq: s.seq, phase: 'map', state: JSON.stringify(s.snap), checksum: s.checksum, gameVersion: VERSION, engine: LOGIC_ID, reason, ...(progress ? { progress } : {}) })
-      .then(() => { this.lastSaved = { seq: s.seq, at: Date.now() }; return true; })
+    const cp = { seq: s.seq, phase: 'map', checksum: s.checksum, gameVersion: VERSION, engine: LOGIC_ID, reason, ...(progress ? { progress } : {}) };
+    const upload = () => this.net.writeCheckpoint(this.roomId, { ...cp, state: JSON.stringify(s.snap) });
+    const go = full || !this.net.confirmCheckpoint ? upload() : this.net.confirmCheckpoint(this.roomId, cp).then(r => (r?.need ? upload() : r));
+    return go
+      .then(r => { if (r?.disputed) console.warn('[coop] checkpoint disputed at #' + s.seq); this.lastSaved = { seq: s.seq, at: Date.now() }; return true; })
       .catch(e => { if (this.cpSeq === s.seq) this.cpSeq = prev; console.warn('[coop] checkpoint failed', e); return this.net.isNetworkError?.(e) ? 'net' : false; });
   }
   // SAVE & QUIT: send what's queued, store a checkpoint (on the map), tell the others, back to the title.
@@ -210,7 +271,7 @@ export class CoopSession {
     const cp = this.outbox.length ? 'net' : isSafePoint(this.game) ? await this.checkpointNow('save') : true;
     if (cp === 'net' || this.outbox.length) { this.quitting = false; coopToast("Couldn't save (offline?). Try again in a moment.", { bad: true, t: 4 }); return; }
     // (no more heartbeats: one landing after saveQuit would mark us back)
-    clearInterval(this.hbTimer); this.hbTimer = null;
+    clearTimeout(this.hbTimer); this.hbTimer = null;
     await Promise.race([this.hbP, sleep(3000)]).catch(() => {});
     await this.net.saveQuit?.(this.roomId).catch(() => {});
     coopToast('Saved! REJOIN from CO-OP to continue.', { good: true, t: 4 });
@@ -221,7 +282,8 @@ export class CoopSession {
     if (this.stopped) return;
     this.stopped = true;
     this.poller?.stop();
-    clearInterval(this.hbTimer);
+    clearTimeout(this.hbTimer);
+    if (this.onVisible) document.removeEventListener('visibilitychange', this.onVisible);
     if (CoopSession.current === this) CoopSession.current = null;
     if (G.coop === this) { G.coop = null; G.run = null; }
     if (typeof window !== 'undefined' && window.__coop === this) window.__coop = null;
@@ -238,7 +300,23 @@ export class CoopSession {
     try { run = coopRunPayload(g, { code: this.code }); } catch (e) { console.warn('[coop] no team run to record', e); return; }
     Promise.resolve().then(() => this.net.finishRoom(this.roomId, run)).catch(e => console.warn('[coop] finish failed', e));
   }
-  beat() { if (!this.stopped && !this.quitting) this.hbP = this.net.heartbeat(this.roomId, this.lastSeq).catch(() => {}); }
+  // Every hbMs (and right away when the tab shows again). A hidden tab with nothing new beats only every
+  // HIDDEN_BEAT_MS and says so (hb): the others give it longer before they call it offline. A closed tab stops.
+  beat(force = false) {
+    if (this.stopped || this.quitting) return;
+    const hidden = typeof document !== 'undefined' && document.hidden;
+    const idle = hidden && this.lastSeq === this.beatSeq;
+    if (!force && idle && Date.now() - (this.beatAt || 0) < HIDDEN_BEAT_MS - 2000) return;
+    this.beatSeq = this.lastSeq;
+    this.beatAt = Date.now();
+    const hb = hidden ? HIDDEN_BEAT_MS : this.hbMs; // (said by every beat of a hidden tab, so a skipped one is covered)
+    this.hbP = Promise.resolve().then(() => this.net.heartbeat(this.roomId, this.lastSeq, { hb })).then(r => this.onBeat(r)).catch(() => {});
+  }
+  onBeat(r) {
+    if (!r || this.stopped) return;
+    if (r.now) { this.serverNow = r.now; this.serverNowAt = Date.now(); }
+    if (Array.isArray(r.presence)) { const pr = {}; for (const x of r.presence) pr[x.slot] = x; this.presence = pr; }
+  }
 
   onRoom(room, members, info) {
     this.netError = null;
@@ -267,11 +345,13 @@ export class CoopSession {
       this.applyOne(a, top);
       applied++;
     }
+    if (applied) this.lastApplyAt = Date.now();
     if (applied && this.synced) this.route();
     if (applied) this.checkAway();
   }
 
   applyOne(a, top = a.seq, replay = false) {
+    a = expandAction(this.game, a); // (a compact privateDone gets its run back: game/coop/wire.js)
     const g0 = this.game;
     const before = g0 ? { phase: g0.phase, kind: g0.private?.kind, node: g0.private?.node, lastVote: g0.lastVote, events: Array.isArray(g0.events) ? g0.events.length : 0, battle: g0.battle } : null;
     // Desync check: the sender's checksum at atSeq vs ours at the same seq.
@@ -305,6 +385,12 @@ export class CoopSession {
     if (g.phase === 'private' && (!before || before.phase !== 'private' || before.kind !== g.private?.kind || before.node !== g.private?.node)) this.privateSince = a.seq;
     // back on the map (a node done, an act cleared): checkpoint
     if (!replay && this.synced && isSafePoint(g) && (!before || before.phase !== 'map')) this.checkpointNow('auto');
+    // my compact privateDone couldn't be rebuilt (on every client alike): send the whole run
+    if (!replay && a.type === 'privateDone' && a.p === this.mySlot && a.runD !== undefined && a.run === null && g.phase === 'private' && !g.private?.done?.[this.mySlot]
+      && this.privateRun && this.privateRun.id === this.privatePosted && this.privatePosted === this.privateId()) {
+      console.warn('[coop] compact privateDone refused at #' + a.seq + ', sending the whole run');
+      this.post({ type: 'privateDone', run: this.privateRun.run });
+    }
     if (a.type === 'vote' && a.p === this.mySlot && this.pendingVote === a.node) this.pendingVote = null;
     if (g.phase !== 'map') this.pendingVote = null;
     if (!replay && this.synced && before) {
@@ -401,12 +487,13 @@ export class CoopSession {
   }
   // The poll carries each member's sketchV: fetch the sketches when one changed. My own copy is only taken from
   // the server on the first sync (a reload / REJOIN) or when the partner erased everything.
-  syncSketches(members) {
+  syncSketches(members, newerOnly = false) {
     if (!this.net.getSketches || this.sketchFetching) return;
     this.sketchV ||= {};
-    if (!members.some(m => (m.sketchV ?? 0) !== (this.sketchV[m.slot] ?? -1))) return;
+    const changed = members.filter(m => (newerOnly ? (m.sketchV ?? 0) > (this.sketchV[m.slot] ?? -1) : (m.sketchV ?? 0) !== (this.sketchV[m.slot] ?? -1))).map(m => m.slot);
+    if (!changed.length) return;
     this.sketchFetching = true;
-    this.net.getSketches(this.roomId).then(list => {
+    this.net.getSketches(this.roomId, changed).then(list => {
       this.sketches ||= {};
       for (const m of list) {
         const parsed = (() => { try { return m.sketch ? JSON.parse(m.sketch) : null; } catch { return null; } })();
@@ -420,7 +507,14 @@ export class CoopSession {
         } else this.sketches[m.slot] = parsed;
         this.sketchV[m.slot] = m.sketchV;
       }
-    }).catch(() => {}).finally(() => { this.sketchFetching = false; });
+    }).then(() => true, () => false).then(okay => {
+      this.sketchFetching = false;
+      // a version that changed meanwhile was skipped above: check again (live updates won't ask twice); after a
+      // failure, try again in a moment
+      if (this.stopped) return;
+      if (okay) this.syncSketches(this.members, true);
+      else setTimeout(() => { if (!this.stopped) this.syncSketches(this.members); }, 3000);
+    });
   }
   post(action) {
     if (!this.game || this.stopped || this.quitting) return;
@@ -465,10 +559,20 @@ export class CoopSession {
     const id = this.privateId();
     if (this.privatePosted !== id) {
       this.privatePosted = id;
-      this.post({ type: 'privateDone', run: g.snapshotRun(G.run) });
+      const run = g.snapshotRun(G.run);
+      this.privateRun = { id, run };
+      // only what changed since the phase opened, when every client in the room can rebuild it (game/coop/wire.js)
+      const enc = this.compactOK() ? encodePrivateDone(g, this.mySlot, run) : null;
+      this.post(enc ? { type: 'privateDone', ...enc } : { type: 'privateDone', run });
     }
     this.routeKey = 'wait';
     setScene(this.wrap(new CoopWaitScene(this)));
+  }
+
+  // Every member's client speaks the compact wire format (their heartbeats say so; see convex/coop.ts heartbeat).
+  compactOK() {
+    if ((this.net.NET_PROTO ?? 0) < NET_PROTO) return false;
+    return this.members.length >= this.n && this.members.every(m => (m.net ?? 0) >= NET_PROTO);
   }
 
   // Co-op events: both players see the same one (the game fixed it when the phase opened), without the ones
