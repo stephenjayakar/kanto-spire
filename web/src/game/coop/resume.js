@@ -20,6 +20,7 @@
 // as `safe`, for the session to store as the new checkpoint, so every client continues from the same state.
 import { LOGIC_ID, UNSTAMPED, CURRENT, getEngine, engineOrder } from './engines.js';
 import { isSafePoint, snapshotGame, restoreGame } from './snapshot.js';
+import { expandAction } from './wire.js'; // (compact privateDone actions get their run back from the game they're applied to)
 
 const CK_KEEP = 300; // checksums kept for the session's desync check (the last seqs of the log)
 const clone = (a) => JSON.parse(JSON.stringify(a));
@@ -55,7 +56,7 @@ export function replayOn(eng, base, actions, { keepCks = CK_KEEP } = {}) {
       else if (!good) { res.bad = { seq: a.seq, atSeq: a.atSeq, type: a.type, p: a.p }; tally(a.p, false); }
       else if (a.atSeq > res.lastVerified) { res.lastVerified = a.atSeq; promote(); }
     }
-    try { g.apply(a); } catch (e) { res.ok = false; res.error = String(e?.message || e); break; } // (apply never throws by contract)
+    try { g.apply(expandAction(g, a)); } catch (e) { res.ok = false; res.error = String(e?.message || e); break; } // (apply never throws by contract)
     if (need.has(a.seq) || lastSeq - a.seq < keepCks) cks.set(a.seq, g.checksum() >>> 0);
     if (isSafePoint(g)) {
       newest = { seq: g.seq, snap: snapshotGame(g) };

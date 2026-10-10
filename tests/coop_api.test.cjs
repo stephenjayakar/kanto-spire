@@ -173,7 +173,7 @@ const CODE_RE = /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{5}$/;
     const realFetch = globalThis.fetch;
     let inflight = 0, maxInflight = 0, sinceCalls = 0;
     globalThis.fetch = async (url, init) => {
-      const isSince = init?.body?.includes('"coop:since"');
+      const isSince = /"coop:(since|watch)"/.test(init?.body || ''); // (a poll: coop:watch, or coop:since on an older server)
       if (isSince) { sinceCalls++; inflight++; maxInflight = Math.max(maxInflight, inflight); }
       try { return await realFetch(url, init); } finally { if (isSince) inflight--; }
     };
@@ -181,7 +181,7 @@ const CODE_RE = /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{5}$/;
     let roomSeen = null, errs = 0;
     await new Promise((resolve, reject) => {
       const poller = new net.CoopPoller(roomId, {
-        intervalMs: 50,
+        intervalMs: 50, live: false,
         onActions: acts => { got.push(...acts); },
         onRoom: (room, members) => { roomSeen = { room, members }; if (got.length >= total) { poller.stop(); resolve(); } },
         onError: e => { errs++; if (errs > 5) { poller.stop(); reject(e); } },
@@ -192,7 +192,24 @@ const CODE_RE = /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{5}$/;
     });
     ok(got.length === total && got.every((a, i) => a.seq === i + 1) && got[0].type === 'init' && got[1].p === 0 && got[1].node === 4, `CoopPoller drained ${got.length}/${total} actions in order (parsed objects)`);
     ok(maxInflight === 1 && sinceCalls >= 2, `CoopPoller never overlaps requests (max in flight ${maxInflight}, ${sinceCalls} calls)`);
-    ok(roomSeen && roomSeen.members.length === 2 && roomSeen.room.code === code, 'CoopPoller onRoom(room, members)');
+    ok(roomSeen && roomSeen.members.length === 2 && roomSeen.room.code === code && roomSeen.room.nextSeq === total + 1, 'CoopPoller onRoom(room, members)');
+    // the same over the WebSocket (a coop:watch subscription): everything arrives without a single poll
+    {
+      const before = sinceCalls, got2 = [];
+      let liveRoom = null, p2 = null;
+      await new Promise((resolve) => {
+        p2 = new net.CoopPoller(roomId, {
+          onActions: acts => { got2.push(...acts); },
+          onRoom: (room, members) => { liveRoom = { room, members }; if (got2.length >= total) resolve(); },
+        });
+        p2.start();
+        setTimeout(resolve, 20000);
+      });
+      const wasLive = p2.live;
+      p2.stop();
+      ok(got2.length === total && got2.every((a, i) => a.seq === i + 1) && wasLive && sinceCalls === before && liveRoom?.room.nextSeq === total + 1,
+        `live CoopPoller: ${got2.length}/${total} actions in order over the WebSocket, ${sinceCalls - before} polls (live ${wasLive})`);
+    }
 
     // postAction: network error before the server sees it, then a lost response after it committed
     let mode = 'drop-before';
@@ -212,6 +229,7 @@ const CODE_RE = /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{5}$/;
     const fs2 = await net.fetchSince(roomId, total);
     ok(fs2.actions.length === 2 && fs2.actions[0].node === 9 && fs2.actions[1].node === 10 && fs2.actions[1].p === 0 && fs2.me === 0, 'fetchSince returns parsed actions');
     await refused(net.joinRoom('QQQQQ'), /Room not found/, 'coopnet errors carry the server message');
+    await net.closeLive();
     const gr = await net.getRoom(roomId);
     const hbr = await net.heartbeat(roomId, total);
     ok(gr.room.status === 'playing' && typeof hbr.now === 'number' && (await net.myRooms()).some(r => r.roomId === roomId), 'getRoom / heartbeat / myRooms via coopnet');

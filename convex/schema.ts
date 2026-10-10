@@ -200,13 +200,36 @@ export default defineSchema({
     dismissed: v.optional(v.boolean()), // deleted the room from their REJOIN list (rejoining by code undoes it)
     maxPlayers: v.optional(v.number()), // the room size this player's client supports (2-4); unset = an older 2-player client
     savedAt: v.optional(v.number()), // v0.3.6: last SAVE & QUIT (shown to the others while they are away)
+    net: v.optional(v.number()), // the co-op wire protocol this player's client speaks (sent with its heartbeat; unset = older client)
     joinedAt: v.number(),
-    lastSeen: v.number(),
-    lastSeq: v.number(), // last action seq this player's client applied
+    lastSeen: v.number(), // (since coopPresence: only set by joins / lobby picks; heartbeats go to coopPresence)
+    lastSeq: v.number(), // last action seq this player's client applied (likewise, see coopPresence)
   })
     .index("by_room", ["roomId", "slot"])
     .index("by_room_email", ["roomId", "email"])
     .index("by_email", ["email", "joinedAt"]),
+
+  // Heartbeats, one row per member: kept out of coopMembers so a heartbeat doesn't change what the room view reads
+  // (coop:watch subscriptions only re-run when the room, its members or its log change).
+  coopPresence: defineTable({
+    roomId: v.id("coopRooms"),
+    memberId: v.id("coopMembers"),
+    slot: v.number(),
+    lastSeen: v.number(),
+    lastSeq: v.number(),
+    hb: v.optional(v.number()), // the sender's heartbeat interval (ms); unset = an older client (every 5 s)
+  })
+    .index("by_room", ["roomId"])
+    .index("by_member", ["memberId"]),
+
+  // Map sketches, one row per member (they used to live in coopMembers.sketch, which made every member read big).
+  coopSketches: defineTable({
+    roomId: v.id("coopRooms"),
+    memberId: v.id("coopMembers"),
+    sketch: v.string(), // JSON { act, strokes }, or "" after an ERASE
+  })
+    .index("by_room", ["roomId"])
+    .index("by_member", ["memberId"]),
 
   // The lockstep action log: seq 1, 2, 3... per room, assigned by the server.
   coopActions: defineTable({
@@ -235,6 +258,15 @@ export default defineSchema({
     reason: v.optional(v.string()), // "auto" | "save" | "resume" | "legacy" | "fallback"
     slots: v.array(v.number()), // the players whose client wrote this same checkpoint (same checksum)
     disputed: v.optional(v.boolean()), // two clients wrote different states for this seq: never loaded
+    // newer rows keep the snapshot in coopCheckpointStates (state is ""), so checking or confirming a checkpoint reads
+    // a few hundred bytes, not the whole game. No state and no stateId: confirmed by checksum only so far (not loadable).
+    stateId: v.optional(v.id("coopCheckpointStates")),
     createdAt: v.number(),
   }).index("by_room_seq", ["roomId", "seq"]),
+
+  // The snapshot JSON of a coopCheckpoints row (see stateId).
+  coopCheckpointStates: defineTable({
+    roomId: v.id("coopRooms"),
+    state: v.string(),
+  }).index("by_room", ["roomId"]),
 });

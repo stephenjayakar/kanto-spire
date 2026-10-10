@@ -887,7 +887,7 @@ async function setBattle(pages, { tag, act, type, outcome, foeFrac = 0.12, party
   }
   watch(false);
 }
-// A player drops (quits to title = no heartbeat); after 20 s the others see OFFLINE and click CARRY ON;
+// A player drops (quits to title = no heartbeat); after 40-55 s (ui.js OFFLINE_MS + a heartbeat; up to ~100 s for a background tab, which beats every 45 s) the others see OFFLINE and click CARRY ON;
 // the others vote and play the next node without them; then the player REJOINs from the lobby and is back in.
 // (Runs before any test setup shortcut: a rejoining client replays the whole log, which doesn't contain them.)
 async function sitOut(pages, tag) {
@@ -897,7 +897,7 @@ async function sitOut(pages, tag) {
   await ev(gone, () => window.__coop.stop({ toTitle: true }));
   gone.__gone = true;
   const host = pages[0];
-  await until(host, (slot) => !window.__coop.isOnline(slot), pages.length - 1, { label: 'drop seen as offline', timeout: 40000 });
+  await until(host, (slot) => !window.__coop.isOnline(slot), pages.length - 1, { label: 'drop seen as offline', timeout: 150000 });
   await sleep(300);
   await shot(host, `${tag}_offline_banner`);
   await gclick(host, 640 - 104 + 49, 28 + 8); // CARRY ON
