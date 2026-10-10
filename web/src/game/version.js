@@ -2,9 +2,28 @@
 // Game version and patch notes (shown from the title screen). Versions are major.minor.patch: every production
 // deploy that changes the game bumps the patch (v0.2.0 -> v0.2.1); the owner calls minor bumps (v0.1.x -> v0.2.0);
 // no major bumps yet. Each one gets a new top PATCH_NOTES entry; see AGENTS.md.
-export const VERSION = 'v0.3.20';
+export const VERSION = 'v0.3.21';
 
 export const PATCH_NOTES = [
+  {
+    v: 'v0.3.21',
+    sections: [
+      ['NEW', [
+        'Battle names show who moves 1st, 2nd... this turn',
+        'The ascension shows top left; hover it for its active effects',
+        'FAME CHECKER and other growing held items show their current bonus',
+        'Co-op: reorder your team between ELITE FOUR battles',
+      ]],
+      ['CHANGES', [
+        'At the held-item limit, the shop reroll asks first (it only rolls TMs)',
+      ]],
+      ['FIXES', [
+        'Fixed co-op not filling in the Pokédex',
+        "Fixed co-op records losing each player's team",
+        'Fixed badges covering the money display',
+      ]],
+    ],
+  },
   {
     v: 'v0.3.20',
     sections: [

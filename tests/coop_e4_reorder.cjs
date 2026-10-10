@@ -29,6 +29,7 @@ fs.mkdirSync(out, { recursive: true });
   const party = (p, slot) => p.evaluate((s) => G.coop.game.runs[s].party.map(m => m.species), slot);
   const localParty = (p) => p.evaluate(() => G.run.party.map(m => m.species));
   try {
+    await ctx.route('**/cloud.json', r => r.fulfill({ status: 404, body: '' })); // offline (a local web/cloud.json would sign in instead)
     const p1 = await ctx.newPage(), p2 = await ctx.newPage();
     for (const [p, n] of [[p1, 'P1'], [p2, 'P2']]) p.on('pageerror', e => errors.push(`${n}: ${e.message}`));
     await p1.goto(`http://localhost:${port}/?coopdev=RED`, { waitUntil: 'load' });
