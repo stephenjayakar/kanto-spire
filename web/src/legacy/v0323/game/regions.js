@@ -114,21 +114,6 @@ export function areaPool(area, tod = null) {
   if (tod) return p[tod] || p.day || [];
   return [...new Set(TIMES.flatMap(k => p[k] || []))];
 }
-// v0.3.25 "catch 'em all": every Pokédex species (#1-386) but the legendaries can be met on a wild node somewhere. An
-// area may add species to its wild pool (only wild nodes use these; generic trainers keep drawing from area.pool):
-//   extra: [...]  more species, each EXTRA_WEIGHT as likely as an average species of the area's own pool;
-//   rare:  [...]  rare finds (strong or special species), each RARE_SHARE of the area's own encounters (about 1 in 33,
-//                 before the no-repeat rule thins the pool).
-// The games' own tables stay the bulk of every area. tools/catch_audit.mjs lists where every species can be caught.
-export const EXTRA_WEIGHT = 0.5, RARE_SHARE = 0.03;
-// The area's wild entries ([{ species, rate }], run.js wildConfig) with its extra / rare species added (rare: true).
-export function withFinds(area, base) {
-  if (!area?.extra && !area?.rare) return base;
-  const total = base.reduce((s, e) => s + (e.rate || 1), 0) || 1;
-  const avg = base.length ? total / new Set(base.map(e => e.species)).size : 1;
-  const add = (list, rate, rare) => (list || []).filter(sp => D.species[sp]).map(sp => (rare ? { species: sp, rate, rare } : { species: sp, rate }));
-  return [...base, ...add(area.extra, avg * EXTRA_WEIGHT, false), ...add(area.rare, total * RARE_SHARE, true)];
-}
 // The rule a trainer brings as a boss / ELITE FOUR member: its own (t.rule, e.g. JOHTO's KOGA) or its key's.
 export const ruleKeyOf = (key) => D.trainers?.[key]?.rule || String(key).replace(/^(LEADER_|ELITE_FOUR_)/, '');
 

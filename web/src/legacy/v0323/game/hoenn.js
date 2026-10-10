@@ -122,48 +122,6 @@ export const HOENN_ACTS = [
   },
 ];
 
-// v0.3.25: species the pools above leave out, added to HOENN's wild areas (act id -> area name) so every Pokédex species
-// can be caught somewhere (regions.js withFinds: extra = half as common as an average species there, rare = a rare find).
-// Strong and special species are rare finds, and late: the starters' final forms in act 4, SALAMENCE / METAGROSS /
-// SLAKING in the post-game.
-export const HOENN_FINDS = {
-  1: {
-    'ROUTE 101': { rare: ['TORCHIC'] },
-    'ROUTE 102': { extra: ['SURSKIT'], rare: ['TREECKO'] },
-    'ROUTE 104': { extra: ['AZURILL'], rare: ['MUDKIP'] },
-    'PETALBURG WOODS': { extra: ['BEAUTIFLY', 'DUSTOX'] },
-    'RUSTURF TUNNEL': { extra: ['WYNAUT'] },
-    'GRANITE CAVE': { extra: ['NOSEPASS'] },
-  },
-  2: {
-    'ROUTE 110': { extra: ['DELCATTY'], rare: ['COMBUSKEN'] },
-    'ROUTE 117': { extra: ['CORPHISH', 'KIRLIA'], rare: ['MARSHTOMP'] },
-    'ROUTE 111 DESERT': { extra: ['VIBRAVA'], rare: ['LILEEP', 'ANORITH', 'CACTURNE'] },
-    'FIERY PATH': { extra: ['MAGCARGO'], rare: ['CAMERUPT'] },
-    'JAGGED PASS': { extra: ['MEDITITE'] },
-    'ROUTE 114': { extra: ['BARBOACH'], rare: ['GROVYLE'] },
-    'METEOR FALLS': { rare: ['BELDUM'] },
-  },
-  3: {
-    'ROUTE 119': { extra: ['CASTFORM', 'CARVANHA', 'WHISCASH', 'CRAWDAUNT'], rare: ['MILOTIC', 'LUDICOLO'] },
-    'ROUTE 120': { extra: ['MASQUERAIN', 'NINJASK', 'BRELOOM'], rare: ['SHIFTRY'] },
-    'MT. PYRE': { rare: ['SHEDINJA'] },
-    'ROUTE 123': { extra: ['SWELLOW', 'GRUMPIG', 'SWALOT', 'VIGOROTH'] },
-    'SHOAL CAVE': { rare: ['GLALIE', 'WALREIN'] },
-    'ROUTE 124 SEA': { rare: ['HUNTAIL', 'GOREBYSS'] },
-  },
-  4: {
-    'VICTORY ROAD': { extra: ['EXPLOUD'], rare: ['AGGRON', 'CROBAT', 'METANG'] },
-    'EVER GRANDE CITY': { rare: ['SCEPTILE', 'BLAZIKEN', 'SWAMPERT', 'GARDEVOIR'] },
-  },
-  5: {
-    'SAFARI ZONE': { rare: ['FLYGON'] },
-    'SKY PILLAR': { rare: ['SALAMENCE', 'METAGROSS', 'SLAKING'] },
-    'SEALED CHAMBER': { rare: ['CRADILY', 'ARMALDO'] },
-  },
-};
-for (const a of HOENN_ACTS) for (const ar of a.areas) Object.assign(ar, HOENN_FINDS[a.id]?.[ar.name]);
-
 export const HOENN_LEGENDS = {
   LEGEND_REGIROCK: { species: 'REGIROCK', title: 'REGIROCK', terrain: 'cave', music: 'mus_vs_legend' },
   LEGEND_REGICE: { species: 'REGICE', title: 'REGICE', terrain: 'cave', music: 'mus_vs_legend' },

@@ -402,7 +402,7 @@ export class Battle {
     this.sides.enemy = { ...newSide(), spikes: this.sides.enemy.spikes };
     if (!first) this.bossRule = e.bossRule ? BOSS_RULES[e.bossRule] : this.bossRule;
     this.emit({ t: 'enemyOut', index: this.enemyIndex, species: e.species });
-    if (this.wildLike) this.msg(`A wild ${speciesName(e.species)} appeared!${e.rareFind ? ' A rare find!' : ''}`);
+    if (this.wildLike) this.msg(`A wild ${speciesName(e.species)} appeared!`);
     else this.msg(`${this.trainer?.name || 'Foe'} sent out ${speciesName(e.species)}!`);
     if (e.bossRule && BOSS_RULES[e.bossRule]) this.emit({ t: 'bossRule', rule: e.bossRule, name: BOSS_RULES[e.bossRule].name, desc: BOSS_RULES[e.bossRule].desc });
     if (this.sides.enemy.spikes) {

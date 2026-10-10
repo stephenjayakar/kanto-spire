@@ -3,7 +3,7 @@ import { RNG, randomSeedString } from './rng.js';
 import { D, expYield, expForLevel, isSpecial, speciesName, typeEffect } from './data.js';
 import { canUseStone, makeMon, maxHp, healFull, healFrac, isFainted, gainExp, addLevels, teachMove, knowsMove, canLearn, typesOf, setUidCounter, nextUid, itemEvolution, evolve, monName, defaultMoves, defaultCopies, DECK_RULES, NO_PLAYER_MOVES } from './pokemon.js';
 import { LEGENDS, STARTERS, rivalKey, BIRDS, RIVAL_INTROS, counterStarter, rivalParty , blueParty } from './acts.js';
-import { actsForRun, regionOf, drawSpire, rivalFor, validSpire, spireCode, SPIRE, timeOfDay, areaPool, withFinds } from './regions.js';
+import { actsForRun, regionOf, drawSpire, rivalFor, validSpire, spireCode, SPIRE, timeOfDay, areaPool } from './regions.js';
 import { HOENN_TRAINER_CLASSES } from './hoenn.js';
 import { generateMap } from './map.js';
 import { makeEnemy } from './battle.js';
@@ -423,7 +423,7 @@ export class Run {
 
   wildConfig(rng, floor, forced) {
     const area = this.areaFor(rng, floor);
-    let pick = forced, rareFind = false;
+    let pick = forced;
     if (!pick) {
       // No repeats: a POKéMON you've already battled in the wild this run isn't offered again (its evolution
       // line still can be: after a WEEDLE you may meet a KAKUNA)
@@ -433,11 +433,10 @@ export class Run {
       const baseLvl = this.levelFor(floor);
       const shownAs = (sp) => { const evo = D.species[sp]?.evolutions?.find(e => e.method === 'LEVEL'); return evo && baseLvl >= evo.param + 6 && D.species[evo.into] ? evo.into : sp; };
       const tod = this.timeOfDay(floor);
-      // (+ the area's extra species and rare finds, regions.js withFinds)
       const speciesOf = (a) => {
-        if (a.pool) return withFinds(a, areaPool(a, tod).filter(sp => D.species[sp]).map(sp => ({ species: sp, rate: 1 })));
+        if (a.pool) return areaPool(a, tod).filter(sp => D.species[sp]).map(sp => ({ species: sp, rate: 1 }));
         const enc = D.encounters[a.map] || {};
-        return withFinds(a, (enc.land && enc.land.length ? enc.land : enc.water || enc.fishing || []).filter(e => D.species[e.species]));
+        return (enc.land && enc.land.length ? enc.land : enc.water || enc.fishing || []).filter(e => D.species[e.species]);
       };
       const fresh = (list) => list.filter(e => !seen.has(shownAs(e.species)));
       const prog = floor / this.act.floors;
@@ -445,9 +444,7 @@ export class Run {
       let pool = fresh(speciesOf(area));
       if (!pool.length) pool = fresh(open.flatMap(speciesOf));
       if (!pool.length) pool = speciesOf(area);
-      const e = rng.weighted(pool, e => e.rate || 1);
-      pick = e.species;
-      rareFind = !!e.rare;
+      pick = rng.weighted(pool, e => e.rate || 1).species;
     }
     let lvl = this.levelFor(floor) + rng.int(-1, 1);
     // Wild Pokémon evolve if their level would be far past their evolution (keeps later areas fresh).
@@ -456,7 +453,6 @@ export class Run {
     if (evo && lvl >= evo.param + 6 && D.species[evo.into]) species = evo.into;
     const enemy = makeEnemy(species, Math.max(2, lvl), { rng, hpScale: this.hpScaleFor(floor, 'wild') * (1 + (this.mods().wildHp || 0)), shiny: rng.chance(1 / 64) });
     enemy.wildBase = pick;
-    if (rareFind) enemy.rareFind = true; // (an area's rare find: battle.js says so)
     const tod = this.timeOfDay(floor);
     return { kind: 'wild', enemies: [enemy], terrain: area.terrain, music: 'mus_vs_wild', areaName: area.name, dmgScale: this.dmgScale(), rng, ...(tod ? { timeOfDay: tod } : {}) };
   }

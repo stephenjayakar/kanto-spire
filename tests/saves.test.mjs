@@ -230,8 +230,10 @@ t('resume: an unusable checkpoint is refused (the caller replays the whole log);
 });
 
 t('checkpoint keeps the act clears (starter offers) outside the checksum', () => {
-  const fx = fixture('coop_log_v035.json');
-  const g = replayAll(fx.log.slice(0, fx.safe.seq));
+  // (a current-code bot room at its first safe point in act 2, the first seed whose bots clear act 1; the v0.3.5
+  // fixture log this used no longer replays on the current code since v0.3.25's wild pools)
+  let g = null;
+  for (let i = 0; i < 20 && !(g && isSafePoint(g) && g.world.actIndex === 1); i++) g = botGame('AC' + i, { stop: (x) => isSafePoint(x) && x.world.actIndex === 1 }).game;
   assert.ok(isSafePoint(g) && g.world.actIndex === 1);
   const r = restoreGame(snapshotGame(g), CURRENT);
   assert.deepEqual(r.events.filter(e => e.t === 'actClear').map(e => e.act), [1]);
@@ -248,20 +250,22 @@ t('resume: unverifiable rooms (no checksums) replay as before', async () => {
 
 // ------------------------------------------------------------------------------------- legacy engine
 t('engines: selection is explicit (stamp first, then the current code, then the other frozen copies)', () => {
-  assert.equal(LOGIC_ID, 'v0323', 'v0.3.23 changed game logic (FLY-family dodges are followed by a LANDING turn)');
+  assert.equal(LOGIC_ID, 'v0325', 'v0.3.25 changes game logic (one legendary per run, mythic events, every species catchable)');
   assert.equal(UNSTAMPED, 'v035');
-  assert.deepEqual(Object.keys(FROZEN), ['v0319', 'v0311', 'v037', 'v035', 'v031'], 'newest first');
+  assert.deepEqual(Object.keys(FROZEN), ['v0323', 'v0319', 'v0311', 'v037', 'v035', 'v031'], 'newest first');
   const ids = (l) => l.map(e => (e.current ? 'current:' : '') + e.id);
   // a room stamped by an older logic goes to its own frozen copy first, then the current code, then the rest
-  assert.deepEqual(ids(engineOrder('v0319')), ['v0319', 'current:v0323', 'v0311', 'v037', 'v035', 'v031']);
-  assert.deepEqual(ids(engineOrder('v0311')), ['v0311', 'current:v0323', 'v0319', 'v037', 'v035', 'v031']);
-  assert.deepEqual(ids(engineOrder('v037')), ['v037', 'current:v0323', 'v0319', 'v0311', 'v035', 'v031']);
-  assert.deepEqual(ids(engineOrder('v035')), ['v035', 'current:v0323', 'v0319', 'v0311', 'v037', 'v031']);
-  assert.deepEqual(ids(engineOrder('v0323')), ['current:v0323', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
-  assert.deepEqual(ids(engineOrder('zzz')), ['current:v0323', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('v0323')), ['v0323', 'current:v0325', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('v0319')), ['v0319', 'current:v0325', 'v0323', 'v0311', 'v037', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('v0311')), ['v0311', 'current:v0325', 'v0323', 'v0319', 'v037', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('v037')), ['v037', 'current:v0325', 'v0323', 'v0319', 'v0311', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('v035')), ['v035', 'current:v0325', 'v0323', 'v0319', 'v0311', 'v037', 'v031']);
+  assert.deepEqual(ids(engineOrder('v0325')), ['current:v0325', 'v0323', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('zzz')), ['current:v0325', 'v0323', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
   // under the older ids (what those versions did)
-  assert.deepEqual(ids(engineOrder('v0311', 'v0319')), ['v0311', 'current:v0319', 'v0319', 'v037', 'v035', 'v031']);
-  assert.deepEqual(ids(engineOrder('v037', 'v0311')), ['v037', 'current:v0311', 'v0319', 'v0311', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('v0319', 'v0323')), ['v0319', 'current:v0323', 'v0323', 'v0311', 'v037', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('v0311', 'v0319')), ['v0311', 'current:v0319', 'v0323', 'v0319', 'v037', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('v037', 'v0311')), ['v037', 'current:v0311', 'v0323', 'v0319', 'v0311', 'v035', 'v031']);
   assert.equal(segmentStamp([{ p: -1, type: 'init' }, { p: 0, type: 'vote' }]), 'v035', 'unstamped = v0.3.5');
   assert.equal(segmentStamp([{ p: 0, type: 'vote', eng: 'v037' }, { p: 1, type: 'vote', eng: 'v037' }, { p: 1, eng: 'v035' }]), 'v037');
   for (const id of Object.keys(FROZEN)) assert.ok(fs.existsSync(`web/src/legacy/${id}/engine.js`), id);
