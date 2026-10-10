@@ -28,6 +28,13 @@ for (const [key, type] of Object.entries(TYPE_BOOSTERS)) {
 RELICS.SILK_SCARF.desc = 'NORMAL cards deal +30% damage.';
 RELICS.SILK_SCARF.cardPct = (c) => (c.type === 'NORMAL' ? 30 : 0);
 
+// A growing item's current bonus for the HUD tag and tooltip (scenes/common.js drawHUD). Display only: never game logic.
+// v: the bonus now, why: what it counts, next: when it grows (false at the max), unit: '%' or '' (flat damage). The tag
+// reads "30%" ("+8" for flat damage) to fit a packed row of held items.
+function bonusTag(v, why, next, unit = '%') {
+  return { text: unit ? `${v}%` : `+${v}`, zero: !v, tip: `Currently +${v}${unit ? '%' : ' damage per hand'} (${why}${next ? `; ${next}` : '; the max'}).` };
+}
+
 const atkTypes = (s) => new Set(s.cards.filter(c => !c.status).map(c => c.type));
 
 Object.assign(RELICS, {
@@ -76,7 +83,8 @@ Object.assign(RELICS, {
   SILPH_SCOPE: { rarity: 'uncommon', desc: 'GHOST and DARK cards deal +80% damage. Reveals face-down cards.', cardPct(c) { return c.type === 'GHOST' || c.type === 'DARK' ? 80 : 0; }, mods: { trueSight: 1 } },
   POKE_FLUTE: { rarity: 'uncommon', desc: 'Your POKéMON wake up at the start of every turn.', mods: { pokeFlute: 1 } },
   VS_SEEKER: { rarity: 'common', desc: 'Trainers pay 50% more money.', mods: { trainerMoney: 0.5 } },
-  FAME_CHECKER: { rarity: 'rare', desc: '+10% damage for every 4 trainers defeated this run (max +80%).', onHand(s) { const n = Math.min(8, Math.floor((s.run.stats.trainers || 0) / 4)); if (n) s.pct(10 * n, 'FAME_CHECKER'); } },
+  FAME_CHECKER: { rarity: 'rare', desc: '+10% damage for every 4 trainers defeated this run, counting those beaten before you got it (max +80%).', onHand(s) { const n = Math.min(8, Math.floor((s.run.stats.trainers || 0) / 4)); if (n) s.pct(10 * n, 'FAME_CHECKER'); },
+    bonus: (run) => { const t = run.stats?.trainers || 0, n = Math.min(8, Math.floor(t / 4)); return bonusTag(10 * n, `${t} trainer${t === 1 ? '' : 's'} beaten`, n < 8 && `next +10% at ${4 * (n + 1)}`); } },
   OAKS_PARCEL: { rarity: 'common', desc: 'At the start of each act, receive 3 POKé BALLS.', mods: { parcel: 1 } },
   TEA: { rarity: 'common', desc: 'Your lead heals 15% of its max HP at the start of each battle.', onBattleStart(b) { b.healLead(0.15, 'TEA'); } },
   SECRET_KEY: { rarity: 'uncommon', desc: 'FIRE cards deal +12 damage each.', cardDmg(c) { return c.type === 'FIRE' ? 12 : 0; } },
@@ -84,14 +92,17 @@ Object.assign(RELICS, {
   LIFT_KEY: { rarity: 'common', desc: 'Elite battles give double money.', mods: { eliteMoney: 1 } },
   GOLD_TEETH: { rarity: 'uncommon', desc: 'Elite battles offer one extra held item choice.', mods: { eliteChoices: 1 } },
   SS_TICKET: { rarity: 'uncommon', desc: 'Everything in shops costs 20% less.', mods: { priceMult: -0.2 } },
-  TEACHY_TV: { rarity: 'common', desc: '+20% damage for every hand your lead has played since it came out (max +80%).', onHand(s) { const n = Math.min(4, s.battle.leadStreak); if (n) s.pct(20 * n, 'TEACHY_TV'); } },
+  TEACHY_TV: { rarity: 'common', desc: '+20% damage for every hand your lead has played since it came out (max +80%).', onHand(s) { const n = Math.min(4, s.battle.leadStreak); if (n) s.pct(20 * n, 'TEACHY_TV'); },
+    bonus: (run, b) => { if (!b) return null; const k = b.leadStreak || 0, n = Math.min(4, k); return bonusTag(20 * n, `your lead has played ${k} hand${k === 1 ? '' : 's'} since it came out`, n < 4 && 'next hand +20%'); } },
   RUBY: { rarity: 'rare', desc: '+80% damage if the hand contains a FIRE, FIGHTING or ROCK attack card.', onHand(s) { if (s.cards.some(c => !c.status && ['FIRE', 'FIGHTING', 'ROCK'].includes(c.type))) s.pct(80, 'RUBY'); } },
   SAPPHIRE: { rarity: 'rare', desc: '+80% damage if the hand contains a WATER, ICE or PSYCHIC attack card.', onHand(s) { if (s.cards.some(c => !c.status && ['WATER', 'ICE', 'PSYCHIC'].includes(c.type))) s.pct(80, 'SAPPHIRE'); } },
   METEORITE: { rarity: 'rare', desc: 'Every 4th hand you play deals +300% damage.', onHand(s) { if (s.battle.handsPlayed % 4 === 3) s.pct(300, 'METEORITE'); },
     counter: b => ({ text: `${b.handsPlayed % 4 + 1}/4`, ready: b.handsPlayed % 4 === 3 }) },
   OLD_AMBER: { rarity: 'rare', desc: '+40% damage for each ROCK-type POKéMON in your party.', onHand(s) { const n = s.run.party.filter(m => s.typesOf(m).includes('ROCK')).length; if (n) s.pct(40 * n, 'OLD_AMBER'); } },
-  POWDER_JAR: { rarity: 'uncommon', desc: 'Gains +10% damage for every 3 PAIRs you play this run (max +80%).', onHand(s, st) { if (s.comboKey === 'PAIR') st.p = (st.p || 0) + 1; st.n = Math.min(8, Math.floor((st.p || 0) / 3)); if (st.n) s.pct(10 * st.n, 'POWDER_JAR'); } },
-  SHOAL_SHELL: { rarity: 'uncommon', desc: 'Gains +2 damage per hand each time you play a 5-card hand this run (max +30).', onHand(s, st) { if (s.cards.length === 5) st.n = Math.min(15, (st.n || 0) + 1); if (st.n) s.flat(2 * st.n, 'SHOAL_SHELL'); } },
+  POWDER_JAR: { rarity: 'uncommon', desc: 'Gains +10% damage for every 3 PAIRs you play while holding it (max +80%).', onHand(s, st) { if (s.comboKey === 'PAIR') st.p = (st.p || 0) + 1; st.n = Math.min(8, Math.floor((st.p || 0) / 3)); if (st.n) s.pct(10 * st.n, 'POWDER_JAR'); },
+    bonus: (run, b, st) => { const p = st.p || 0, n = Math.min(8, Math.floor(p / 3)); return bonusTag(10 * n, `${p} PAIR${p === 1 ? '' : 's'} played`, n < 8 && `next +10% at ${3 * (n + 1)}`); } },
+  SHOAL_SHELL: { rarity: 'uncommon', desc: 'Gains +2 damage per hand each time you play a 5-card hand while holding it (max +30).', onHand(s, st) { if (s.cards.length === 5) st.n = Math.min(15, (st.n || 0) + 1); if (st.n) s.flat(2 * st.n, 'SHOAL_SHELL'); },
+    bonus: (run, b, st) => { const n = Math.min(15, st.n || 0); return bonusTag(2 * n, `${n} five-card hand${n === 1 ? '' : 's'} played`, n < 15 && 'next 5-card hand +2', ''); } },
   RAINBOW_PASS: { rarity: 'rare', desc: 'COVERAGE needs only 3 different types.', mods: { coverage4: 1 } },
   TRI_PASS: { rarity: 'uncommon', desc: '+100% damage if the hand has exactly 3 cards.', onHand(s) { if (s.cards.length === 3) s.pct(100, 'TRI_PASS'); } },
   WAILMER_PAIL: { rarity: 'common', desc: 'GRASS cards heal their user 5% HP when they hit.', onCard(s, c) { if (c.type === 'GRASS') s.healOwner(c, 0.05); } },
@@ -102,7 +113,9 @@ Object.assign(RELICS, {
   BLUE_FLUTE: { rarity: 'common', desc: '+50% damage on hands that include a status card.', onHand(s) { if (s.cards.some(c => c.status)) s.pct(50, 'BLUE_FLUTE'); } },
   YELLOW_FLUTE: { rarity: 'common', desc: '+24% damage for each status card played in the hand.', onHand(s) { const n = s.cards.filter(c => c.status).length; if (n) s.pct(24 * n, 'YELLOW_FLUTE'); } },
   RED_FLUTE: { rarity: 'uncommon', desc: '+80% damage while the foe has a status condition.', onHand(s) { if (s.battle.enemy()?.status) s.pct(80, 'RED_FLUTE'); } },
-  BLACK_FLUTE: { rarity: 'uncommon', desc: "+12% damage for every 10% of the foe's HP that is missing.", onHand(s) { const e = s.battle.enemy(); const n = e ? Math.floor((1 - e.hp / e.maxHp) * 10) : 0; if (n > 0) s.pct(12 * n, 'BLACK_FLUTE'); } },
+  BLACK_FLUTE: { rarity: 'uncommon', desc: "+12% damage for every 10% of the foe's HP that is missing.", onHand(s) { const e = s.battle.enemy(); const n = e ? Math.floor((1 - e.hp / e.maxHp) * 10) : 0; if (n > 0) s.pct(12 * n, 'BLACK_FLUTE'); },
+    // (co-op: opts.foe = the foe you're aiming at)
+    bonus: (run, b, st, opts) => { const e = opts?.foe || b?.enemy?.(); if (!b || !e) return null; const miss = Math.max(0, 1 - e.hp / e.maxHp), n = Math.max(0, Math.floor(miss * 10)); return bonusTag(12 * n, `the foe is missing ${Math.floor(miss * 100)}% HP`, n < 9 && `next +12% at ${100 - 10 * (n + 1)}% HP or less`); } },
   WHITE_FLUTE: { rarity: 'uncommon', desc: '+160% damage on the first hand of each battle.', onHand(s) { if (s.battle.handsPlayed === 0) s.pct(160, 'WHITE_FLUTE'); },
     counter: b => (b.handsPlayed === 0 ? { text: 'NOW', ready: true } : null) },
   RED_SCARF: { rarity: 'common', desc: 'Physical cards deal +6 damage each.', cardDmg(c) { return c.physical ? 6 : 0; } },
@@ -119,10 +132,12 @@ Object.assign(RELICS, {
   GOOD_ROD: { rarity: 'uncommon', desc: '+24% damage for every discard you have left.', onHand(s) { const n = s.battle.discardsLeft || 0; if (n) s.pct(24 * n, 'GOOD_ROD'); } },
   DOME_FOSSIL: { rarity: 'common', desc: '+16% damage for every card left in your hand after playing.', onHand(s) { const n = s.battle.deck.hand.filter(c => !s.cards.some(i => i.card === c)).length; if (n) s.pct(16 * n, 'DOME_FOSSIL'); } }, // (the preview runs with the played cards still in hand)
   HELIX_FOSSIL: { rarity: 'uncommon', desc: "+10% damage for each different attack type in your lead's deck.", onHand(s) { const n = new Set(s.deckCards.filter(c => !c.status).map(c => c.type)).size; if (n) s.pct(10 * n, 'HELIX_FOSSIL'); } },
-  POKEBLOCK_CASE: { rarity: 'common', desc: '+16% damage for every POKéMON that has led this battle (max +80%).', onHand(s) { const n = Math.min(5, s.battle.participants.size); if (n) s.pct(16 * n, 'POKEBLOCK_CASE'); } },
+  POKEBLOCK_CASE: { rarity: 'common', desc: '+16% damage for every POKéMON that has led this battle (max +80%).', onHand(s) { const n = Math.min(5, s.battle.participants.size); if (n) s.pct(16 * n, 'POKEBLOCK_CASE'); },
+    bonus: (run, b) => { if (!b?.participants) return null; const k = b.participants.size, n = Math.min(5, k); return bonusTag(16 * n, `${k} POKéMON ha${k === 1 ? 's' : 've'} led this battle`, n < 5 && 'switch in another for +16%'); } },
   RED_ORB: { rarity: 'rare', desc: '+80% damage on hands with 4 or more attack cards.', onHand(s) { if (s.cards.filter(c => !c.status).length >= 4) s.pct(80, 'RED_ORB'); } },
   BLUE_ORB: { rarity: 'rare', desc: '+160% damage on hands of exactly 2 cards.', onHand(s) { if (s.cards.length === 2) s.pct(160, 'BLUE_ORB'); } },
-  MYSTIC_TICKET: { rarity: 'rare', desc: '+4% damage for every foe your hands knock out this run (max +200%).', onKO(b) { const r = b.run.relics.find(x => x.key === 'MYSTIC_TICKET'); if (r) { r.state ||= {}; r.state.n = (r.state.n || 0) + 1; } }, onHand(s, st) { const n = Math.min(200, 4 * (st.n || 0)); if (n) s.pct(n, 'MYSTIC_TICKET'); } },
+  MYSTIC_TICKET: { rarity: 'rare', desc: '+4% damage for every foe your hands knock out while you hold it (max +200%).', onKO(b) { const r = b.run.relics.find(x => x.key === 'MYSTIC_TICKET'); if (r) { r.state ||= {}; r.state.n = (r.state.n || 0) + 1; } }, onHand(s, st) { const n = Math.min(200, 4 * (st.n || 0)); if (n) s.pct(n, 'MYSTIC_TICKET'); },
+    bonus: (run, b, st) => { const k = st.n || 0, v = Math.min(200, 4 * k); return bonusTag(v, `${k} foe${k === 1 ? '' : 's'} knocked out`, v < 200 && 'next KO +4%'); } },
   AURORA_TICKET: { rarity: 'rare', desc: '+60% damage on every hand, but your POKéMON take 10% more damage.', onHand(s) { s.pct(60, 'AURORA_TICKET'); }, mods: { dmgTaken: 0.1 } },
   EON_TICKET: { rarity: 'rare', desc: '+120% damage on hands with attack cards of 3+ different types.', onHand(s) { if (atkTypes(s).size >= 3) s.pct(120, 'EON_TICKET'); } },
 });

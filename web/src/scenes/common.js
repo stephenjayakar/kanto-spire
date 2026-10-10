@@ -9,7 +9,7 @@ import { COMBOS, COMBO_ORDER, comboBonus } from '../game/hands.js';
 import { maxHp, monName, stats, typesOf, isFainted, expProgress } from '../game/pokemon.js';
 import { RELICS, BADGES, CONSUMABLES, badgeIcon } from '../game/items.js';
 import { G } from '../game/state.js';
-import { TUNING, LEVEL_CAP_ASC } from '../game/run.js';
+import { TUNING, LEVEL_CAP_ASC, ASCENSIONS, NUZLOCKE_ASC } from '../game/run.js';
 import { Sound } from '../audio/sound.js';
 import { drawStatusInfo } from './status_info.js';
 
@@ -288,27 +288,74 @@ export function cardTooltip(info, x, y, above = false) {
   tip(n ? `${m.name} (${n})` : m.name, lines.join('\n'), { accent: TYPE_COLORS[info.type], width: 190, x, y, above });
 }
 
+// ---- move order tags (the healthboxes' "1st" / "2nd" in solo and co-op battles) ----------------------------------
+export function ordinal(n) { const t = n % 100; return n + (t >= 11 && t <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th'); }
+export function orderTagWidth(label) { return measure(label, 'small') + 6; }
+// A small pill (gold when it acts first); returns its width.
+export function drawOrderTag(ctx, label, x, y, first) {
+  const w = orderTagWidth(label);
+  pixBox(ctx, x, y, w, 11, first ? '#f8d038' : '#4a5870', null, 2);
+  text(ctx, label, x + w / 2, y, { align: 'center', color: first ? 'black' : 'white', font: 'small' });
+  return w;
+}
+export const ORDER_RULE = "Higher move priority goes first (QUICK ATTACK +1, PROTECT +3; a foe's ROAR -6 goes last), then QUICK CLAW, then Speed.";
+
 // ---- HUD (top bar) --------------------------------------------------------------------------
+// Where the last drawHUD put the ascension tag and each held item (for tests).
+const HUD_BOXES = { asc: null, relics: {} };
+export function hudAscBox() { return HUD_BOXES.asc; }
+export function hudRelicBox(key) { return HUD_BOXES.relics[key] || null; }
+
+// The ascension tag's tooltip: every active modifier (co-op: NUZLOCKE does nothing there), and the level cap.
+export function ascensionTip(run) {
+  const a = run.ascension | 0;
+  const lines = ASCENSIONS.slice(1, a + 1).map(x => `A${x.n} ${x.name.toUpperCase()}: ${x.n === NUZLOCKE_ASC && run.coop ? 'no effect in co-op (your partners revive you after a win).' : x.desc}`);
+  const cap = run.levelCap?.();
+  return `${run.coop ? "This room's" : "This run's"} active modifiers:\n${lines.join('\n')}${cap ? `\n\nThis act's level cap: Lv${cap}.` : ''}`;
+}
+
 export function drawHUD(ctx, run, opts = {}) {
   rect(ctx, 0, 0, W, 26, '#11141c');
   rect(ctx, 0, 26, W, 1, '#2a3040');
   const act = run.act;
-  text(ctx, opts.title || `${act.short}`, 6, 1, { color: 'white' });
-  // A5+ LEVEL CAP: the act's cap after the act name
+  HUD_BOXES.asc = null; HUD_BOXES.relics = {};
+  // Top-left block. Row 1: the act name, the ascension tag (A1+) and the A5+ level cap; row 2: the subtitle. The
+  // badges stand right of it (packed tighter when there are many) and the money etc. move right to make room.
+  const title = opts.title || `${act.short}`;
+  text(ctx, title, 6, 1, { color: 'white' });
+  let rx = 6 + measure(title) + 4;
+  const asc = run.ascension | 0;
+  if (asc > 0) {
+    const at = `A${asc}`, aw = measure(at, 'small') + 6;
+    const hot = hover(rx - 1, 0, aw + 2, 13);
+    pixBox(ctx, rx, 2, aw, 10, hot ? '#e04848' : '#a02838', null, 2);
+    text(ctx, at, rx + aw / 2, 1, { align: 'center', color: 'white', font: 'small' });
+    HUD_BOXES.asc = { x: rx, y: 2, w: aw, h: 10 };
+    if (hot) tip(`ASCENSION ${asc}`, ascensionTip(run), { width: 270, accent: '#e04848' });
+    rx += aw + 4;
+  }
   const cap = run.levelCap?.();
   if (cap) {
-    const cx = 6 + measure(opts.title || `${act.short}`) + 6, cw = measure(`Lv cap ${cap}`, 'small');
-    if (cx + cw <= 108) {
-      text(ctx, `Lv cap ${cap}`, cx, 3, { color: 'orange', font: 'small' });
-      if (hover(cx - 2, 0, cw + 4, 13)) tip(`LEVEL CAP: Lv${cap}`, `A${LEVEL_CAP_ASC}+: battle EXP stops at Lv${cap} in this act (its boss's top level +${TUNING.levelCapOffset}). EXP past the cap is lost. RARE CANDY can still go past it.`, { width: 200 });
-    }
+    const ct = `Lv cap ${cap}`, cw = measure(ct, 'small');
+    text(ctx, ct, rx, 3, { color: 'orange', font: 'small' });
+    if (hover(rx - 2, 0, cw + 4, 13)) tip(`LEVEL CAP: Lv${cap}`, `A${LEVEL_CAP_ASC}+: battle EXP stops at Lv${cap} in this act (its boss's top level +${TUNING.levelCapOffset}). EXP past the cap is lost. RARE CANDY can still go past it.`, { width: 200 });
+    rx += cw + 4;
   }
-  // (fit before the money; a long subtitle, e.g. a co-op DUO trainer pair, shows in full on hover)
+  const nb = run.badges.length;
+  const textEnd = Math.max(rx - 4, nb ? 70 : 108);
+  // badges: up to 3 side by side (14 px apart); more make a pile of the newest three and a count (the tooltip lists
+  // them all), so the held items keep their room
+  const pile = nb > 3, bx0 = textEnd + 4, bStep = pile ? 4 : 14;
+  const shownBadges = pile ? run.badges.slice(-3) : run.badges;
+  const pileCount = pile ? `x${nb}` : '';
+  const leftEnd = nb ? bx0 + 16 + bStep * (shownBadges.length - 1) + (pile ? 2 + measure(pileCount, 'small') : 0) : textEnd;
+  // (fit before the badges / money; a long subtitle, e.g. a co-op DUO trainer pair, shows in full on hover)
   const sub = opts.subtitle || (run.floor >= 0 ? (run.floor >= act.floors ? 'BOSS' : `FLOOR ${run.floor + 1}/${act.floors}`) : act.name);
-  textFit(ctx, sub, 6, 13, 102, { color: 'gray', font: 'small' });
-  if (measure(sub, 'small') > 102 && hover(0, 12, 110, 14)) tip(null, sub, { width: 200 });
+  const subW = textEnd - 6;
+  textFit(ctx, sub, 6, 13, subW, { color: 'gray', font: 'small' });
+  if (measure(sub, 'small') > subW && hover(0, 13, subW + 6, 13)) tip(null, sub, { width: 200 });
   // money
-  let x = 112;
+  let x = Math.max(112, Math.round(leftEnd) + 6);
   text(ctx, '$' + run.money.toLocaleString(), x, 6, { color: 'gold' });
   x += Math.max(52, measure('$' + run.money.toLocaleString()) + 8);
   // balls
@@ -353,29 +400,48 @@ export function drawHUD(ctx, run, opts = {}) {
     else draw(ctx, itemPath(r.key), rx, ry + bounce - (i === hot ? 2 : 0));
   }
   // in battle (opts.battle): a held item that fires on a cycle (METEORITE: every 4th hand) shows where it is, in gold
-  // when the next hand sets it off (drawn after every icon so a packed row doesn't hide it)
+  // when the next hand sets it off; an item whose bonus grows (FAME CHECKER, POWDER JAR, BLACK FLUTE...) shows its
+  // current bonus (its tooltip says it everywhere, run-long ones outside battles too). Drawn after every icon so a
+  // packed row doesn't hide them. Tags never overlap: in a tightly packed row the hovered item's tag wins, then the
+  // ones about to fire, then the rightmost; a tag left out still shows in the item's tooltip.
   const counterOf = r => (opts.battle && RELICS[r.key]?.counter ? RELICS[r.key].counter(opts.battle) : null);
+  const bonusOf = r => (RELICS[r.key]?.bonus ? RELICS[r.key].bonus(run, opts.battle || null, r.state || {}, opts) : null);
+  const tags = [];
   run.relics.forEach((r, i) => {
-    const c = counterOf(r);
+    HUD_BOXES.relics[r.key] = { x: relicX + i * step, y: 1, w: i === n - 1 ? 25 : Math.min(25, step), h: 24 };
+    const c = counterOf(r) || (opts.battle ? bonusOf(r) : null);
     if (!c) return;
-    const rx = relicX + i * step, cw = measure(c.text, 'small') + 4;
-    pixBox(ctx, rx + 25 - cw, 15, cw, 10, c.ready ? (Math.sin(Engine.time * 6) > 0 ? '#f8d038' : '#c09020') : '#101018', null, 2);
-    text(ctx, c.text, rx + 25 - cw / 2, 14, { align: 'center', color: c.ready ? 'black' : 'white', font: 'small' });
+    const cw = measure(c.text, 'small') + 4, x0 = relicX + i * step + 25 - cw;
+    tags.push({ i, c, cw, x0, rank: (i === hot ? 2e3 : 0) + (c.ready ? 1e3 : 0) + i });
   });
+  const shown = [];
+  for (const t of tags.sort((a, b) => b.rank - a.rank)) if (!shown.some(o => t.x0 < o.x0 + o.cw + 1 && o.x0 < t.x0 + t.cw + 1)) shown.push(t);
+  for (const { c, cw, x0 } of shown) {
+    pixBox(ctx, x0, 15, cw, 10, c.ready ? (Math.sin(Engine.time * 6) > 0 ? '#f8d038' : '#c09020') : '#101018', null, 2);
+    text(ctx, c.text, x0 + cw / 2, 14, { align: 'center', color: c.ready ? 'black' : c.zero ? 'gray' : 'white', font: 'small' });
+  }
   if (hot >= 0) {
     const r = run.relics[hot];
     const def = RELICS[r.key];
+    const bn = bonusOf(r), ct = counterOf(r);
+    const now = bn ? `\n${bn.tip}` : (r.state?.n ? `\n(Currently: ${r.state.n})` : '');
     if (def.curse) tip(D.items[r.key]?.name || r.key, def.desc + "\n\nCURSE  ·  can't be sold\nCLEANSE it at a POKéMON CENTER", { accent: '#c050f0' });
-    else tip(D.items[r.key]?.name || r.key, def.desc + (r.state?.n ? `\n(Currently: ${r.state.n})` : '') + (counterOf(r) ? (counterOf(r).ready ? '\nYOUR NEXT HAND SETS IT OFF!' : `\n(Hand ${counterOf(r).text})`) : '') + `\n\n${def.rarity.toUpperCase()} HELD ITEM  ·  ${n} held${opts.sellable ? '  ·  click to sell' : ''}`, { accent: def.rarity === 'rare' ? '#f8d038' : def.rarity === 'uncommon' ? '#58a8f8' : '#a0a0a0' });
+    else tip(D.items[r.key]?.name || r.key, def.desc + now + (ct ? (ct.ready ? '\nYOUR NEXT HAND SETS IT OFF!' : `\n(Hand ${ct.text})`) : '') + `\n\n${def.rarity.toUpperCase()} HELD ITEM  ·  ${n} held${opts.sellable ? '  ·  click to sell' : ''}`, { accent: def.rarity === 'rare' ? '#f8d038' : def.rarity === 'uncommon' ? '#58a8f8' : '#a0a0a0' });
     if (opts.onRelicClick && (Engine.mouse.rclicked || Engine.mouse.clicked)) opts.onRelicClick(r.key);
   }
-  // badges sit next to the act title so they never collide with the right-side buttons
-  const badgeX0 = 8 + measure(opts.title || act.short) + 6;
-  for (let i = 0; i < run.badges.length; i++) {
-    const b = run.badges[i];
-    const bx = badgeX0 + i * 14;
-    draw(ctx, badgeIcon(b), bx, 5);
-    if (hover(bx, 4, 14, 18)) tip(BADGES[b]?.name || b, BADGES[b]?.desc || '', { accent: '#f8d038' });
+  // badges sit next to the act title (and the ascension tag) so they never collide with the right-side buttons;
+  // packed, the one under the mouse is the topmost (the last drawn)
+  let hotBadge = -1;
+  if (pile) { if (nb && hover(bx0, 3, leftEnd - bx0, 20)) hotBadge = nb - 1; }
+  else for (let i = nb - 1; i >= 0; i--) if (hover(bx0 + i * bStep, 3, i === nb - 1 ? 16 : bStep, 20)) { hotBadge = i; break; }
+  shownBadges.forEach((b, i) => {
+    const im = img(badgeIcon(b)), bh = ready(im) ? im.height : 16; // (HOENN / JOHTO badges borrow 24 px item art)
+    draw(ctx, badgeIcon(b), Math.round(bx0 + i * bStep), Math.round(13 - bh / 2) - (hotBadge >= 0 && (pile || run.badges[hotBadge] === b) ? 2 : 0));
+  });
+  if (pile) text(ctx, pileCount, leftEnd - measure(pileCount, 'small'), 13, { color: 'white', font: 'small' });
+  if (hotBadge >= 0) {
+    if (pile) tip(`BADGES (${nb})`, run.badges.map(b => `${BADGES[b]?.name || b}: ${BADGES[b]?.desc || ''}`).join('\n'), { width: 250, accent: '#f8d038' });
+    else { const b = run.badges[hotBadge]; tip(BADGES[b]?.name || b, BADGES[b]?.desc || '', { accent: '#f8d038' }); }
   }
   // right side buttons
   if (opts.onDeck) {

@@ -16,7 +16,7 @@ import { CONSUMABLES, BADGES } from '../../game/items.js';
 import { maxHp, monName, typesOf, isFainted, DECK_RULES } from '../../game/pokemon.js';
 import { G, saveMeta } from '../../game/state.js';
 import { Sound } from '../../audio/sound.js';
-import { drawTrainer, drawHUD, drawCard, drawCardBack, cardTooltip, drawPartyPanel, drawMon, drawIcon, CARD_W, CARD_H, MessageBox, ChoiceModal, PartyPicker, DeckModal, monTooltip, Modal, drawNoComboTag, STATUS_SEL } from '../common.js';
+import { drawTrainer, drawHUD, drawCard, drawCardBack, cardTooltip, drawPartyPanel, drawMon, drawIcon, CARD_W, CARD_H, MessageBox, ChoiceModal, PartyPicker, DeckModal, monTooltip, Modal, drawNoComboTag, STATUS_SEL, ordinal, orderTagWidth, drawOrderTag, ORDER_RULE } from '../common.js';
 import { terrainImage, playedRowPos, TRAINER_LINGER, skippableWait, pollSkip, pileInput, drawPileTip, PILE_X, PILE_Y } from '../battle.js';
 import { COOP_TUNING } from '../../game/coop/tuning.js';
 import { PCOL, PFONT, drawCoopOverlay, drawPartnerChip, playerStatus, coopToast } from './ui.js';
@@ -983,12 +983,15 @@ export class CoopBattleScene {
     const bossy = cfg.kind === 'boss' || cfg.kind === 'elite';
     swirlBackground(ctx, bossy ? BG_THEMES.boss : cfg.terrain === 'cave' ? BG_THEMES.cave : cfg.terrain === 'water' ? BG_THEMES.water : BG_THEMES.grass, bossy ? 1.2 : 0.7);
     if (!this.duo) { drawCoopOverlay(ctx, s); return; }
+    this.orderTagBoxes = [];
+    this._order = this.busy || this.playedIds.length ? null : this.orderInfo();
     this.drawScene(ctx);
     this.drawLeftPanel(ctx);
     this.drawHand(ctx);
     this.drawPlayed(ctx);
     const title = cfg.trainers ? cfg.trainers.map(t => t.title).join(' & ') : cfg.trainer ? cfg.trainer.title : (cfg.legend || cfg.areaName || 'WILD BATTLE');
-    drawHUD(ctx, run, { bounce: this.relicBounce, help: true, battle: this.sub, onDeck: () => pushOverlay(new DeckModal({ title: 'YOUR DECKS', battle: this.sub })), onConsumableClick: (k) => this.useConsumable(k), noToss: true, subtitle: (this.many ? 'TEAM · ' : 'DUO · ') + title });
+    const aim = this.duo.locks[me] && !this.duo.locks[me].pass ? this.duo.locks[me].target : this.target;
+    drawHUD(ctx, run, { bounce: this.relicBounce, help: true, battle: this.sub, foe: aim === null || aim === undefined ? null : this.duo.enemyAt(aim), onDeck: () => pushOverlay(new DeckModal({ title: 'YOUR DECKS', battle: this.sub })), onConsumableClick: (k) => this.useConsumable(k), noToss: true, subtitle: (this.many ? 'TEAM · ' : 'DUO · ') + title });
     drawFx(ctx, Engine.dt);
     drawFlash(ctx, Engine.dt, W, H);
     if (this.toast) {
@@ -1112,6 +1115,77 @@ export class CoopBattleScene {
       const l = this.duo.subs[p].lead();
       if (l && hover(bx, by, bw, bh)) monTooltip(l, bx - 206, by - 40);
     }
+    if (this._order && this.orderTagBoxes.some(t => hover(t.x, t.y, t.w, t.h))) this.orderTip(this._order);
+  }
+
+  // ---- move order ("1st", "2nd"... on the healthboxes) ------------------------------------------------------------
+  // This turn's action order as DuoBattle.resolveTurn sorts it (move priority, QUICK CLAW, Speed; on a tie players
+  // before foes, then seat / intent order): my selected cards (or my lock), the other players' locked hands (one not
+  // locked in yet counts as no priority), every foe action. Display only: reads the engine, no RNG, no state change
+  // (QUICK CLAW's roll for the turn was made when the turn started; a PROTECT is counted as working).
+  orderInfo() {
+    const d = this.duo;
+    if (!d || d.result) return null;
+    const prioOf = (s, cards) => (d.handPriority ? d.handPriority(s, cards) : Math.max(0, ...cards.map(c => D.moves[c.move]?.priority || 0)));
+    const actors = [];
+    for (const s of d.subs) {
+      if (d.out ? d.out(s.p) : d.down[s.p]) continue;
+      const L = d.locks[s.p];
+      if (L?.pass) continue;
+      if (L?.ball) { actors.push({ kind: 'ball', p: s.p, prio: 7, quick: 1, spd: 0, locked: true }); continue; }
+      const cards = s.findCards(L ? L.ids || [] : s.p === this.me ? this.sel || [] : []);
+      const quick = s.mods.quickClaw && (s.handsPlayed === 0 || s.quickClawProc) ? 1 : 0;
+      actors.push({ kind: 'hand', p: s.p, prio: prioOf(s, cards), quick, spd: s.speedOf('player'), locked: !!L, cards });
+    }
+    for (let i = 0; i < d.intents.length; i++) {
+      const it = d.intents[i], slot = i % 2;
+      if (!it || d.field[slot] !== it.ri) continue;
+      const s = d.subs[it.target];
+      if (!s) continue;
+      actors.push({ kind: 'enemy', slot, i, ri: it.ri, target: it.target, move: it.move, prio: it.move.priority || 0, quick: 0, spd: s.withFocus(it.ri, () => s.speedOf('enemy')) });
+    }
+    const order = (a) => (a.kind === 'enemy' ? 1 : 0);
+    actors.sort((a, b) => (b.prio - a.prio) || (b.quick - a.quick) || (b.spd - a.spd) || (order(a) - order(b)) || ((a.p ?? a.i) - (b.p ?? b.i)));
+    actors.forEach((a, k) => { a.pos = k + 1; });
+    return actors;
+  }
+  orderPosOfPlayer(p) { return this._order?.find(a => a.kind !== 'enemy' && a.p === p)?.pos || 0; }
+  // FIRST! on an intent: that foe action comes before the hand of the player it targets
+  intentFirst(i, it) {
+    if (!this._order) return it.first;
+    const a = this._order.find(x => x.kind === 'enemy' && x.i === i), t = this.orderPosOfPlayer(it.target);
+    return !!a && !!t && a.pos < t;
+  }
+  // the tag on a healthbox, left of the name (players: p; foes: slot): returns how far the name moves right
+  drawOrderTagAt(ctx, who, x, y) {
+    const o = this._order;
+    if (!o) return 0;
+    const pos = who.p !== undefined ? [this.orderPosOfPlayer(who.p)].filter(Boolean) : o.filter(a => a.kind === 'enemy' && a.slot === who.slot).map(a => a.pos);
+    if (!pos.length) return 0;
+    const label = pos.map(ordinal).join('/'), w = orderTagWidth(label);
+    drawOrderTag(ctx, label, x, y, pos[0] === 1);
+    this.orderTagBoxes.push({ x, y, w, h: 11 });
+    return w + 3;
+  }
+  orderTip(o) {
+    const d = this.duo, me = this.me, hidden = this.g.ascension >= 2 || this.run().ascension >= 2;
+    const who = (p) => (p === me ? 'YOU' : this.s.nameOf(p));
+    const sign = (n) => (n > 0 ? '+' : '') + n;
+    const rows = o.map(a => {
+      const head = `${ordinal(a.pos)}  `;
+      if (a.kind === 'enemy') {
+        const e = d.enemies[a.ri];
+        const pr = a.prio ? `, ${hidden ? 'a priority move' : `${a.move.name} ${sign(a.prio)}`}` : '';
+        return `${head}${e ? speciesName(e.species) : 'FOE'} -> ${who(a.target)} (SPE ${Math.round(a.spd)}${pr})`;
+      }
+      const lead = d.subs[a.p].lead();
+      if (a.kind === 'ball') return `${head}${who(a.p)}: POKé BALL (goes first)`;
+      const pc = a.prio ? a.cards.find(c => (D.moves[c.move]?.priority || 0) === a.prio) : null;
+      const notes = [`SPE ${Math.round(a.spd)}`, pc && `${D.moves[pc.move]?.name} ${sign(a.prio)}`, a.quick && 'QUICK CLAW', !a.locked && a.p !== me && 'not locked in'].filter(Boolean);
+      return `${head}${who(a.p)}${lead ? ' · ' + monName(lead) : ''} (${notes.join(', ')})`;
+    });
+    const claw = d.subs[me]?.mods.quickClaw ? "\nQUICK CLAW: your first hand always goes first, then 20% each turn (rolled when the turn starts)." : '';
+    tip('MOVE ORDER', `${rows.join('\n')}\n\n${ORDER_RULE} On a tie, players before foes.\nYour selected cards count; the others' only once they lock in.${claw}`, { width: 250 });
   }
 
   // Which foe slot the mouse is over (sprite or healthbox/intent row), or null.
@@ -1132,7 +1206,8 @@ export class CoopBattleScene {
     const d = this.duo, e = d.enemies[f.ri];
     const [x, y] = FOE_BOX[slot];
     pixBox(ctx, x, y, FOE_BOX_W, FOE_BOX_H, isTarget ? '#fff8c8' : isHot ? '#f0f0e0' : '#f8f8d8', isTarget ? '#d8a020' : '#405050', 4);
-    textFit(ctx, speciesName(f.species) + (f.shiny ? ' ★' : ''), x + 7, y + 2, e?.status ? 80 : 104, { color: 'dark' });
+    const tw = this.drawOrderTagAt(ctx, { slot }, x + 7, y + 4);
+    textFit(ctx, speciesName(f.species) + (f.shiny ? ' ★' : ''), x + 7 + tw, y + 2, (e?.status ? 80 : 104) - tw, { color: 'dark' });
     if (e?.status) draw(ctx, `gfx/ui/status/${e.status === 'TOX' ? 'psn' : e.status.toLowerCase()}.png`, x + 90, y + 4);
     text(ctx, 'Lv' + (f.level || e?.level), x + FOE_BOX_W - 6, y + 2, { align: 'right', color: 'dark' });
     text(ctx, 'HP', x + 7, y + 19, { color: 'orange', font: 'small' });
@@ -1180,7 +1255,8 @@ export class CoopBattleScene {
     const tp = it.target;
     const tname = tp === this.me ? 'YOU' : this.s.nameOf(tp).slice(0, 8);
     pixBox(ctx, x, y, w, h, '#101018d8', it.kind === 'attack' ? '#ff6060' : it.kind === 'buff' ? '#60a0ff' : '#c080ff', 3);
-    text(ctx, it.first ? 'FIRST!' : 'INTENT', x + 4, y + 1, { color: it.first ? 'red' : 'gray', font: 'small' });
+    const first = this.intentFirst(slot, it); // (before its target's hand: the move order tags)
+    text(ctx, first ? 'FIRST!' : 'INTENT', x + 4, y + 1, { color: first ? 'red' : 'gray', font: 'small' });
     // -> target player
     const tw = measure('-> ' + tname, 'small') + 6;
     pixBox(ctx, x + w - tw - 3, y + 2, tw, 11, PCOL[tp] || '#606060', null, 2);
@@ -1207,7 +1283,7 @@ export class CoopBattleScene {
       const lead = d.subs[tp]?.lead();
       const who = tp === this.me ? 'your' : `${this.s.nameOf(tp)}'s`;
       const mv = it.move;
-      tip(hidden ? 'INTENT HIDDEN' : mv.name, `${hidden ? "Ascension 2+: you can't see the foe's move." : `${mv.type} · PWR ${mv.power || '-'} · ACC ${mv.accuracy || '-'}\n${mv.desc || ''}`}\nTargets ${who} ${lead ? monName(lead) : 'lead'}${!hidden && it.kind === 'attack' ? `: ${it.text} HP${it.eff !== 1 ? ` (x${it.eff})` : ''}${it.lethal ? ' — could KO it!' : ''}` : '.'}\n${it.first ? 'This foe is faster: it acts BEFORE the hands resolve.' : 'Your hands resolve first (unless priority).'}`, { width: 210 });
+      tip(hidden ? 'INTENT HIDDEN' : mv.name, `${hidden ? "Ascension 2+: you can't see the foe's move." : `${mv.type} · PWR ${mv.power || '-'} · ACC ${mv.accuracy || '-'}\n${mv.desc || ''}`}\nTargets ${who} ${lead ? monName(lead) : 'lead'}${!hidden && it.kind === 'attack' ? `: ${it.text} HP${it.eff !== 1 ? ` (x${it.eff})` : ''}${it.lethal ? ' — could KO it!' : ''}` : '.'}\n${first ? `It acts BEFORE ${tp === this.me ? 'your' : `${this.s.nameOf(tp)}'s`} hand (see the move order tags).` : `${tp === this.me ? 'Your' : `${this.s.nameOf(tp)}'s`} hand resolves before it acts.`}`, { width: 210 });
     }
   }
 
@@ -1223,7 +1299,7 @@ export class CoopBattleScene {
     const hidden = this.g.ascension >= 2 || this.run().ascension >= 2;
     pixBox(ctx, x, y, w, rh * its.length, '#101018d8', its.some(it => it.lethal && it.target === this.me) ? '#ff3030' : '#ff6060', 3);
     its.forEach((it, k) => {
-      const ry = y + k * rh, tp = it.target;
+      const ry = y + k * rh, tp = it.target, first = this.intentFirst(this.shownIntents().indexOf(it), it);
       const tag = tp === this.me ? 'YOU' : `P${tp + 1}`;
       const tw = measure(tag, 'small') + 6;
       pixBox(ctx, x + 3, ry + 3, tw, 12, PCOL[tp] || '#606060', null, 2);
@@ -1241,7 +1317,7 @@ export class CoopBattleScene {
         const lead = d.subs[tp]?.lead();
         const who = tp === this.me ? 'your' : `${this.s.nameOf(tp)}'s`;
         const mv = it.move;
-        tip(hidden ? 'INTENT HIDDEN' : mv.name, `${hidden ? "Ascension 2+: you can't see the foe's move." : `${mv.type} · PWR ${mv.power || '-'} · ACC ${mv.accuracy || '-'}\n${mv.desc || ''}`}\nTargets ${who} ${lead ? monName(lead) : 'lead'}${!hidden && it.kind === 'attack' ? `: ${it.text} HP${it.eff !== 1 ? ` (x${it.eff})` : ''}${it.lethal ? ' — could KO it!' : ''}` : '.'}\n${its.length > 1 ? `With ${this.n} players this foe acts ${its.length} times this turn. ` : ''}${it.first ? 'It is faster: it acts BEFORE the hands resolve.' : 'Your hands resolve first (unless priority).'}`, { width: 220 });
+        tip(hidden ? 'INTENT HIDDEN' : mv.name, `${hidden ? "Ascension 2+: you can't see the foe's move." : `${mv.type} · PWR ${mv.power || '-'} · ACC ${mv.accuracy || '-'}\n${mv.desc || ''}`}\nTargets ${who} ${lead ? monName(lead) : 'lead'}${!hidden && it.kind === 'attack' ? `: ${it.text} HP${it.eff !== 1 ? ` (x${it.eff})` : ''}${it.lethal ? ' — could KO it!' : ''}` : '.'}\n${its.length > 1 ? `With ${this.n} players this foe acts ${its.length} times this turn. ` : ''}${first ? `It acts BEFORE ${tp === this.me ? 'your' : `${this.s.nameOf(tp)}'s`} hand.` : `${tp === this.me ? 'Your' : `${this.s.nameOf(tp)}'s`} hand resolves before it acts.`} (See the move order tags.)`, { width: 220 });
       }
     });
   }
@@ -1262,7 +1338,8 @@ export class CoopBattleScene {
     const hx = x + w - BW - HW - 4;
     const label = p === this.me ? monName(lead) : `${this.s.nameOf(p).slice(0, 6)}·${monName(lead)}`;
     const st = lead.status ? 22 : 0;
-    textFit(ctx, label, x + 29, y + 3, hx - x - 31 - st, { color: 'dark', font: 'small' });
+    const tw = this.drawOrderTagAt(ctx, { p }, x + 29, y + 3);
+    textFit(ctx, label, x + 29 + tw, y + 3, hx - x - 31 - st - tw, { color: 'dark', font: 'small' });
     if (st) draw(ctx, `gfx/ui/status/${lead.status === 'TOX' ? 'psn' : lead.status.toLowerCase()}.png`, hx - st, y + 4);
     hpBar(ctx, hx, y + 7, HW, down ? 0 : hp / maxHp(lead), 4);
     const bx = x + w - BW - 2;
@@ -1284,7 +1361,8 @@ export class CoopBattleScene {
     text(ctx, p === this.me ? 'YOU' : `P${p + 1}`, x + 16, y + 3, { align: 'center', color: 'white', font: 'small' });
     if (!lead) return;
     const hp = this.partyHp[p][lead.uid] ?? lead.hp;
-    textFit(ctx, (p === this.me ? '' : this.s.nameOf(p).slice(0, 6) + ': ') + monName(lead), x + 33, y + 2, lead.status ? w - 88 : w - 70, { color: 'dark', font: p === this.me ? undefined : 'small' });
+    const tw = this.drawOrderTagAt(ctx, { p }, x + 33, y + 4);
+    textFit(ctx, (p === this.me ? '' : this.s.nameOf(p).slice(0, 6) + ': ') + monName(lead), x + 33 + tw, y + 2, (lead.status ? w - 88 : w - 70) - tw, { color: 'dark', font: p === this.me ? undefined : 'small' });
     text(ctx, 'Lv' + lead.level, x + w - 6, y + 2, { align: 'right', color: 'dark', font: 'small' });
     if (lead.status) draw(ctx, `gfx/ui/status/${lead.status === 'TOX' ? 'psn' : lead.status.toLowerCase()}.png`, x + w - 56, y + 4);
     text(ctx, 'HP', x + 7, y + 18, { color: 'orange', font: 'small' });

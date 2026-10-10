@@ -12,9 +12,9 @@ import { CONSUMABLES, BALLS, BADGES } from '../game/items.js';
 import { maxHp, monName, typesOf, isFainted, stats, DECK_RULES } from '../game/pokemon.js';
 import { G, saveRun, saveMeta } from '../game/state.js';
 import { Sound } from '../audio/sound.js';
-import { drawTrainer, drawHUD, drawCard, drawCardBack, cardTooltip, drawPartyPanel, drawMon, drawIcon, CARD_W, CARD_H, MessageBox, ChoiceModal, PartyPicker, DeckModal, monTooltip, consumableDesc, monSprite, drawNoComboTag, STATUS_SEL } from './common.js';
+import { drawTrainer, drawHUD, drawCard, drawCardBack, cardTooltip, drawPartyPanel, drawMon, drawIcon, CARD_W, CARD_H, MessageBox, ChoiceModal, PartyPicker, DeckModal, monTooltip, consumableDesc, monSprite, drawNoComboTag, STATUS_SEL, ordinal, orderTagWidth, drawOrderTag, ORDER_RULE } from './common.js';
 import { battleFinished } from './flow.js';
-import { STAT_NAMES } from '../game/effects.js';
+import { STAT_NAMES, PROTECT_EFFECTS } from '../game/effects.js';
 import { MoveAnims } from '../anim/player.js';
 import { pickHandAnim, ANIM_SPEED, HAND_START_EVENTS, orderTurnEvents } from '../anim/pick.js';
 import { opaqueBounds } from './common.js';
@@ -615,6 +615,8 @@ export class BattleScene {
     const b = this.b, run = G.run;
     const bossy = this.cfg.kind === 'boss' || this.cfg.kind === 'elite';
     swirlBackground(ctx, bossy ? BG_THEMES.boss : this.cfg.terrain === 'cave' ? BG_THEMES.cave : this.cfg.terrain === 'water' ? BG_THEMES.water : BG_THEMES.grass, bossy ? 1.2 : 0.7);
+    this.orderTagBoxes = [];
+    this._order = this.busy || this.playedIds.length ? null : this.orderInfo();
     this.drawScene(ctx);
     this.drawLeftPanel(ctx);
     this.drawHand(ctx);
@@ -701,6 +703,48 @@ export class BattleScene {
     // hover enemy
     if (ed.species && e && hover(SCENE_X + 296, SCENE_Y + 6, 128, 120)) this.enemyTooltip(e);
     if (this.leadSpecies && hover(SCENE_X + 56, SCENE_Y + 72, 128, 128)) { const l = b.lead(); if (l) monTooltip(l, SCENE_X + 190, SCENE_Y + 60); }
+    if (this._order && this.orderTagBoxes.some(t => hover(t.x, t.y, t.w, t.h))) this.orderTip(this._order);
+  }
+
+  // ---- move order ("1st" / "2nd" on the healthboxes) --------------------------------------------------------------
+  // Who acts first this turn, by the engine's own rule (Battle.enemyActsFirst: move priority, then QUICK CLAW, then
+  // Speed) with the selected cards' priority (a PROTECT counted as working). Display only: no RNG and no state change
+  // (QUICK CLAW's 20% roll for the turn was made when the turn started).
+  orderInfo() {
+    const b = this.b, it = b.intent, e = b.enemy(), lead = b.lead();
+    if (b.result || !it || !e || !lead) return null;
+    const infos = b.findCards(this.sel || []).map(c => b.cardInfo(c));
+    const foeFirst = b.enemyActsFirst(infos.length ? infos : null, it.move, true);
+    const pPrio = Math.max(0, ...infos.map(i => i.move.priority || 0)), ePrio = it.move.priority || 0;
+    return {
+      foeFirst, pPrio, ePrio, infos, prioCard: pPrio > 0 ? infos.find(i => (i.move.priority || 0) === pPrio) : null,
+      claw: !!b.mods.quickClaw && (b.handsPlayed === 0 || !!b.quickClawProc), spP: Math.round(b.speedOf('player')), spE: Math.round(b.speedOf('enemy')),
+    };
+  }
+  // the tag on a healthbox, left of the name: returns how far the name moves right
+  drawOrderTagAt(ctx, foe, x, y) {
+    const o = this._order;
+    if (!o) return 0;
+    const first = foe === o.foeFirst, label = ordinal(first ? 1 : 2), w = orderTagWidth(label);
+    drawOrderTag(ctx, label, x, y, first);
+    this.orderTagBoxes.push({ x, y, w, h: 11, foe });
+    return w + 3;
+  }
+  orderTip(o) {
+    const b = this.b, e = b.enemy(), lead = b.lead(), it = b.intent, hidden = G.run.ascension >= 2;
+    const foeLine = `${speciesName(e.species)} (foe, SPE ${o.spE})`, myLine = `${monName(lead)} (you, SPE ${o.spP})`;
+    const rows = o.foeFirst ? [foeLine, myLine] : [myLine, foeLine];
+    const sign = (n) => (n > 0 ? '+' : '') + n;
+    let why;
+    if (o.pPrio !== o.ePrio) {
+      if (o.ePrio > o.pPrio) why = hidden ? "The foe's move has priority: it goes first." : `The foe's ${it.move.name} has priority ${sign(o.ePrio)}: it goes first.`;
+      else why = o.prioCard ? `Your ${o.prioCard.move.name} has priority ${sign(o.pPrio)}: you go first.` : `The foe's ${hidden ? 'move' : it.move.name} has priority ${sign(o.ePrio)}: you go first.`;
+    } else if (o.claw) why = b.handsPlayed === 0 ? 'QUICK CLAW: your first hand of the battle goes first.' : 'QUICK CLAW went off this turn: you go first.';
+    else why = o.spE > o.spP ? `The foe is faster (${o.spE} vs ${o.spP}).` : o.spE === o.spP ? 'Same Speed: you win the tie.' : `You are faster (${o.spP} vs ${o.spE}).`;
+    const notes = [o.infos.length ? 'Counts the cards you selected.' : 'Select cards to count their priority.'];
+    if (b.mods.quickClaw && !o.claw) notes.push("QUICK CLAW: 20% each turn after your first hand, rolled when the turn starts (not this turn).");
+    if (o.infos.some(i => PROTECT_EFFECTS.has(i.move.effect))) notes.push('PROTECT / DETECT / ENDURE only go first if they work.');
+    tip('MOVE ORDER', `1st  ${rows[0]}\n2nd  ${rows[1]}\n${why}\n\n${ORDER_RULE}\n${notes.join('\n')}`, { width: 230 });
   }
 
   // the hand being resolved: a row of full-size cards below the battle scene, on top of the (tucked) hand
@@ -734,7 +778,8 @@ export class BattleScene {
     if (!e) return;
     pixBox(ctx, x, y, 170, 40, '#f8f8d8', '#405050', 4);
     rect(ctx, x + 3, y + 36, 164, 2, '#c8c8a0');
-    textFit(ctx, speciesName(ed.species) + (e.shiny ? ' ★' : ''), x + 8, y + 3, e.status ? 84 : 110, { color: 'dark' });
+    const tw = this.drawOrderTagAt(ctx, true, x + 8, y + 5);
+    textFit(ctx, speciesName(ed.species) + (e.shiny ? ' ★' : ''), x + 8 + tw, y + 3, (e.status ? 84 : 110) - tw, { color: 'dark' });
     if (e.status) draw(ctx, `gfx/ui/status/${e.status === 'TOX' ? 'psn' : e.status.toLowerCase()}.png`, x + 96, y + 5);
     text(ctx, 'Lv' + (ed.level || e.level), x + 164, y + 3, { align: 'right', color: 'dark' });
     text(ctx, 'HP', x + 8, y + 21, { color: 'orange', font: 'small' });
@@ -754,7 +799,8 @@ export class BattleScene {
     if (!lead) return;
     const hp = this.partyHp[lead.uid] ?? lead.hp;
     pixBox(ctx, x, y, 166, 34, '#f8f8d8', '#405050', 4);
-    textFit(ctx, monName(lead), x + 8, y + 2, lead.status ? 84 : 110, { color: 'dark' });
+    const tw = this.drawOrderTagAt(ctx, false, x + 8, y + 4);
+    textFit(ctx, monName(lead), x + 8 + tw, y + 2, (lead.status ? 84 : 110) - tw, { color: 'dark' });
     text(ctx, 'Lv' + lead.level, x + 160, y + 2, { align: 'right', color: 'dark' });
     hpBar(ctx, x + 24, y + 20, 92, hp / maxHp(lead), 4);
     text(ctx, 'HP', x + 8, y + 17, { color: 'orange', font: 'small' });
@@ -770,6 +816,8 @@ export class BattleScene {
 
   drawIntent(ctx, it) {
     const x = SCENE_X + 18, y = SCENE_Y + 66;
+    // (FIRST! follows the move order tags: the selected cards' priority counts)
+    if (this._order) it = { ...it, first: this._order.foeFirst };
     const mv = it.move;
     const w = 172;
     pixBox(ctx, x - 4, y - 2, w, 30, '#101018d0', it.kind === 'attack' ? '#ff6060' : it.kind === 'buff' ? '#60a0ff' : '#c080ff', 3);
@@ -786,7 +834,7 @@ export class BattleScene {
       // A2+: the foe's move stays secret
       text(ctx, '???', x + 2, y + 10, { color: 'white', font: 'small' });
       text(ctx, 'hidden (A2)', x + w - 10, y + 10, { align: 'right', color: 'gray', font: 'small' });
-      if (hover(x - 4, y - 2, w, 30)) tip('INTENT HIDDEN', `Ascension 2+: you can't see what the foe will do.\n${it.first ? 'The foe is faster: it acts BEFORE your hand resolves.' : 'You are faster: your hand resolves first.'}`, { width: 200 });
+      if (hover(x - 4, y - 2, w, 30)) tip('INTENT HIDDEN', `Ascension 2+: you can't see what the foe will do.\n${it.first ? 'The foe acts first: BEFORE your hand resolves.' : 'You act first: your hand resolves before the foe moves.'}`, { width: 200 });
       return;
     }
     if (it.kind === 'attack' && it.eff !== 1) {
@@ -801,7 +849,7 @@ export class BattleScene {
     } else text(ctx, it.text, x + w - 10, y + 10, { align: 'right', color: it.kind === 'buff' ? 'blue' : 'purple', font: 'small' });
     if (hover(x - 4, y - 2, w, 30)) {
       const lead = this.b.lead();
-      tip(`${mv.name}`, `${mv.type} · PWR ${mv.power || '-'} · ACC ${mv.accuracy || '-'}\n${mv.desc || ''}\n${it.kind === 'attack' ? `Expected damage to ${monName(lead)}: ${it.text} HP.${it.eff !== 1 ? ` (x${it.eff} vs ${typesOf(lead).join('/')})` : ''}` : ''}\n${it.first ? 'The foe is faster: it attacks BEFORE your hand resolves.' : 'You are faster: your hand resolves first.'}`, { width: 200 });
+      tip(`${mv.name}`, `${mv.type} · PWR ${mv.power || '-'} · ACC ${mv.accuracy || '-'}\n${mv.desc || ''}\n${it.kind === 'attack' ? `Expected damage to ${monName(lead)}: ${it.text} HP.${it.eff !== 1 ? ` (x${it.eff} vs ${typesOf(lead).join('/')})` : ''}` : ''}\n${it.first ? 'The foe acts first: BEFORE your hand resolves.' : 'You act first: your hand resolves before the foe moves.'}`, { width: 200 });
     }
   }
 

@@ -6,7 +6,9 @@ import { swirlBackground, BG_THEMES, button, panel, pixBox, rect, drawTips, tip,
 import { D } from '../game/data.js';
 import { RELICS } from '../game/items.js';
 import { G, saveRun } from '../game/state.js';
-import { generateShop, buyItem, rerollShop } from '../game/shop.js';
+import { generateShop, buyItem, rerollShop, tmChoices } from '../game/shop.js';
+import { TUNING } from '../game/run.js';
+import { RNG } from '../game/rng.js';
 import { Sound } from '../audio/sound.js';
 import { drawHUD, drawPartyPanel, consumableDesc, DeckModal } from './common.js';
 import { goToMap } from './flow.js';
@@ -81,6 +83,7 @@ export class ShopScene {
       const list = this.shop.items.filter(f);
       if (!list.length) continue;
       text(ctx, title, x0 + 4, y, { color: 'gold', font: 'small' });
+      if (title === 'HELD ITEMS') { const nb = this.shop.relicsBought || 0; text(ctx, nb >= TUNING.shopRelicBuys ? `·  limit reached (${TUNING.shopRelicBuys} per visit)` : `·  ${nb}/${TUNING.shopRelicBuys} bought this visit`, x0 + 10 + measure(title, 'small'), y, { color: nb >= TUNING.shopRelicBuys ? 'orange' : 'gray', font: 'small' }); }
       y += 12;
       list.forEach((it, i) => {
         const cw = 116, ch = 34;
@@ -112,9 +115,35 @@ export class ShopScene {
     // party panel right
     panel(ctx, 488, 82, 148, 30 * run.party.length + 10);
     drawPartyPanel(ctx, run, 492, 86, 140, { tipX: 300 });
-    if (button(ctx, `REROLL $${this.shop.rerollCost}`, 488, H - 64, 148, 24, { color: '#a060c0', disabled: run.money < this.shop.rerollCost })) { if (rerollShop(run, this.shop, this.rng)) { Sound.playSE('se_shop'); saveRun(); } }
+    this.drawReroll(ctx, run);
     if (button(ctx, 'LEAVE', 488, H - 34, 148, 26, { color: THEME.green })) { Sound.playSE('se_exit'); if (this.opts.onLeave) this.opts.onLeave(); else goToMap(); }
     drawTips(ctx);
+  }
+  // A reroll refreshes the unsold TMs and held items. At the held-item limit (TUNING.shopRelicBuys per visit) it would
+  // only bring new TMs: it asks for a second click, and it's off when no TM is left to roll either.
+  drawReroll(ctx, run) {
+    const shop = this.shop, cost = shop.rerollCost, bx = 488, by = H - 64, bw = 148, bh = 24;
+    const atLimit = !shop.plateau && (shop.relicsBought || 0) >= TUNING.shopRelicBuys;
+    let tmsLeft = true;
+    if (atLimit) {
+      // (a dry roll on a throwaway RNG: the shop's own RNG is untouched)
+      const listed = shop.items.filter(it => it.kind !== 'tm' || it.sold).map(it => it.key);
+      const key = listed.join() + '|' + run.party.map(m => m.species + m.moves.map(x => x.move).join('.')).join();
+      if (this._tmKey !== key) { this._tmKey = key; this._tmsLeft = tmChoices(run, new RNG('dry'), 1, listed).length > 0; }
+      tmsLeft = this._tmsLeft;
+    }
+    if (this.armT > 0) this.armT -= Engine.dt; else this.armed = false;
+    if (!atLimit) this.armed = false;
+    const poor = run.money < cost;
+    const label = this.armed ? `TMs ONLY? $${cost}` : `REROLL $${cost}`;
+    if (button(ctx, label, bx, by, bw, bh, { color: this.armed ? '#c07020' : atLimit ? '#705a80' : '#a060c0', disabled: poor || (atLimit && !tmsLeft) })) {
+      if (atLimit && !this.armed) {
+        this.armed = true; this.armT = 4;
+        this.say = "That's all the held items I sell per visit! A reroll only adds new TMs: click again.";
+        Sound.playSE('se_select');
+      } else if (rerollShop(run, shop, this.rng)) { this.armed = false; Sound.playSE('se_shop'); saveRun(); }
+    }
+    if (atLimit && hover(bx, by, bw, bh)) tip('HELD ITEM LIMIT', `This MART sells you ${TUNING.shopRelicBuys} held items per visit and you've bought ${TUNING.shopRelicBuys}: a reroll's new held items couldn't be bought.\n${tmsLeft ? 'It would still roll new TMs: click twice to reroll anyway.' : 'No other TM is left to roll for your team either, so rerolling is off.'}`, { width: 210 });
   }
 }
 function relCol(k) { const r = RELICS[k]?.rarity; return r === 'rare' ? '#f8d038' : r === 'uncommon' ? '#58a8f8' : '#808080'; }
