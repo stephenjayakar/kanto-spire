@@ -24,7 +24,7 @@ import { pickHandAnim, resolveAnimMove, GEN4_ANIM, orderTurnEvents } from '../we
 
 await loadData(async f => JSON.parse(fs.readFileSync('web/assets/data/' + f, 'utf8')));
 let pass = 0, fail = 0;
-const t = (name, fn) => { try { fn(); pass++; } catch (e) { fail++; console.log('FAIL', name, '-', e.message); } };
+const t = (name, fn) => { try { fn(); pass++; } catch (e) { fail++; console.log('FAIL', name, '-', e.message, process.env.STACK ? e.stack : ''); } };
 
 t('data counts', () => { assert.equal(Object.keys(D.species).length, 386); assert.ok(Object.keys(D.moves).length >= 354); });
 t('type chart', () => { assert.equal(typeEffect('WATER', ['FIRE']), 2); assert.equal(typeEffect('ELECTRIC', ['GROUND']), 0); assert.equal(typeEffect('GRASS', ['FIRE', 'FLYING']), 0.25); assert.equal(typeEffect('NORMAL', ['GHOST']), 0); });
@@ -977,7 +977,7 @@ t('ascension: the shiny unlock (A5+) and Nuzlocke (A8) rules are unchanged', () 
     }
     // a shrine seen in act 2 can't come back in act 2, but can in act 3; act events never repeat
     const r = evRun('kanto', 1);
-    r.seenEvents = EV.EVENTS.filter(e => e.shrine && e.id !== 'copycat').map(e => `${e.id}@1`).concat(['copycat@1']);
+    r.seenEvents = EV.EVENTS.filter(e => e.shrine && e.id !== 'copycat').map(e => `${e.id}@1`).concat(['copycat@1'], EV.EVENTS.filter(e => e.mythic).map(e => e.id)); // (a mythic due here would take every pick)
     for (let i = 0; i < 100; i++) { const rr = Object.assign(Object.create(Object.getPrototypeOf(r)), r, { seenEvents: r.seenEvents.slice() }); const ev = EV.pickEvent(rr, new RNG('s' + i)); assert.ok(!ev.shrine, ev.id); }
     r.startAct(2); r.floor = 5;
     let back = false;
@@ -2109,7 +2109,8 @@ t('FLY: after a dodge the lead is LANDING for a turn: no FLY / DIG / PROTECT (v0
     // shown once per run, never in an ordinary pick
     k3.seenEvents = ['cerulean_cave'];
     for (let i = 0; i < 40; i++) assert.notEqual(EVM.pickEvent({ ...k3, seenEvents: ['cerulean_cave'], acts: k3.acts, act: k3.act }, new RNG('again' + i)).id, 'cerulean_cave');
-    const noRoll = spireRun(seedFor('MEWTWO', 2, false), undefined, 'kanto', 2, { champ: true });
+    let quiet = null; for (let i = 0; i < 4000 && !quiet; i++) { const p = { seed: 'Q' + i, actIndex: 2, flags: {} }; if (!EVM.MYTHIC_ROLL.MEWTWO(p) && !EVM.MYTHIC_ROLL.MEW(p)) quiet = 'Q' + i; }
+    const noRoll = spireRun(quiet, undefined, 'kanto', 2, { champ: true }); // (no mythic due: never one from the pool)
     for (let i = 0; i < 60; i++) assert.ok(!EVM.pickEvent(Object.assign(Object.create(Object.getPrototypeOf(noRoll)), noRoll, { seenEvents: [] }), new RNG('pool' + i)).mythic || false);
     // the rough odds per eligible act (MEWTWO ~20% roll), checked on the rolls themselves
     let mt = 0; for (let i = 0; i < 2000; i++) if (EVM.MYTHIC_ROLL.MEWTWO({ seed: 'R' + i, actIndex: 2, flags: {} })) mt++;

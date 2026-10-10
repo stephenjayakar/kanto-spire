@@ -1523,9 +1523,10 @@ const FALLBACKS = [
 //   FARAWAY ISLAND MEW       any act, ultra rare; more likely after MEW'S JOURNAL's "Fund the research"
 //   BIRTH ISLAND   DEOXYS    holding the METEORITE (co-op: anyone), HOENN act 3+ or the SEVII ISLANDS post-game
 //   SKY PILLAR     RAYQUAZA  holding the RED ORB or BLUE ORB, or met GROUDON / KYOGRE this run; HOENN act 3+
-// MYTHIC_ODDS: the chance per eligible act (MEW: per act, MEW_FUNDED once the research was funded). With "?" rooms on
-// most paths about this many eligible runs meet them: MEWTWO ~15%, MEW ~3% of all runs, DEOXYS / RAYQUAZA ~1 in 4.
-export const MYTHIC_ODDS = { MEWTWO: 0.18, MEW: 0.013, MEW_FUNDED: 0.06, DEOXYS: 0.3, RAYQUAZA: 0.3 };
+// MYTHIC_ODDS: the roll per eligible act (MEWTWO: per run; MEW: per act, MEW_FUNDED once the research was funded). The
+// smart bot meets a forced event in ~86% of the acts it can (a "?" on its path), so: MEWTWO ~15% of eligible runs, MEW ~3%
+// of all runs (1.7% per act), DEOXYS / RAYQUAZA ~25% of each eligible act (tests/balance.mjs --mythicodds benches them).
+export const MYTHIC_ODDS = { MEWTWO: 0.2, MEW: 0.017, MEW_FUNDED: 0.07, DEOXYS: 0.3, RAYQUAZA: 0.3 };
 export const mythicRoll = (p, salt) => new RNG(`${p.seed}:mythic:${salt}`).next();
 const hasAny = (p, keys) => keys.some(k => has(p, k));
 const metAny = (p, sps) => sps.some(sp => (p.seen || []).includes(sp));

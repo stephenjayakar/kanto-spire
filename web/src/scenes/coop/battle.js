@@ -1261,7 +1261,7 @@ export class CoopBattleScene {
   // lead (KO! flashing when it could knock it out), FIRST! when it acts before that player's hand.
   drawSpreadIntent(ctx, slot, its) {
     const d = this.duo, f = this.foes[slot];
-    const x = INTENT_X, [, y] = FOE_BOX[slot], w = INTENT_W_N, hh = 14, rh = 12, h = hh + rh * its.length + 3;
+    const x = INTENT_X, [, y] = FOE_BOX[slot], w = INTENT_W_N + 20, hh = 14, rh = 12, h = hh + rh * its.length + 3;
     const en = d.enemies[f.ri], mv = its[0].move;
     const sleeping = en && (en.status === 'SLP' || en.status === 'FRZ');
     const hidden = this.g.ascension >= 2 || this.run().ascension >= 2;
@@ -1281,7 +1281,8 @@ export class CoopBattleScene {
       text(ctx, tag, x + 3 + tw / 2, ry, { align: 'center', color: 'white', font: 'small' });
       if (first) text(ctx, 'FIRST!', x + tw + 7, ry, { color: 'red', font: 'small' });
       if (!hidden && !sleeping && it.kind === 'attack') {
-        if (it.lethal && blink) { pixBox(ctx, x + w - 74, ry + 1, 22, 11, '#c01818', null, 2); text(ctx, 'KO!', x + w - 63, ry, { align: 'center', color: 'white', font: 'small' }); }
+        const kx = x + w - 8 - measure(it.text, 'small') - 22; // (KO! right before the damage, clear of FIRST!)
+        if (it.lethal && blink) { pixBox(ctx, kx, ry + 1, 22, 11, '#c01818', null, 2); text(ctx, 'KO!', kx + 11, ry, { align: 'center', color: 'white', font: 'small' }); }
         text(ctx, it.text, x + w - 5, ry, { align: 'right', color: it.eff > 1 ? 'gold' : 'red', font: 'small' });
       }
     });
