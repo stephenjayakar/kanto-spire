@@ -49,13 +49,13 @@ const check = (label, ok, extra = '') => { console.log(`${ok ? 'ok  ' : 'FAIL'} 
       const seen = [...caught, ...g4.map(s => s.key).filter((k, i) => i % 2), 'VAPOREON', 'JOLTEON', 'FLAREON', 'ESPEON', 'UMBREON', 'GARDEVOIR'];
       Object.assign(G.meta, { tutorialDone: true, dexSeen: [...new Set(seen)], dexCaught: [...new Set(caught)], shinies: ['LUCARIO'] });
       const { DexScene } = await import('/src/scenes/dex.js');
-      const sc = new DexScene(); window.__engine.setScene(sc); sc.page = 4;
+      const sc = new DexScene(); window.__engine.setScene(sc); sc.scroll = 32 * 36 - 240; // (v0.5.2: pixel scrolling; the last rows)
       return { DEX_MAX, worst, lines, n: g4.length };
     });
     check('Gen 4 dex texts fit the 3-line box', dexInfo.lines <= 3, `${dexInfo.worst}: ${dexInfo.lines} lines`);
     check('DEX_MAX 493', dexInfo.DEX_MAX === 493 && dexInfo.n === 107);
     await mouseTo(10 + 6 * 41 + 19, 40 + 17); await shot('dex_page5_493');
-    await ev(() => { window.__engine.Engine.scene.page = 3; }); await mouseTo(600, 300); await shot('dex_page4');
+    await ev(() => { window.__engine.Engine.scene.scroll = 24 * 36; }); await mouseTo(600, 300); await shot('dex_page4');
     const open = async (key) => {
       await ev(async (key) => {
         const { D } = await import('/src/game/data.js'); const E = window.__engine.Engine;

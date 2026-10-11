@@ -1,9 +1,9 @@
 // Cloud records: global leaderboards, the player's own runs, and the trainer-name prompt.
 import { regionByLetter } from '../game/regions.js';
-import { Engine, W, H, setScene, pushOverlay, hover } from '../engine/core.js';
+import { Engine, W, H, setScene, pushOverlay, hover, clicked } from '../engine/core.js';
 import { text, textFit } from '../engine/font.js';
 import { swirlBackground, button, panel, pixBox, rect, drawTips, tip, THEME, scrollArea } from '../engine/ui.js';
-import { Cloud, rename, signOut, createInviteLink, pendingRuns, flushQueue, watchLeaderboard, watchTopTrainers, watchMyRuns } from '../net/cloud.js';
+import { Cloud, rename, signOut, createInviteLink, pendingRuns, flushQueue, watchLeaderboard, watchTopTrainers, watchMyRuns, watchRecordsPage, recordsPage, isMissingFn, RECORDS_PAGE } from '../net/cloud.js';
 import { drawIcon, Modal, ChoiceModal } from './common.js';
 import { TitleScene } from './title.js';
 import { VERSION, PATCH_NOTES } from '../game/version.js';
@@ -33,6 +33,16 @@ function ago(ms) {
   return `${Math.round(m / 1440)}d ago`;
 }
 
+// The live first page, then the pages LOAD MORE added, each row once (a run that arrives live can push a row of page 1
+// into page 2's range).
+const rowKey = (r) => r._id ?? r.id ?? r.name;
+function mergeRows(live, more) {
+  const seen = new Set(), out = [];
+  for (const r of [...(live || []), ...(more || [])]) { const k = rowKey(r); if (k !== undefined && seen.has(k)) continue; seen.add(k); out.push(r); }
+  return out;
+}
+const LIST_TOP = 84, LIST_BOTTOM = H - 26; // the scrolling list (under the column headers)
+
 export class RecordsScene {
   enter() { this.t = 0; this.tab = 'all'; this.version = 'all'; this.sort = 'recent'; this.load(); }
   exit() { this.unwatch(); }
@@ -44,17 +54,61 @@ export class RecordsScene {
     const token = this.loadToken = (this.loadToken || 0) + 1; // a newer load (tab or version change) wins
     this.unwatch();
     this.rows = null; this.error = null; this.scroll = 0; this.contentH = 0;
+    this.paged = false; this.live = []; this.more = []; this.cursor = null; this.done = true; this.loadingMore = false; this.moreError = null;
     if (!Cloud.url) { this.error = 'Cloud records are off: this build has no cloud.json.'; return; }
     try { await flushQueue(); } catch {}
     if (this.loadToken !== token) return;
     const onRows = (rows) => { if (this.loadToken === token) { this.rows = rows; this.error = null; } };
     const onErr = (e) => { if (this.loadToken === token) this.error = e.message; };
-    if (tab === 'trainers') this.stopWatch = watchTopTrainers(version, onRows, onErr);
-    else if (tab === 'mine') {
-      if (!Cloud.me) { this.rows = []; this.mine = null; return; }
-      this.stopWatch = watchMyRuns(version, (r) => { if (this.loadToken === token) this.mine = r; onRows(r ? r.recent : []); }, onErr);
+    if (tab === 'mine' && !Cloud.me) { this.rows = []; this.mine = null; return; }
+    // v0.5.2: pages of RECORDS_PAGE (LOAD MORE at the bottom). Page 1 stays live; later pages are fetched once.
+    const unpaged = () => {
+      if (tab === 'trainers') this.stopWatch = watchTopTrainers(version, onRows, onErr);
+      else if (tab === 'mine') this.stopWatch = watchMyRuns(version, (r) => { if (this.loadToken === token) this.mine = r; onRows(r ? r.recent : []); }, onErr);
+      else this.stopWatch = watchLeaderboard(null, version, this.sort, onRows, onErr);
+    };
+    const onPage = (res) => {
+      if (this.loadToken !== token) return;
+      if (!res) { this.mine = null; this.rows = []; return; } // (MY RUNS: no trainer yet)
+      if (res.player) this.mine = { player: res.player };
+      this.paged = true;
+      this.live = res.page || [];
+      if (!this.more.length) { this.cursor = res.continueCursor; this.done = !!res.isDone; }
+      this.rows = mergeRows(this.live, this.more); this.error = null;
+    };
+    // (a server from before v0.5.2 has no paged queries: the old lists, capped at 50)
+    const onPageErr = (e) => { if (this.loadToken !== token) return; if (!this.paged && isMissingFn(e)) { this.unwatch(); unpaged(); } else onErr(e); };
+    this.stopWatch = watchRecordsPage(tab, version, this.sort, onPage, onPageErr);
+  }
+  // The next page of the list on screen (LOAD MORE).
+  fetchPage(cursor, before) { return recordsPage(this.tab, this.version === 'all' ? null : this.version, this.sort, cursor, before); }
+  async loadMore() {
+    if (!this.paged || this.done || this.loadingMore) return;
+    const token = this.loadToken;
+    this.loadingMore = true; this.moreError = null;
+    try {
+      const res = await this.fetchPage(this.cursor, this.rows?.[this.rows.length - 1]?.finishedAt);
+      if (this.loadToken !== token) return;
+      this.more.push(...(res?.page || []));
+      this.cursor = res?.continueCursor ?? null; this.done = !res || !!res.isDone;
+      this.rows = mergeRows(this.live, this.more);
+    } catch (e) { if (this.loadToken === token) this.moreError = e.message; }
+    finally { if (this.loadToken === token) this.loadingMore = false; }
+  }
+  // The LOAD MORE row under a paged list (from y, inside the scroll area): -> the y under it.
+  drawMore(ctx, y) {
+    if (!this.paged || (this.done && !this.moreError)) {
+      if (this.paged && this.more.length) { text(ctx, `That's all: ${this.rows.length} ${this.tab === 'trainers' ? 'trainers' : 'runs'}.`, W / 2, y + 4, { align: 'center', color: 'gray', font: 'small' }); return y + 18; }
+      return y;
     }
-    else this.stopWatch = watchLeaderboard(tab === 'all' ? null : tab, version, this.sort, onRows, onErr);
+    const inView = Engine.mouse.y >= LIST_TOP && Engine.mouse.y <= LIST_BOTTOM;
+    const hot = inView && !this.loadingMore && hover(14, y - 2, W - 28, 25) && !Engine.mouse.down;
+    pixBox(ctx, 14, y - 2, W - 28, 25, hot ? '#4a5878' : '#323a50', hot ? '#f8d038' : '#141820', 2);
+    const label = this.loadingMore ? 'LOADING...' : this.moreError ? `Couldn't load more (${this.moreError}). Tap to try again.` : `LOAD MORE  (showing ${this.rows.length})`;
+    textFit(ctx, label, W / 2, y + 5, W - 60, { align: 'center', color: this.moreError ? 'orange' : 'gold', font: this.moreError ? 'small' : 'normal' });
+    if (hot) tip('LOAD MORE', `Show the next ${RECORDS_PAGE} ${this.tab === 'trainers' ? 'trainers' : 'runs'}.`, { width: 160 });
+    if (inView && !this.loadingMore && !(this.dragMoved > 5) && clicked(14, y - 2, W - 28, 25)) this.loadMore();
+    return y + 27;
   }
   update(dt) { this.t += dt; }
   // A one-time invite link, copied to the clipboard.
@@ -125,7 +179,7 @@ export class RecordsScene {
       text(ctx, `${m.runs} runs · ${m.wins} wins · best ${m.bestScore.toLocaleString()}`, 464, y0, { align: 'right', color: 'gold', font: 'small' }); // in the gap after TEAM
     }
     // a co-op run with every player's team (coop.parties, v0.3.18) takes one line per player: name, starter, team
-    scrollArea(ctx, this, 12, y0 + 14, W - 24, H - 26, (top) => this.rows.reduce((y, r, i) => {
+    scrollArea(ctx, this, 12, y0 + 14, W - 24, H - 26, (top) => this.drawMore(ctx, this.rows.reduce((y, r, i) => {
       const names = r.coop ? [r.playerName, ...r.coop.with] : [r.playerName];
       const lines = r.coop?.parties?.length === names.length ? names.length : 1, rowH = 25 + (lines - 1) * 24;
       const me = Cloud.me && names.includes(Cloud.me.name);
@@ -167,13 +221,13 @@ export class RecordsScene {
         text(ctx, r.version, 572, y + 11, { color: r.version === VERSION ? 'dmg' : 'purple', font: 'small' });
       } else text(ctx, ago(r.finishedAt), 572, y + 6, { color: 'gray', font: 'small' });
       return y + rowH + 2;
-    }, top + 2) - 2);
+    }, top + 2)) - 2);
   }
   drawTrainers(ctx) {
     const y0 = 70;
     for (const [h, x] of [['NO.', 18], ['TRAINER', 44], ['BEST SCORE', 200], ['RUNS', 330], ['WINS', 400], ['WIN RATE', 470]]) text(ctx, h, x, y0, { color: 'gray', font: 'small' });
     if (this.version !== 'all') text(ctx, `on ${this.version}`, W - 20, y0, { align: 'right', color: 'gold', font: 'small' });
-    scrollArea(ctx, this, 12, y0 + 14, W - 24, H - 26, (top) => this.rows.reduce((_, p, i) => {
+    scrollArea(ctx, this, 12, y0 + 14, W - 24, H - 26, (top) => this.drawMore(ctx, this.rows.reduce((_, p, i) => {
       const y = top + 2 + i * 27;
       const me = Cloud.me && p.name === Cloud.me.name;
       pixBox(ctx, 14, y - 2, W - 28, 25, me ? '#34406a' : i % 2 ? '#262c3c' : '#2e3548', null, 2);
@@ -184,7 +238,7 @@ export class RecordsScene {
       text(ctx, String(p.wins), 400, y + 6, { color: 'whiteSoft', font: 'small' });
       text(ctx, p.runs ? Math.round((100 * p.wins) / p.runs) + '%' : '-', 470, y + 6, { color: 'whiteSoft', font: 'small' });
       return y + 25;
-    }, top));
+    }, top) + 2) - 2);
   }
 }
 

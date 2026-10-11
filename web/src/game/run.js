@@ -651,6 +651,9 @@ export class Run {
   // The one-time catch offers of a won legendary battle: [{ species, key, ei }] (a co-op legendary node fields two
   // legendaries, cfg.catchOffers; you may catch one of them).
   legendOffers(cfg) { return cfg.catchOffers || (cfg.catchOffer ? [cfg.catchOffer] : []); }
+  // The held item a won legendary battle gives you: the item of the legendary you caught (`took`: its species; a co-op
+  // node fields two, offer.item, v0.5.2), else the battle's own (cfg.rewardRelic, the act's legendary's).
+  legendRelic(cfg, took) { const o = took ? this.legendOffers(cfg).find(x => x.species === took) : null; return o?.item || cfg.rewardRelic || null; }
   // Every legendary you could catch from this battle (the ones you haven't had yet), ready to join. ONE LEGENDARY PER
   // RUN (v0.3.25): none once you have a legendary (hasLegendary), whatever the battle.
   legendCatches(cfg) { return this.hasLegendary() ? [] : this.legendOffers(cfg).map(o => this.legendCatch(cfg, o)).filter(Boolean); }

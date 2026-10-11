@@ -100,7 +100,7 @@ const check = (label, ok, extra = '') => { console.log(`${ok ? 'ok  ' : 'FAIL'} 
     // click the evolution line: PIKACHU's line is PICHU (unseen), PIKACHU, RAICHU (unseen) -> clicking an unseen one does nothing
     await page.keyboard.press('Escape'); await sleep(200);
     check('Esc closes', (await top()) === null);
-    check('the grid page follows the last entry (PIKACHU #025 on page 1)', await ev(() => window.__engine.Engine.scene.page === 0));
+    check('the grid keeps the last entry in view (PIKACHU #025: the top rows)', await ev(() => window.__engine.Engine.scene.scroll === 0));
     await clickAt(10 + 41 + 19, 40 + 17);
     await clickAt(320, 200, 'right');
     check('right-click closes', (await top()) === null);

@@ -2,9 +2,24 @@
 // Game version and patch notes (shown from the title screen). Versions are major.minor.patch: every production
 // deploy that changes the game bumps the patch (v0.2.0 -> v0.2.1); the owner calls minor bumps (v0.1.x -> v0.2.0);
 // no major bumps yet. Each one gets a new top PATCH_NOTES entry; see AGENTS.md.
-export const VERSION = 'v0.5.1';
+export const VERSION = 'v0.5.2';
 
 export const PATCH_NOTES = [
+  {
+    v: 'v0.5.2',
+    sections: [
+      ['FIXES', [
+        'A POKéMON sent out after a faint could be hit by attacks still going that turn (in co-op, the other foe often knocked it out right away). It is now safe until the next turn.',
+        "FLY, DIG, DIVE and BOUNCE could be used on back-to-back turns when the dodge didn't happen. A POKéMON now waits a turn after using one, and so do foes.",
+        'At a co-op legendary node, every player got the same held item. Each player now gets the item of the legendary they caught.',
+      ]],
+      ['CHANGES', [
+        "LEADER NORMAN's SLACK OFF was replaced by BALANCE: no single hand can deal more than 35% of his POKéMON's max HP (no more healing).",
+        'The POKéDEX scrolled a page at a time. It now scrolls smoothly with the mouse wheel, drag or arrow keys.',
+        'RECORDS lists stopped at 50. LOAD MORE at the bottom now shows the next 50.',
+      ]],
+    ],
+  },
   {
     v: 'v0.5.1',
     sections: [

@@ -490,3 +490,15 @@ export const myRuns = (version) => (Cloud.me ? call('query', 'runs:mine', { vers
 export const watchLeaderboard = (world, version, sort, cb, err) => subscribe('runs:leaderboard', { world: world || undefined, version: version || undefined, sort: sort || undefined, limit: 50 }, cb, err);
 export const watchTopTrainers = (version, cb, err) => subscribe('players:top', { version: version || undefined, limit: 50 }, cb, err);
 export const watchMyRuns = (version, cb, err) => subscribe('runs:mine', { version: version || undefined, limit: 50 }, cb, err);
+// v0.5.2: the same lists in pages of RECORDS_PAGE (RECORDS' LOAD MORE): { page, isDone, continueCursor } (+ player on MY
+// RUNS' first page). Page 1 is live (watchRecordsPage); recordsPage fetches the next one from the cursor of the page
+// before (before: the date of the last row already shown, MY RUNS only). A server without them: isMissingFn(error).
+export const RECORDS_PAGE = 50;
+const PAGED = { all: 'runs:leaderboardPage', mine: 'runs:minePage', trainers: 'players:topPage' };
+const pageArgs = (tab, version, sort, cursor, before) => ({
+  version: version || undefined, ...(tab === 'all' ? { sort: sort || undefined } : {}), ...(tab === 'mine' && Number.isFinite(before) ? { before } : {}),
+  paginationOpts: { numItems: RECORDS_PAGE, cursor: cursor ?? null },
+});
+export const watchRecordsPage = (tab, version, sort, cb, err) => subscribe(PAGED[tab], pageArgs(tab, version, sort, null), cb, err);
+export const recordsPage = (tab, version, sort, cursor, before) => call('query', PAGED[tab], pageArgs(tab, version, sort, cursor, before));
+export const isMissingFn = (e) => missingFn(e);

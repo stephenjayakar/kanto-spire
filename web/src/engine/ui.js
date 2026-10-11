@@ -189,8 +189,8 @@ export const BG_THEMES = {
 
 // A scrollable area (long text panes, record lists): mouse wheel, arrow keys, or drag (touch too).
 // m keeps the scroll state; drawContent(y) draws from y and returns the y where the content ends.
-// The wheel scrolls Engine.mouse.wheelPx, the same on every screen.
-export function scrollArea(ctx, m, x, top, w, bottom, drawContent) {
+// The wheel scrolls Engine.mouse.wheelPx, the same on every screen. opts.hint: false hides the "scroll for more" line.
+export function scrollArea(ctx, m, x, top, w, bottom, drawContent, opts = {}) {
   const viewH = bottom - top;
   const maxScroll = Math.max(0, (m.contentH || 0) - viewH);
   const over = Engine.mouse.x >= x && Engine.mouse.x <= x + w && Engine.mouse.y >= top && Engine.mouse.y <= bottom;
@@ -200,9 +200,10 @@ export function scrollArea(ctx, m, x, top, w, bottom, drawContent) {
   if (keyPressed('ArrowUp')) sc -= 24;
   if (keyPressed('PageDown')) sc += viewH - 20;
   if (keyPressed('PageUp')) sc -= viewH - 20;
-  if (Engine.mouse.justPressed && over) m.dragY = Engine.mouse.y;
+  // (m.dragMoved: how far the last press dragged, so a list can ignore the click that ends a drag)
+  if (Engine.mouse.justPressed) { m.dragMoved = 0; if (over) m.dragY = Engine.mouse.y; }
   if (!Engine.mouse.down) m.dragY = null;
-  if (m.dragY != null) { sc -= Engine.mouse.y - m.dragY; m.dragY = Engine.mouse.y; }
+  if (m.dragY != null) { sc -= Engine.mouse.y - m.dragY; m.dragMoved = (m.dragMoved || 0) + Math.abs(Engine.mouse.y - m.dragY); m.dragY = Engine.mouse.y; }
   m.scroll = Math.max(0, Math.min(maxScroll, sc));
   ctx.save();
   ctx.beginPath(); ctx.rect(x, top, w, viewH); ctx.clip();
@@ -214,6 +215,6 @@ export function scrollArea(ctx, m, x, top, w, bottom, drawContent) {
     const barH = Math.max(16, viewH * viewH / m.contentH), barY = top + (viewH - barH) * (m.scroll / maxScroll);
     rect(ctx, x + w - 4, top, 3, viewH, '#ffffff22');
     rect(ctx, x + w - 4, barY, 3, barH, '#f8d038');
-    if (m.scroll < maxScroll) text(ctx, 'scroll for more', x + w / 2, bottom + 9, { align: 'center', color: 'gray', font: 'small' });
+    if (opts.hint !== false && m.scroll < maxScroll) text(ctx, 'scroll for more', x + w / 2, bottom + 9, { align: 'center', color: 'gray', font: 'small' });
   }
 }

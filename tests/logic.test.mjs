@@ -2315,5 +2315,96 @@ t('HOENN music (display only): Emerald songs by act / battle, FireRed elsewhere'
   });
 }
 
+// ---- v0.5.2
+const solo52 = (foe, seed) => {
+  const run = Run.create({ starter: 'CHARMANDER', seed });
+  run.party.push(makeMon('PIDGEY', 6, { rng: new RNG('p' + seed) }));
+  const b = new Battle(run, { kind: 'wild', enemies: [foe], rng: new RNG('b' + seed) }); b.start();
+  return { run, b, lead: b.lead(), bench: run.party[1] };
+};
+t('v0.5.2: a POKéMON sent in after its lead fainted is not hit by the foe\'s move later that turn (solo)', () => {
+  const foe = slowFoe(['TACKLE']); foe.stats.atk = 300; foe.ability = null;
+  const { b, lead, bench } = solo52(foe, 'FR52');
+  b.sides.enemy.lockOn = 3;
+  const hp0 = bench.hp;
+  const ev = b.play(handOf(b, ['EXPLOSION'])); // the lead faints in its own hand, before the slower foe moves
+  assert.ok(lead.hp === 0, 'the lead fainted');
+  assert.equal(b.leadUid, bench.uid, 'the replacement came out');
+  assert.equal(bench.hp, hp0, 'and took no hit that turn');
+  assert.ok(ev.some(e => e.t === 'msg' && /no target/.test(e.text)), 'the foe\'s move had no target');
+  assert.ok(!ev.some(e => e.t === 'enemyMove'));
+  // next turn the foe attacks it as usual
+  b.intent = { move: b.moveData('TACKLE') };
+  b.play([b.deck.hand.find(c => b.cardInfo(c).playable && !b.cardInfo(c).status)?.id ?? b.deck.hand[0].id]);
+  assert.ok(bench.hp < hp0, 'hit the turn after');
+});
+
+t('v0.5.2: no FLY / DIG / DIVE / BOUNCE two turns in a row, dodge or not (solo)', () => {
+  const infoOf = (b, m) => { const id = handOf(b, [m])[0]; return b.cardInfo(b.deck.hand.find(c => c.id === id)); };
+  // a faster foe moves first: no dodge, no LANDING (PROTECT is fine), but the same POKéMON can't DIG again next turn
+  const fast = slowFoe(['GROWL']); fast.stats.spe = 999;
+  const { b, lead } = soloWith(fast, [], 'DIG52');
+  b.play(handOf(b, ['DIG']));
+  assert.notEqual(b.ms(lead.uid).landing, b.turn, 'no dodge happened');
+  for (const m of ['DIG', 'FLY', 'DIVE', 'BOUNCE']) { const i = infoOf(b, m); assert.ok(!i.playable && i.reason === 'LANDING', m + ' waits a turn'); }
+  assert.ok(infoOf(b, 'PROTECT').playable, 'PROTECT only waits after a real dodge');
+  assert.ok(!b.canPlay(handOf(b, ['DIG'])).ok, 'the hand is refused');
+  b.play(handOf(b, ['SCRATCH']));
+  assert.ok(infoOf(b, 'DIG').playable, 'DIG is back the turn after');
+  // two DIG cards in one hand are one turn: fine, and the next turn both wait
+  assert.ok(b.canPlay(handOf(b, ['DIG', 'DIG'])).ok);
+  b.play(handOf(b, ['DIG', 'DIG']));
+  assert.ok(!infoOf(b, 'DIG').playable);
+  // a benched POKéMON's DIG card (no dodge: it isn't the lead) counts too
+  const run = Run.create({ starter: 'CHARMANDER', seed: 'DIG52b' });
+  run.party.push(makeMon('SANDSHREW', 12, { rng: new RNG('sand') }));
+  const b2 = new Battle(run, { kind: 'wild', enemies: [slowFoe(['GROWL'])], rng: new RNG('bDIG52b') }); b2.start();
+  const sand = run.party[1];
+  const card = (m, id) => ({ id, uid: sand.uid, move: m });
+  b2.deck.hand = [card('DIG', 9201)];
+  b2.play([9201]);
+  b2.deck.hand.push(card('DIG', 9202));
+  assert.equal(b2.cardInfo(b2.deck.hand.find(c => c.id === 9202)).reason, 'LANDING');
+});
+
+t('v0.5.2: a foe never uses FLY / DIG / DIVE / BOUNCE two turns in a row (unless it has nothing else)', () => {
+  for (let k = 0; k < 12; k++) {
+    const foe = slowFoe(['DIG', 'GROWL'], 99999);
+    const { b } = soloWith(foe, [], 'FDIG' + k);
+    b.intent = { move: b.moveData('DIG') };
+    b.play(handOf(b, ['GROWL']));
+    assert.notEqual(b.intent.move.key, 'DIG', 'seed ' + k);
+  }
+  const only = slowFoe(['DIG'], 99999);
+  const { b } = soloWith(only, [], 'FDIGONLY');
+  b.intent = { move: b.moveData('DIG') };
+  b.play(handOf(b, ['GROWL']));
+  assert.equal(b.intent.move.key, 'DIG', 'its only move');
+});
+
+const { BOSS_RULES } = await import('../web/src/game/bosses.js');
+t('v0.5.2: LEADER NORMAN\'s BALANCE caps every hand at 35% of his POKéMON\'s max HP (preview = actual)', () => {
+  assert.equal(BOSS_RULES.NORMAN.name, 'BALANCE');
+  assert.equal(BOSS_RULES.NORMAN.handCap, 0.35);
+  assert.ok(!BOSS_RULES.NORMAN.afterHand, 'no SLACK OFF heal');
+  const foe = slowFoe(['GROWL'], 1000); foe.bossRule = 'NORMAN'; foe.status = 'PAR'; // (no burn chip at the end of the turn)
+  const run = Run.create({ starter: 'CHARMANDER', seed: 'NRM52' });
+  run.party[0].level = 60; run.party[0].hp = maxHp(run.party[0]);
+  const b = new Battle(run, { kind: 'boss', enemies: [foe], rng: new RNG('bNRM52') }); b.start();
+  assert.equal(b.bossRule?.key, 'NORMAN');
+  b.sides.player.lockOn = 3;
+  const ids = handOf(b, ['EMBER', 'EMBER', 'FLAMETHROWER', 'FLAMETHROWER', 'FIRE_BLAST']);
+  const sim = b.simulate(ids);
+  assert.equal(sim.damage, 350, 'the preview shows the cap');
+  const ev = b.play(ids);
+  assert.equal(foe.hp, 650, 'the hand dealt exactly 35%');
+  assert.ok(ev.some(e => e.t === 'msg' && /BALANCE/.test(e.text)));
+  // a weak hand is untouched, and nothing heals him
+  const ids2 = handOf(b, ['SCRATCH']);
+  const s2 = b.simulate(ids2).damage;
+  b.play(ids2);
+  assert.ok(s2 < 350 && foe.hp === 650 - s2, 'no cap, no heal');
+});
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

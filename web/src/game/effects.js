@@ -163,7 +163,7 @@ export const EFFECTS = {
   BRICK_BREAK: (ctx) => { if (ctx.b.sides[ctx.them].reflect || ctx.b.sides[ctx.them].lightScreen) ctx.b.msg('It shattered the barrier!'); ctx.b.sides[ctx.them].reflect = 0; ctx.b.sides[ctx.them].lightScreen = 0; },
   // The lead is out of reach until the turn ends: side.dodge names the move, so the Gen 3 exceptions apply
   // (SURF hits a DIVE user, EARTHQUAKE a DIG user...; see INVULN_HITS in battle.js).
-  SEMI_INVULNERABLE: (ctx) => { if (ctx.us === 'player' && ctx.user === ctx.b.lead()) { const s = ctx.b.sides.player; s.dodge = ctx.move.key || true; s.dodgeUid = ctx.user.uid; ctx.b.msg(`${ctx.b.monName(ctx.user)} is out of reach!`); } },
+  SEMI_INVULNERABLE: (ctx) => { if (ctx.us === 'player' && ctx.b.ms) ctx.b.ms(ctx.user.uid).semiBlock = ctx.b.turn + 1; if (ctx.us === 'player' && ctx.user === ctx.b.lead()) { const s = ctx.b.sides.player; s.dodge = ctx.move.key || true; s.dodgeUid = ctx.user.uid; ctx.b.msg(`${ctx.b.monName(ctx.user)} is out of reach!`); } },
   SOLAR_BEAM: (ctx) => { if ((ctx.b.wx ? ctx.b.wx() : ctx.b.weather) !== 'SUN') ctx.b.setRecharge(ctx.us, ctx.user, 'charging'); },
   RAZOR_WIND: (ctx) => ctx.b.setRecharge(ctx.us, ctx.user, 'charging'),
   SKULL_BASH: (ctx) => { ctx.b.addStage(ctx.us, 'def', 1, ctx.move.key); ctx.b.setRecharge(ctx.us, ctx.user, 'charging'); },

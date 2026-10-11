@@ -30,13 +30,17 @@ import { RNG } from '../rng.js';
 // species use their HGSS abilities, your POKéMON can flinch; v0.4.0-v0.4.7 is frozen as 'v040'.
 // v0.5.1 does: LEADER NORMAN's SLACK OFF is split between co-op players (and softened). v0.5.0 is NOT frozen on purpose:
 // a room mid-node in v0.5.0 (e.g. stuck in the broken NORMAN fight) restarts that node from the map on the fixed rules.
-export const LOGIC_ID = 'v051';
+// v0.5.2 does: LEADER NORMAN's BALANCE (every hand capped) replaces SLACK OFF, a lead sent in after a faint can't be hit
+// by moves still resolving that turn, no FLY / DIG / DIVE / BOUNCE two turns in a row (foes too), and at a co-op
+// legendary node each player gets the held item of the legendary they catch; v0.5.1 is frozen as 'v051'.
+export const LOGIC_ID = 'v052';
 // Actions from before v0.3.6 carry no stamp: they were played on v0.3.5 (or, for older rooms, earlier; the
 // replay checks the clients' logged checksums and tries every frozen engine, see resume.js).
 export const UNSTAMPED = 'v035';
 // Frozen copies, newest first: id -> the versions it covers and its loader (dynamic import: only fetched when a
 // room needs it).
 export const FROZEN = {
+  v051: { versions: 'v0.5.1', load: () => import('../../legacy/v051/engine.js') },
   v040: { versions: 'v0.4.0-v0.4.7', load: () => import('../../legacy/v040/engine.js') },
   v0323: { versions: 'v0.3.23-v0.3.24', load: () => import('../../legacy/v0323/engine.js') },
   v0319: { versions: 'v0.3.19-v0.3.22', load: () => import('../../legacy/v0319/engine.js') },

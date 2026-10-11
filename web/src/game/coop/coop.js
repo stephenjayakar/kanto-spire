@@ -134,14 +134,15 @@ export function duoConfig(world, node, n = 2) {
 }
 
 // The co-op legendary node: the act's legendary (the same foe a solo run meets, from the same RNG) and its trio
-// partner (its own RNG fork) side by side. Rewards: the act's legendary's held item; catch offers for both
-// (catchOffers, each player picks one; catchOffer stays the act's own for older readers).
+// partner (its own RNG fork) side by side. Rewards: catch offers for both (catchOffers, each player picks one;
+// catchOffer stays the act's own for older readers), each with its legendary's held item (offer.item, v0.5.2): a player
+// gets the item of the one they caught, else the act's legendary's (cfg.rewardRelic; Run.legendRelic).
 export function legendPairConfig(world, rng, floor, key, n = 2) {
   const a = world.legendConfig(rng, floor, key);
   const key2 = BIRD_PARTNER[key];
   if (!a.legendNode || !key2 || !LEGENDS[key2]) return single({ ...a, rng }, 'bird', world, n);
   const b = world.legendConfig(rng.fork('partner'), floor, key2);
-  const offers = [a.catchOffer && { ...a.catchOffer, ei: 0 }, b.catchOffer && { ...b.catchOffer, ei: 1 }].filter(Boolean);
+  const offers = [a.catchOffer && { ...a.catchOffer, ei: 0, item: a.rewardRelic }, b.catchOffer && { ...b.catchOffer, ei: 1, item: b.rewardRelic }].filter(Boolean);
   return scaleEnemies({ ...a, enemies: [a.enemies[0], b.enemies[0]], legend: `${a.legend} & ${b.legend}`, catchOffers: offers, queues: [[0], [1]], slotQueue: [0, 1], slots: 2, rng }, 'bird2', world, n);
 }
 

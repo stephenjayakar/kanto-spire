@@ -541,6 +541,7 @@ export class DuoBattle {
       s.enemyJustSwitched = false;
       s.faintSwitch = false;
       s.deck.hand = s.deck.hand.filter(c => !cards.includes(c));
+      s.markSemi(cards);
       for (const c of cards) c.faceDown = false;
       const ns = this.normSlot(L.target);
       if (ns !== null) s.focus(this.field[ns]);

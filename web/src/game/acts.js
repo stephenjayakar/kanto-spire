@@ -327,7 +327,8 @@ export const BIRDS = {
   ...JOHTO_BIRDS,
 };
 // Co-op (v0.3.11): a legendary node fields two legendaries, the act's own and the next one of its trio (each player
-// may catch one of the two). The act's legendary keeps its held item; the partner brings no item.
+// may catch one of the two). Each player gets the held item of the legendary they catch (v0.5.2); a player who catches
+// neither gets the act's legendary's item (Run.legendRelic).
 export const BIRD_PARTNER = {
   LEGEND_ZAPDOS: 'LEGEND_ARTICUNO', LEGEND_ARTICUNO: 'LEGEND_MOLTRES', LEGEND_MOLTRES: 'LEGEND_ZAPDOS',
   LEGEND_REGIROCK: 'LEGEND_REGICE', LEGEND_REGICE: 'LEGEND_REGISTEEL', LEGEND_REGISTEEL: 'LEGEND_REGIROCK',

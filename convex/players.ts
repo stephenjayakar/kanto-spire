@@ -1,4 +1,5 @@
 import { mutation, query, QueryCtx } from "./_generated/server";
+import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
 import { INVITER } from "./invites";
 import { cleanName, currentUser, ensurePlayer, normEmail, playerFor, requireUser, versionTotals } from "./lib";
@@ -61,6 +62,53 @@ export const top = query({
       out.push({ ...publicPlayer(p), runs, wins, bestScore });
     }
     return out;
+  },
+});
+
+// v0.5.2: the trainers list in pages (RECORDS' LOAD MORE; top stays as it was for older clients). All-time: the
+// players.by_bestScore index, paginated. One version: that version's runs walked best-first (by_version_score) from the
+// score where the last page stopped, skipping the trainers already listed; the cursor (JSON) carries both, so each page
+// reads one index range and at most TOP_SCAN_CAP runs. -> { page, isDone, continueCursor }
+const SEEN_CAP = 5000;
+export const topPage = query({
+  args: { version: v.optional(v.string()), paginationOpts: paginationOptsValidator },
+  handler: async (ctx, { version, paginationOpts }) => {
+    await requireUser(ctx);
+    const n = Math.max(1, Math.min(Math.floor(paginationOpts.numItems) || 50, 100));
+    if (!version) {
+      const res = await ctx.db.query("players").withIndex("by_bestScore").order("desc").paginate({ ...paginationOpts, numItems: n });
+      const page = res.page.filter((p) => p.runs > 0);
+      // (trainers without a run have bestScore 0 and sort last: the list ends at the first one)
+      const ended = res.page.some((p) => p.runs === 0 && p.bestScore <= 0);
+      return { page: page.map(publicPlayer), isDone: res.isDone || ended, continueCursor: res.continueCursor };
+    }
+    let c: { s: number | null; seen: string[] } = { s: null, seen: [] };
+    if (paginationOpts.cursor) {
+      try {
+        const o = JSON.parse(paginationOpts.cursor);
+        if (o && Array.isArray(o.seen)) c = { s: typeof o.s === "number" ? o.s : null, seen: o.seen.map(String) };
+      } catch { /* a bad cursor starts over */ }
+    }
+    const seen = new Set(c.seen);
+    const best = new Map<Id<"players">, number>();
+    const s0 = c.s;
+    const runs = ctx.db.query("runs").withIndex("by_version_score", (q) => (s0 === null ? q.eq("version", version) : q.eq("version", version).lte("score", s0)));
+    let scanned = 0, last = s0, done = true;
+    for await (const r of runs.order("desc")) {
+      last = r.score;
+      if (!seen.has(r.playerId) && !best.has(r.playerId)) best.set(r.playerId, r.score);
+      if (best.size >= n || ++scanned >= TOP_SCAN_CAP) { done = false; break; }
+    }
+    if (!best.size && last === s0) done = true; // (no progress: nothing left to find)
+    const page = [];
+    for (const [id, bestScore] of best) {
+      const p = await ctx.db.get(id);
+      if (!p) continue;
+      const { runs: nRuns, wins } = await versionTotals(ctx, id, version);
+      page.push({ ...publicPlayer(p), runs: nRuns, wins, bestScore });
+    }
+    const next = { s: last, seen: [...c.seen, ...best.keys()].slice(-SEEN_CAP) };
+    return { page, isDone: done, continueCursor: JSON.stringify(next) };
   },
 });
 

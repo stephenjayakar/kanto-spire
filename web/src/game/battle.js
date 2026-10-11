@@ -389,8 +389,9 @@ export class Battle {
     else if (ms.recharge > 0) { playable = false; reason = ms.rechargeKind === 'charging' ? 'CHARGING' : 'RECHARGING'; }
     else if (ms.drowsy) { playable = false; reason = 'DROWSY'; }
     else if (card.frozen) { playable = false; reason = 'ICED'; }
-    // v0.3.23: the turn after a FLY / DIG / DIVE / BOUNCE dodge the lead is landing: no dodging or protecting again
-    else if (ms.landing === this.turn && (move.effect === 'SEMI_INVULNERABLE' || PROTECT_EFFECTS.has(move.effect))) { playable = false; reason = 'LANDING'; }
+    // v0.3.23: the turn after a FLY / DIG / DIVE / BOUNCE dodge the lead is landing: no dodging or protecting again.
+    // v0.5.2: and a POKéMON that played one of those cards (dodge or not) can't play one again the next turn.
+    else if ((ms.landing === this.turn && (move.effect === 'SEMI_INVULNERABLE' || PROTECT_EFFECTS.has(move.effect))) || (ms.semiBlock === this.turn && move.effect === 'SEMI_INVULNERABLE')) { playable = false; reason = 'LANDING'; }
     else if (this.pab(owner) === 'TRUANT' && this.handsPlayed % 2 === 1) { playable = false; reason = 'LOAFING'; }
     else if (move.effect === 'EXPLOSION' && this.dampOut()) { playable = false; reason = 'DAMP'; }
     const power = move.power || 0;
@@ -647,7 +648,9 @@ export class Battle {
     // self-KO moves (SELF-DESTRUCT, EXPLOSION): never for a boss / elite / legendary; others only as a last resort
     // when nearly beaten (v0.3.11)
     const barred = (m) => isSelfKO(m.key) && (e.isBoss || e.isElite || e.legendary || e.hp > e.maxHp * SELF_KO_HP || this.dampOut());
-    const usable = options.map((m, i) => i).filter(i => !barred(options[i]));
+    let usable = options.map((m, i) => i).filter(i => !barred(options[i]));
+    // v0.5.2: no FLY / DIG / DIVE / BOUNCE two turns in a row for foes either (if it has another move)
+    if (this.ms(e.uid).semiBlock === this.turn) { const grounded = usable.filter(i => options[i].effect !== 'SEMI_INVULNERABLE'); if (grounded.length) usable = grounded; }
     let move = usable.length ? this.rng.weighted(usable, i => weights[i] + 0.0001) : -1;
     move = options[move] || this.moveData('STRUGGLE') || this.moveData('TACKLE');
     if (this.ms(e.uid).recharge > 0) move = { ...this.moveData('TACKLE'), key: 'RECHARGE', name: 'RECHARGE', power: 0, effect: 'RECHARGE_TURN' };
@@ -952,6 +955,7 @@ export class Battle {
     if (DECK_RULES.kickersStay) { const p = this.preview(ids); if (p && p.key !== 'SUPPORT') { const sc = new Set(p.scoring); kickers = new Set(cards.filter(c => !sc.has(c.id) && !this.cardInfo(c).status)); } }
     this.deck.hand = this.deck.hand.filter(c => !cards.includes(c));
     const infos = cards.map(c => { c.faceDown = false; return this.cardInfo(c); });
+    this.markSemi(cards);
     this.emit({ t: 'play', ids: cards.map(c => c.id) });
 
     const enemyFirst = this.enemyActsFirst(infos, this.intent?.move, preRollProtect(this, infos));
@@ -982,6 +986,15 @@ export class Battle {
     const ps = this.sides.player;
     if (foeStillToAct && ps.dodge && ps.dodgeUid) this.ms(ps.dodgeUid).landing = this.turn + 1;
   }
+
+  // v0.5.2: a POKéMON that plays a FLY / DIG / DIVE / BOUNCE card can't play one the next turn, whether it dodged or
+  // not (the foe moved first, it wasn't the lead, the foe aimed at a co-op partner...). Called when a hand is played.
+  markSemi(cards) {
+    for (const c of cards) if (this.moveData(c.move)?.effect === 'SEMI_INVULNERABLE') this.ms(c.uid).semiBlock = this.turn + 1;
+  }
+
+  // v0.5.2: a POKéMON sent in this turn to replace a fainted lead: moves still resolving this turn can't reach it.
+  faintReplacement(mon) { return !!mon && this.ms(mon.uid).faintIn === this.turn; }
 
   // Nothing in hand can legally be played (asleep, frozen, recharging, boss rules...): give up the hand
   // so the turn still advances instead of soft-locking.
@@ -1057,7 +1070,7 @@ export class Battle {
         let dmg = score.damage + score.fixed;
         if (score.ohko) dmg = e.hp;
         if (score.falseSwipe) dmg = Math.min(dmg, e.hp - 1);
-        if (this.bossRule?.handCap && dmg > this.handCap(e)) { dmg = this.handCap(e); this.msg(`BALANCE! The hand was capped at ${dmg} damage.`); }
+        if (this.bossRule?.handCap && (dmg > this.handCap(e) || score.capped)) { dmg = Math.min(dmg, this.handCap(e)); this.msg(`BALANCE! The hand was capped at ${dmg} damage.`); }
         if (this.sides.enemy.substitute) {
           const absorbed = Math.min(dmg, this.sides.enemy.subHp);
           this.sides.enemy.subHp -= absorbed; dmg -= absorbed;
@@ -1211,7 +1224,7 @@ export class Battle {
     const bonusMult = TUNING.scoring === 'hybrid' || TUNING.scoring === 'hybridlite' ? (1 + bonus / 100) * (1 + (S.pctTotal - bonus) / 100) : 1 + S.pctTotal / 100;
     const damage = Math.max(0, Math.floor((S.cardTotal + S.flatTotal) * bonusMult * S.timesTotal));
     S.damage = damage;
-    if (this.bossRule?.handCap) S.damage = Math.min(S.damage, this.handCap(enemy)); // (LEADER NORMAN's BALANCE)
+    if (this.bossRule?.handCap && S.damage > this.handCap(enemy)) { S.damage = this.handCap(enemy); S.capped = true; } // (LEADER NORMAN's BALANCE; resolveHand says so)
     if (!this.dry) this.maxHand = Math.max(this.maxHand || 0, damage);
     if (this.run.metrics && !this.dry) this.run.metrics.hands.push({ act: this.run.actIndex, dmg: damage, ehp: enemy.maxHp, kind: this.kind });
     S.effLabel = bestEff === null ? null : bestEff > 1 ? 'super' : bestEff === 0 ? 'none' : bestEff < 1 ? 'weak' : null;
@@ -1330,6 +1343,13 @@ export class Battle {
   // The foe's move landing on the lead (enemyAct, once it can move). follow: a co-op all-target foe's hit on another
   // player (the move was announced on the first one).
   enemyStrike(e, lead, es, ps, move, follow) {
+    // v0.5.2: the lead it aimed at fainted this turn and its replacement just came out: the move has no target
+    // (co-op: a second foe used to KO the replacement in the same turn). Self and field moves still work.
+    if (this.faintReplacement(lead) && !NOT_AIMED.has(move.target) && !SELF_EFFECTS.has(move.effect)) {
+      if (!follow) this.msg('But there was no target!');
+      return;
+    }
+    if (move.effect === 'SEMI_INVULNERABLE') this.ms(e.uid).semiBlock = this.turn + 1; // (pickEnemyMove)
     this.emit({ t: 'enemyMove', move: move.key, type: move.type, name: move.name, ...(follow ? { spread: true } : {}) });
     if (follow) this.msg(`The ${move.name} spreads to ${monName(lead)}!`);
     es.lastMove = move.key;
@@ -1662,6 +1682,7 @@ export class Battle {
     if (!alive.length) { this.msg('You are out of usable POKéMON!'); this.end('lose'); return; }
     if (mon.uid === this.leadUid) {
       this.switchLead(alive[0].uid, true);
+      this.ms(alive[0].uid).faintIn = this.turn; // (enemyStrike: nothing still resolving this turn can hit it)
       // The player may pick someone else instead, for free, before their next hand.
       if (alive.length > 1) this.faintSwitch = true;
     }

@@ -1,4 +1,5 @@
 import { internalMutation, mutation, query } from "./_generated/server";
+import { paginationOptsValidator, PaginationOptions } from "convex/server";
 import { v } from "convex/values";
 import { cleanRun, ensurePlayer, normEmail, partnerCoopRuns, runInput, versionTotals, playerFor, requireUser } from "./lib";
 import { Doc, Id } from "./_generated/dataModel";
@@ -96,6 +97,67 @@ export const mine = query({
       .take(n);
     // (the trainer's totals already count co-op runs: coop:finish credits every member)
     return { player: { name: player.name, runs: player.runs, wins: player.wins, bestScore: player.bestScore }, recent: merge(recent, "finishedAt"), best: merge(best, "score") };
+  },
+});
+
+// ---- v0.5.2: the same lists in pages (RECORDS' LOAD MORE) ------------------------------------------
+// Additive: leaderboard / mine above stay as they were for older clients. Each page reads one index range (no scans):
+// { page, isDone, continueCursor }; pass continueCursor back for the next page. Page 1 is a live subscription.
+const PAGE_MAX = 100;
+const pageOpts = (o: PaginationOptions): PaginationOptions => ({ ...o, numItems: Math.max(1, Math.min(Math.floor(o.numItems) || 50, PAGE_MAX)) });
+
+export const leaderboardPage = query({
+  args: { world: v.optional(v.string()), version: v.optional(v.string()), sort: v.optional(v.union(v.literal("recent"), v.literal("score"))), paginationOpts: paginationOptsValidator },
+  handler: async (ctx, { world, version, sort, paginationOpts }) => {
+    await requireUser(ctx);
+    const runs = ctx.db.query("runs");
+    const q = sort === "recent"
+      ? version
+        ? world
+          ? runs.withIndex("by_version_world_finishedAt", (q) => q.eq("version", version).eq("world", world))
+          : runs.withIndex("by_version_finishedAt", (q) => q.eq("version", version))
+        : world
+          ? runs.withIndex("by_world_finishedAt", (q) => q.eq("world", world))
+          : runs.withIndex("by_finishedAt")
+      : version
+        ? world
+          ? runs.withIndex("by_version_world_score", (q) => q.eq("version", version).eq("world", world))
+          : runs.withIndex("by_version_score", (q) => q.eq("version", version))
+        : world
+          ? runs.withIndex("by_world_score", (q) => q.eq("world", world))
+          : runs.withIndex("by_score");
+    const res = await q.order("desc").paginate(pageOpts(paginationOpts));
+    return { page: res.page, isDone: res.isDone, continueCursor: res.continueCursor };
+  },
+});
+
+// The calling trainer's runs, newest first, in pages. A partner's co-op team runs (partnerCoopRuns, a bounded list) go
+// into the page their date falls in: newer than the page's last own run (all the rest on the last page), and not newer
+// than `before` (the date of the last row the client already has). The first page also carries the totals (as mine).
+export const minePage = query({
+  args: { version: v.optional(v.string()), paginationOpts: paginationOptsValidator, before: v.optional(v.number()) },
+  handler: async (ctx, { version, paginationOpts, before }) => {
+    const user = await requireUser(ctx);
+    const player = await playerFor(ctx, user);
+    if (!player) return null;
+    const own = version
+      ? ctx.db.query("runs").withIndex("by_player_version_finishedAt", (q) => q.eq("playerId", player._id).eq("version", version))
+      : ctx.db.query("runs").withIndex("by_player_finishedAt", (q) => q.eq("playerId", player._id));
+    const res = await own.order("desc").paginate(pageOpts(paginationOpts));
+    const team = await partnerCoopRuns(ctx, normEmail(user.email || player.email), version);
+    const first = paginationOpts.cursor === null;
+    const lo = res.isDone ? -Infinity : (res.page[res.page.length - 1]?.finishedAt ?? -Infinity);
+    const hi = first ? Infinity : (before ?? Infinity);
+    const extra = team.filter((t) => t.finishedAt >= lo && t.finishedAt <= hi && !res.page.some((r) => r._id === t._id));
+    const page = extra.length ? [...res.page, ...extra].sort((a, b) => b.finishedAt - a.finishedAt) : res.page;
+    if (!first) return { page, isDone: res.isDone, continueCursor: res.continueCursor };
+    let stats = { name: player.name, runs: player.runs, wins: player.wins, bestScore: player.bestScore };
+    if (version) {
+      const t = await versionTotals(ctx, player._id, version);
+      const top = await ctx.db.query("runs").withIndex("by_player_version_score", (q) => q.eq("playerId", player._id).eq("version", version)).order("desc").first();
+      stats = { name: player.name, runs: t.runs + team.length, wins: t.wins + team.filter((r) => r.result !== "lose").length, bestScore: Math.max(top?.score ?? 0, ...team.map((r) => r.score)) };
+    }
+    return { page, isDone: res.isDone, continueCursor: res.continueCursor, player: stats, version };
   },
 });
 

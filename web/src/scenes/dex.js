@@ -1,7 +1,7 @@
 // Persistent Pokédex across runs + run history. Click a seen POKéMON for its entry page (DexEntry).
-import { Engine, W, H, hover, clicked, keyPressed, pushOverlay, setScene, WHEEL_NOTCH_PX } from '../engine/core.js';
+import { Engine, W, H, hover, clicked, keyPressed, pushOverlay, setScene } from '../engine/core.js';
 import { text, textFit, textBlock, measure } from '../engine/font.js';
-import { swirlBackground, button, closeButton, pixBox, rect, drawTips, tip, THEME } from '../engine/ui.js';
+import { swirlBackground, button, closeButton, pixBox, rect, drawTips, tip, THEME, scrollArea } from '../engine/ui.js';
 import { draw, tinted } from '../engine/assets.js';
 import { D, byDex, TYPE_COLORS, DEX_MAX, moveName } from '../game/data.js';
 import { G, shinyUnlocked } from '../game/state.js';
@@ -12,46 +12,57 @@ import { Sound } from '../audio/sound.js';
 import { drawIcon, drawMon, drawTypeTags, monDir, Modal } from './common.js';
 import { TitleScene } from './title.js';
 
-const PER_PAGE = 120, COLS = 15; // (DEX_MAX: 493 since v0.4.0, 5 pages)
+const COLS = 15, CELL_W = 41, CELL_H = 36; // (DEX_MAX: 493 since v0.4.0, 33 rows)
+// The grid's scroll view (between the fixed header and the recent runs). v0.5.2: it scrolls by pixels like the records
+// and the map (Engine.mouse.wheelPx, drag / touch, arrow keys, PAGE UP / DOWN, the ↑ ↓ buttons); it used to turn pages.
+const GRID_TOP = 40, GRID_BOTTOM = H - 38, GRID_X = 8, GRID_W = W - 16;
+const DRAG_CLICK = 5; // a press that dragged further than this (game px) scrolled the grid: it opens nothing
 
 export class DexScene {
-  enter() { this.page = 0; this.t = 0; this.wheelAcc = 0; this.wheelWait = 0; }
-  update(dt) {
-    this.t += dt;
-    // Wheel: a page turn takes 3 notches' worth of scrolling, and at most one turn per 0.6 s, so a swipe doesn't fly through the dex
-    this.wheelWait = Math.max(0, this.wheelWait - dt);
-    const w = Engine.mouse.wheelPx;
-    if (w && !this.wheelWait) { if (Math.sign(w) !== Math.sign(this.wheelAcc)) this.wheelAcc = 0; this.wheelAcc += w; } // (ticks during the wait are dropped)
-    if (Math.abs(this.wheelAcc) >= 3 * WHEEL_NOTCH_PX && !this.wheelWait) {
-      this.page = Math.max(0, Math.min(Math.floor((DEX_MAX - 1) / PER_PAGE), this.page + Math.sign(this.wheelAcc)));
-      this.wheelAcc = 0; this.wheelWait = 0.6;
-    }
+  enter() { this.t = 0; this.scroll = 0; this.contentH = 0; }
+  update(dt) { this.t += dt; }
+  // Keep the grid row of dex number n in view (after browsing entries with ←/→).
+  reveal(n) {
+    const y = Math.floor((n - 1) / COLS) * CELL_H, viewH = GRID_BOTTOM - GRID_TOP;
+    if (y < this.scroll) this.scroll = y;
+    else if (y + CELL_H > this.scroll + viewH) this.scroll = y + CELL_H - viewH + 2;
   }
   draw(ctx) {
     swirlBackground(ctx, ['#401010', '#802020', '#501818'], 0.3);
     const m = G.meta;
     text(ctx, 'POKéDEX', 12, 6, { color: 'white', scale: 2 });
     text(ctx, `SEEN ${m.dexSeen.length}  ·  CAUGHT ${m.dexCaught.length} / ${DEX_MAX}`, 160, 14, { color: 'gold' });
-    const start = this.page * PER_PAGE;
-    let open = null;
-    for (let i = 0; i < PER_PAGE; i++) {
-      const n = start + i + 1;
-      if (n > DEX_MAX) break;
-      const s = byDex[n];
-      if (!s) continue;
-      const x = 10 + (i % COLS) * 41, y = 40 + Math.floor(i / COLS) * 36;
-      const caught = m.dexCaught.includes(s.key), seen = caught || m.dexSeen.includes(s.key);
-      const hot = hover(x, y, 38, 34) && seen;
-      pixBox(ctx, x, y, 38, 34, caught ? (hot ? '#fffaf0' : '#f8f0d8') : seen ? (hot ? '#ddd6c8' : '#c8c0b0') : '#504848', hot ? '#f8d038' : '#201818', 3);
-      if (seen) drawIcon(ctx, s.key, x + 3, y - 2, { still: !caught && !hot, gray: !caught });
-      text(ctx, String(n).padStart(3, '0'), x + 19, y + 23, { align: 'center', color: 'dark', font: 'small' });
-      if (hover(x, y, 38, 34)) tip(seen ? s.name : '??????????', seen ? `${s.types.join('/')}${caught ? ` · ${s.category} POKéMON` : ''}\nClick for its POKéDEX entry.` : 'Not yet seen.', { width: 200 });
-      if (seen && clicked(x, y, 38, 34)) open = n;
-    }
+    if (Engine.mouse.justPressed) { this.pressY = Engine.mouse.y; this.dragged = false; }
+    if (Engine.mouse.down && this.pressY != null && Math.abs(Engine.mouse.y - this.pressY) > DRAG_CLICK) this.dragged = true;
+    const inGrid = Engine.mouse.y >= GRID_TOP && Engine.mouse.y < GRID_BOTTOM;
+    const rows = Math.ceil(DEX_MAX / COLS), viewH = GRID_BOTTOM - GRID_TOP;
+    let open = null, first = DEX_MAX, last = 1;
+    scrollArea(ctx, this, GRID_X, GRID_TOP, GRID_W, GRID_BOTTOM, (top) => {
+      // only the rows on screen are drawn
+      const r0 = Math.max(0, Math.floor((GRID_TOP - top) / CELL_H) - 1), r1 = Math.min(rows - 1, Math.ceil((GRID_BOTTOM - top) / CELL_H));
+      for (let row = r0; row <= r1; row++) for (let c = 0; c < COLS; c++) {
+        const n = row * COLS + c + 1;
+        if (n > DEX_MAX) break;
+        const s = byDex[n];
+        if (!s) continue;
+        const x = 10 + c * CELL_W, y = top + row * CELL_H;
+        if (y + 34 > GRID_TOP && y < GRID_BOTTOM) { first = Math.min(first, n); last = Math.max(last, n); }
+        const caught = m.dexCaught.includes(s.key), seen = caught || m.dexSeen.includes(s.key);
+        const over = inGrid && hover(x, y, 38, 34);
+        const hot = over && seen && !(Engine.mouse.down && this.dragged);
+        pixBox(ctx, x, y, 38, 34, caught ? (hot ? '#fffaf0' : '#f8f0d8') : seen ? (hot ? '#ddd6c8' : '#c8c0b0') : '#504848', hot ? '#f8d038' : '#201818', 3);
+        if (seen) drawIcon(ctx, s.key, x + 3, y - 2, { still: !caught && !hot, gray: !caught });
+        text(ctx, String(n).padStart(3, '0'), x + 19, y + 23, { align: 'center', color: 'dark', font: 'small' });
+        if (over && !Engine.mouse.down) tip(seen ? s.name : '??????????', seen ? `${s.types.join('/')}${caught ? ` · ${s.category} POKéMON` : ''}\nClick for its POKéDEX entry.` : 'Not yet seen.', { width: 200 });
+        if (seen && inGrid && !this.dragged && clicked(x, y, 38, 34)) open = n;
+      }
+      return top + rows * CELL_H;
+    }, { hint: false });
     text(ctx, 'Click a POKéMON for its entry', W - 90, 14, { align: 'right', color: 'whiteSoft', font: 'small' });
-    text(ctx, `Page ${this.page + 1}/${Math.ceil(DEX_MAX / PER_PAGE)} · No.${String(start + 1).padStart(3, '0')}-${String(Math.min(DEX_MAX, start + PER_PAGE)).padStart(3, '0')} (scroll)`, W / 2, 28, { align: 'center', color: 'gray', font: 'small' }); // (between the header and the grid: a full page's 8th row reaches y 326)
-    if (button(ctx, '<', 10, H - 30, 30, 22, { color: '#806060', disabled: this.page === 0 })) this.page--;
-    if (button(ctx, '>', 44, H - 30, 30, 22, { color: '#806060', disabled: (this.page + 1) * PER_PAGE >= DEX_MAX })) this.page++;
+    text(ctx, `No.${String(first).padStart(3, '0')}-${String(last).padStart(3, '0')} of ${DEX_MAX} (scroll or drag)`, W / 2, 28, { align: 'center', color: 'gray', font: 'small' });
+    const maxScroll = Math.max(0, this.contentH - viewH);
+    if (button(ctx, '↑', 10, H - 30, 30, 22, { color: '#806060', disabled: this.scroll <= 0 })) this.scroll = Math.max(0, this.scroll - (viewH - CELL_H));
+    if (button(ctx, '↓', 44, H - 30, 30, 22, { color: '#806060', disabled: this.scroll >= maxScroll })) this.scroll = Math.min(maxScroll, this.scroll + (viewH - CELL_H));
     // recent runs
     const runs = m.runs.slice(0, 3);
     runs.forEach((r, i) => {
@@ -66,7 +77,7 @@ export class DexScene {
   }
   openEntry(n) {
     Sound.playSE('se_select');
-    pushOverlay(new DexEntry({ dex: n, onClose: () => { this.page = Math.floor((this.entryDex - 1) / PER_PAGE); }, scene: this }));
+    pushOverlay(new DexEntry({ dex: n, onClose: () => this.reveal(this.entryDex || n), scene: this }));
   }
 }
 

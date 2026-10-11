@@ -1292,5 +1292,111 @@ t('co-op Pokédex: every player (P2 too) records what they met and caught', () =
   });
 }
 
+// ------------------------------------------------------------------------------------ v0.5.2
+const { makeMon: makeMon52 } = await import('../web/src/game/pokemon.js');
+const { legendPairConfig: pair52 } = await import('../web/src/game/coop/coop.js');
+const { BOSS_RULES: BR52 } = await import('../web/src/game/bosses.js');
+// Both foes aim this turn's move at player `p` (TACKLE unless given), sure to hit.
+const aimAll52 = (d, p, move = 'TACKLE') => {
+  d.intents = [0, 1].map(slot => ({ ri: d.field[slot], move: { ...D.moves[move], key: move }, target: p, first: false, kind: 'attack', text: '', damage: null, eff: 1, lethal: false }));
+  for (const ri of d.field) d.enemySides[ri].lockOn = 3;
+};
+
+t('v0.5.2: a lead sent in after a faint is not KO\'d by the other foe in the same turn (co-op double faint)', () => {
+  const r0 = Run.create({ starter: 'CHARMANDER', seed: 'DF52', coop: true });
+  r0.party.push(makeMon52('PIDGEY', 6, { rng: new RNG('df52') }));
+  const [lead, bench] = r0.party;
+  const d = duo37(r0, [foe37(), foe37()], 'df52');
+  for (const e of d.enemies) e.stats.atk = 400;
+  d.enemies[0].stats.spe = 50; // foe 0 moves first, foe 1 after it
+  lead.hp = 1;
+  aimAll52(d, 0);
+  const hp0 = bench.hp;
+  d.lock(1, { pass: true });
+  const ev = d.lock(0, { pass: true });
+  assert.equal(lead.hp, 0, 'the lead fainted to the first foe');
+  assert.equal(d.subs[0].leadUid, bench.uid, 'the replacement came out');
+  assert.equal(bench.hp, hp0, 'the second foe\'s move did not touch it');
+  assert.ok(ev.some(e => e.t === 'msg' && /no target/.test(e.text)));
+  assert.ok(!d.down[0] && !d.result);
+  // next turn it can be hit again
+  aimAll52(d, 0);
+  d.lock(1, { pass: true }); d.lock(0, { pass: true });
+  assert.ok(bench.hp < hp0, 'hit the turn after');
+  // an all-target foe's spread hit skips the fresh replacement too, the partner still takes it
+  const r2 = Run.create({ starter: 'CHARMANDER', seed: 'DF52s', coop: true });
+  r2.party.push(makeMon52('PIDGEY', 6, { rng: new RNG('df52s') }));
+  const d2 = duo37(r2, [foe37(), foe37()], 'df52s');
+  for (const e of d2.enemies) e.stats.atk = 400;
+  d2.enemies[0].stats.spe = 50;
+  r2.party[0].hp = 1;
+  aimAll52(d2, 0);
+  d2.intents = [d2.intents[0], { ...d2.intents[1], target: 0, spread: true }, null, { ...d2.intents[1], target: 1, spread: true }];
+  const p1lead = d2.subs[1].lead(), p1hp = p1lead.hp, b2 = r2.party[1], b2hp = b2.hp;
+  d2.lock(1, { pass: true }); d2.lock(0, { pass: true });
+  assert.equal(r2.party[0].hp, 0);
+  assert.equal(b2.hp, b2hp, 'the spread move skipped the replacement');
+  assert.ok(p1lead.hp < p1hp, 'and still hit the partner');
+});
+
+t('v0.5.2: co-op: no DIG two turns in a row, even when the foe aimed at the partner (no dodge, no LANDING)', () => {
+  const r0 = Run.create({ starter: 'CHARMANDER', seed: 'DG52', coop: true });
+  const d = duo37(r0, [foe37(), foe37()], 'dg52');
+  const s = d.subs[0], L = r0.party[0];
+  aimAll52(d, 1, 'GROWL');
+  d.lock(0, { ids: hand37(s, ['DIG']), target: 0 });
+  d.lock(1, { pass: true });
+  assert.notEqual(s.ms(L.uid).landing, d.turn, 'no dodge (nobody aimed at us)');
+  const dig = hand37(s, ['DIG', 'SCRATCH'], 9700);
+  assert.equal(d.cardInfo(0, s.findCards([dig[0]])[0]).reason, 'LANDING');
+  assert.equal(d.lock(0, { ids: [dig[0]], target: 0 }).length, 0, 'the lock is refused');
+  assert.equal(d.lastOk, false);
+  d.lock(0, { ids: [dig[1]], target: 0 }); d.lock(1, { pass: true });
+  const again = hand37(s, ['DIG'], 9800);
+  assert.ok(d.cardInfo(0, s.findCards(again)[0]).playable, 'back the turn after');
+});
+
+t('v0.5.2: co-op legendary node: each player gets the held item of the legendary they catch', () => {
+  const g = CoopGame.fromInit(INIT('LI52'));
+  g.world.startAct(1);
+  const node = Object.values(g.world.map.nodes).find(n => n.type === 'legend');
+  const cfg = duoConfig(g.world, node);
+  assert.deepEqual(cfg.catchOffers.map(o => [o.species, o.item]), [['ZAPDOS', 'THUNDER_FEATHER'], ['ARTICUNO', 'FROST_FEATHER']]);
+  const [a, b] = g.runs;
+  assert.equal(a.legendRelic(cfg, 'ZAPDOS'), 'THUNDER_FEATHER');
+  assert.equal(b.legendRelic(cfg, 'ARTICUNO'), 'FROST_FEATHER', 'the partner legendary brings its own item');
+  assert.equal(b.legendRelic(cfg, null), 'THUNDER_FEATHER', "caught neither: the act's legendary's item (as before)");
+  assert.equal(b.legendRelic(cfg, 'MEW'), 'THUNDER_FEATHER');
+  // 3-4 players, other trios
+  const big = pair52(g.world, g.world.rng.fork('li52'), node.floor, 'LEGEND_REGICE', 4);
+  assert.deepEqual(big.catchOffers.map(o => [o.species, o.item]), [['REGICE', 'ICE_CORE'], ['REGISTEEL', 'STEEL_CORE']]);
+  assert.equal(a.legendRelic(big, 'REGISTEEL'), 'STEEL_CORE');
+  // solo: one legendary, its own item
+  const solo = Run.create({ starter: 'BULBASAUR', seed: 'LI52s' });
+  const sc = solo.legendConfig(solo.rng.fork('x'), 3, 'LEGEND_MOLTRES');
+  assert.equal(solo.legendRelic(sc, 'MOLTRES'), 'FLAME_FEATHER');
+  assert.equal(solo.legendRelic(sc, null), 'FLAME_FEATHER');
+});
+
+t('v0.5.2: LEADER NORMAN\'s BALANCE caps each co-op hand at 35% of his POKéMON\'s max HP (no healing)', () => {
+  assert.equal(BR52.NORMAN.handCap, 0.35);
+  const big = (seed) => { const r = Run.create({ starter: 'CHARMANDER', seed, coop: true }); r.party[0].level = 60; r.party[0].hp = maxHp(r.party[0]); return r; };
+  const n0 = foe37(1000), n1 = foe37(1000);
+  n0.bossRule = n1.bossRule = 'NORMAN'; n0.status = n1.status = 'PAR';
+  const d = duo37(big('NRM52'), [n0, n1], 'nrm52');
+  d.subs[1].run.party[0].level = 60;
+  assert.equal(d.bossRule?.key, 'NORMAN');
+  for (const s of d.subs) s.sides.player.lockOn = 3;
+  aimAll52(d, 0, 'GROWL');
+  const h0 = hand37(d.subs[0], ['EMBER', 'EMBER', 'FLAMETHROWER', 'FLAMETHROWER', 'FIRE_BLAST']);
+  assert.equal(d.simulate(0, h0, 0).damage, 350, 'the preview shows the cap');
+  const h1 = hand37(d.subs[1], ['WATER_GUN', 'WATER_GUN', 'SURF', 'SURF', 'HYDRO_PUMP'], 9600);
+  d.lock(0, { ids: h0, target: 0 });
+  assert.ok(d.lastOk);
+  d.lock(1, { ids: h1, target: 0 }); // TEAM UP on the same foe: still capped per hand
+  assert.equal(n0.hp, 1000 - 2 * 350, 'two hands, 35% each');
+  assert.equal(n1.hp, 1000);
+});
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

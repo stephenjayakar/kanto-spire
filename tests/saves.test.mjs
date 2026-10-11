@@ -250,19 +250,21 @@ t('resume: unverifiable rooms (no checksums) replay as before', async () => {
 
 // ------------------------------------------------------------------------------------- legacy engine
 t('engines: selection is explicit (stamp first, then the current code, then the other frozen copies)', () => {
-  assert.equal(LOGIC_ID, 'v051', 'v0.5.1 changes game logic (NORMAN SLACK OFF split in co-op); v0.5.0 is not frozen (mid-node rooms restart the node)');
+  assert.equal(LOGIC_ID, 'v052', 'v0.5.2 changes game logic (NORMAN BALANCE, faint replacements, no FLY / DIG twice in a row, legendary items); v0.5.1 is frozen as v051; v0.5.0 is not frozen (mid-node rooms restart the node)');
   assert.equal(UNSTAMPED, 'v035');
-  assert.deepEqual(Object.keys(FROZEN), ['v040', 'v0323', 'v0319', 'v0311', 'v037', 'v035', 'v031'], 'newest first');
+  assert.deepEqual(Object.keys(FROZEN), ['v051', 'v040', 'v0323', 'v0319', 'v0311', 'v037', 'v035', 'v031'], 'newest first');
   const ids = (l) => l.map(e => (e.current ? 'current:' : '') + e.id);
   // a room stamped by an older logic goes to its own frozen copy first, then the current code, then the rest
-  assert.deepEqual(ids(engineOrder('v040')), ['v040', 'current:v051', 'v0323', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
-  assert.deepEqual(ids(engineOrder('v0323')), ['v0323', 'current:v051', 'v040', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
-  assert.deepEqual(ids(engineOrder('v035')), ['v035', 'current:v051', 'v040', 'v0323', 'v0319', 'v0311', 'v037', 'v031']);
-  assert.deepEqual(ids(engineOrder('v051')), ['current:v051', 'v040', 'v0323', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
-  assert.deepEqual(ids(engineOrder('zzz')), ['current:v051', 'v040', 'v0323', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('v051')), ['v051', 'current:v052', 'v040', 'v0323', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('v040')), ['v040', 'current:v052', 'v051', 'v0323', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('v0323')), ['v0323', 'current:v052', 'v051', 'v040', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('v035')), ['v035', 'current:v052', 'v051', 'v040', 'v0323', 'v0319', 'v0311', 'v037', 'v031']);
+  assert.deepEqual(ids(engineOrder('v052')), ['current:v052', 'v051', 'v040', 'v0323', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('zzz')), ['current:v052', 'v051', 'v040', 'v0323', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
   // under the older ids (what those versions did)
-  assert.deepEqual(ids(engineOrder('v0323', 'v040')), ['v0323', 'current:v040', 'v040', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
-  assert.deepEqual(ids(engineOrder('v0319', 'v0323')), ['v0319', 'current:v0323', 'v040', 'v0323', 'v0311', 'v037', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('v040', 'v051')), ['v040', 'current:v051', 'v051', 'v0323', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('v0323', 'v040')), ['v0323', 'current:v040', 'v051', 'v040', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('v0319', 'v0323')), ['v0319', 'current:v0323', 'v051', 'v040', 'v0323', 'v0311', 'v037', 'v035', 'v031']);
   assert.equal(segmentStamp([{ p: -1, type: 'init' }, { p: 0, type: 'vote' }]), 'v035', 'unstamped = v0.3.5');
   assert.equal(segmentStamp([{ p: 0, type: 'vote', eng: 'v037' }, { p: 1, type: 'vote', eng: 'v037' }, { p: 1, eng: 'v035' }]), 'v037');
   for (const id of Object.keys(FROZEN)) assert.ok(fs.existsSync(`web/src/legacy/${id}/engine.js`), id);
@@ -324,6 +326,25 @@ t('legacy: frozen v031 brings back rooms played on v0.3.1 (PIKACHU starter chang
   // snapshot from the old engine, restored on the current one
   const g = restoreGame(snapshotGame(old), CURRENT);
   assert.ok(g instanceof CoopGame && g.phase === 'map' && g.runs[0].party[0].species === 'PIKACHU');
+});
+
+t('legacy: frozen v051 is v0.5.1 (NORMAN SLACK OFF, DIG on back-to-back turns); its rooms replay there and hand over to this code', async () => {
+  const eng = await getEngine('v051', dataLoader);
+  const m = await import('../web/src/legacy/v051/engine.js');
+  const { BOSS_RULES: old } = await import('../web/src/legacy/v051/game/bosses.js');
+  const { BOSS_RULES: now } = await import('../web/src/game/bosses.js');
+  assert.equal(old.NORMAN.name, 'SLACK OFF', 'v0.5.1: NORMAN heals');
+  assert.equal(now.NORMAN.name, 'BALANCE');
+  const B = (await import('../web/src/legacy/v051/game/battle.js')).Battle;
+  assert.equal(typeof B.prototype.markSemi, 'undefined', 'v0.5.1 had no DIG-twice rule');
+  assert.ok(m.ID === 'v051');
+  const stamp = { v: '0.5.1', eng: 'v051' };
+  const { game, log, cks } = botGame('FRZ051', { stop: (g) => g.phase === 'map' && g.world.floor >= 4, stamp, Game: eng.CoopGame });
+  const g2 = new eng.CoopGame();
+  for (const a of log) { g2.apply(clone(a)); if (cks.has(g2.seq)) assert.equal(g2.checksum() >>> 0, cks.get(g2.seq)); }
+  assert.equal(g2.checksum() >>> 0, game.checksum() >>> 0);
+  const g = restoreGame(snapshotGame(game), CURRENT);
+  assert.ok(g instanceof CoopGame && g.phase === 'map' && g.world.actIndex === game.world.actIndex);
 });
 
 t('legacy: frozen v040 is v0.4.7 (Gen 4 species without HGSS abilities); its rooms replay there and hand over to this code', async () => {
