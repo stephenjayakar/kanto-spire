@@ -100,7 +100,7 @@ export class Run {
   // champ: the player has beaten a CHAMPION in an earlier run (meta.unlocks.win): CERULEAN CAVE's MEWTWO can show up.
   static create({ starter = 'CHARMANDER', ascension = 0, seed = null, world = 'kanto', shiny = false, coop = false, pool = null, regions = null, rival = null, champ = false } = {}) {
     const r = new Run();
-    r.abilityRules = 1; // (abilities prototype: Gen 4 mons use the HGSS ability lists)
+    r.abilityRules = 1; // (v0.5.0 abilities: Gen 4 mons use the HGSS ability lists)
     r.seed = seed || randomSeedString();
     r.rng = new RNG(r.seed);
     r.ascension = ascension;
@@ -1033,7 +1033,7 @@ export class Run {
     const def = (k, v) => { if (o[k] === undefined || o[k] === null && v !== null && typeof v === 'object') o[k] = v; };
     def('ascension', 0);
     def('world', 'kanto');
-    // (abilities prototype) a save from before the Gen 4 ability lists changed: its Gen 4 mons keep the ability they had
+    // (v0.5.0 abilities) a save from before the Gen 4 ability lists changed: its Gen 4 mons keep the ability they had
     if (!o.abilityRules) {
       for (const m of o.party || []) {
         const old = m && !m.ability && LEGACY_GEN4_ABILITIES[m.species];

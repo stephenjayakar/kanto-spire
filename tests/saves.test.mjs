@@ -326,14 +326,14 @@ t('legacy: frozen v031 brings back rooms played on v0.3.1 (PIKACHU starter chang
   assert.ok(g instanceof CoopGame && g.phase === 'map' && g.runs[0].party[0].species === 'PIKACHU');
 });
 
-t('legacy: frozen v040 is v0.4.6 (Gen 4 species without HGSS abilities); its rooms replay there and hand over to this code', async () => {
+t('legacy: frozen v040 is v0.4.7 (Gen 4 species without HGSS abilities); its rooms replay there and hand over to this code', async () => {
   const eng = await getEngine('v040', dataLoader);
   const m = await import('../web/src/legacy/v040/engine.js');
   const { D: now } = await import('../web/src/game/data.js');
-  assert.deepEqual(m.D.species.BIDOOF.abilities, [], 'v0.4.6: BIDOOF had no ability');
+  assert.deepEqual(m.D.species.BIDOOF.abilities, [], 'v0.4.7: BIDOOF had no ability');
   assert.deepEqual(now.species.BIDOOF.abilities, ['SIMPLE', 'UNAWARE']);
   assert.ok(m.ID === 'v040');
-  const stamp = { v: '0.4.6', eng: 'v040' };
+  const stamp = { v: '0.4.7', eng: 'v040' };
   const { game, log, cks } = botGame('FRZ040', { stop: (g) => g.phase === 'map' && g.world.floor >= 4, stamp, Game: eng.CoopGame });
   const g2 = new eng.CoopGame();
   for (const a of log) { g2.apply(clone(a)); if (cks.has(g2.seq)) assert.equal(g2.checksum() >>> 0, cks.get(g2.seq)); }

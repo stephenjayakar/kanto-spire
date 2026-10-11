@@ -10,6 +10,8 @@ import { TUNING } from './run.js';
 import { STARTERS } from './acts.js';
 import { SOUND_MOVES, ABSORB, ABSORB_HEAL, TRACE_BAN, BREAKABLE, PLATE_ITEMS } from './abilities.js';
 const FORECAST_TYPE = { SUN: 'FIRE', RAIN: 'WATER', HAIL: 'ICE' };
+// Move effects whose added effect is a flinch (rolled at the move's chance; FAKE OUT and SKY ATTACK apart)
+export const FLINCH_EFFECTS = new Set(['FLINCH_HIT', 'FLINCH_MINIMIZE_HIT', 'TWISTER', 'SNORE', 'FIRE_FANG', 'ICE_FANG', 'THUNDER_FANG']);
 
 // A stand-in battle for previews: fixed-damage moves with a random part use their average.
 const PREVIEW_B = { rng: { next: () => 0.5 } };
@@ -55,7 +57,7 @@ export function effectiveness(type, defTypes, ability, foresight = false) {
   if ((ability === 'FLASH_FIRE' && type === 'FIRE') || (ability === 'VOLT_ABSORB' && type === 'ELECTRIC') || (ability === 'WATER_ABSORB' && type === 'WATER')) eff = 0;
   if (ability === 'WONDER_GUARD' && eff <= 1) eff = 0;
   if (ability === 'THICK_FAT' && (type === 'FIRE' || type === 'ICE')) eff *= 0.5;
-  // (abilities prototype) Gen 5 LIGHTNING ROD / STORM DRAIN, MOTOR DRIVE, DRY SKIN, HEATPROOF, FILTER / SOLID ROCK
+  // (v0.5.0 abilities) Gen 5 LIGHTNING ROD / STORM DRAIN, MOTOR DRIVE, DRY SKIN, HEATPROOF, FILTER / SOLID ROCK
   if ((ability === 'LIGHTNING_ROD' || ability === 'MOTOR_DRIVE') && type === 'ELECTRIC') eff = 0;
   if ((ability === 'STORM_DRAIN' || ability === 'DRY_SKIN') && type === 'WATER') eff = 0;
   if (ability === 'HEATPROOF' && type === 'FIRE') eff *= 0.5;
@@ -177,7 +179,7 @@ export class Battle {
   typesOfMon(side, mon) { return side === 'enemy' ? mon.types : this.ptypes(mon); }
   typesOfSide(side) { return this.typesOfMon(side, this.activeMon(side)); }
 
-  // ---- abilities (prototype, docs/ABILITIES_PROPOSAL.md) ---------------------------------
+  // ---- abilities (v0.5.0, docs/ABILITIES_PROPOSAL.md) ---------------------------------
   // Your POKéMON's ability in this battle: a TRACE copy while it stays in, else its own.
   pab(mon) { const t = this.sides.player.traced; return mon && t && t.uid === mon.uid ? t.ability : abilityOf(mon); }
   // Either side's ability (default: the active POKéMON).
@@ -228,7 +230,12 @@ export class Battle {
     else this.damageEnemy(Math.floor(ctx.user.maxHp * frac * (ctx.user.isBoss ? 0.6 : 1)), 'LIQUID_OOZE');
   }
   // PLUS / MINUS: another POKéMON in your party (not fainted) has PLUS or MINUS.
-  plusMinus(owner) { return this.run.party.some(m => m !== owner && m.hp > 0 && ['PLUS', 'MINUS'].includes(abilityOf(m))); }
+  plusMinus(owner) {
+    const pm = (a) => a === 'PLUS' || a === 'MINUS';
+    if (this.run.party.some(m => m !== owner && m.hp > 0 && pm(abilityOf(m)))) return true;
+    // co-op: a partner whose lead has PLUS or MINUS
+    return !!this.duo?.subs?.some(s => s !== this && !this.duo.out(s.p) && s.lead() && s.lead().hp > 0 && pm(s.pab(s.lead())));
+  }
   // ARENA TRAP / SHADOW TAG in your lead: wild catch rate x1.5 (ARENA TRAP: not FLYING or levitating foes).
   trapCatch(e = this.enemy()) {
     const l = this.lead(), a = l ? this.pab(l) : null;
@@ -236,13 +243,22 @@ export class Battle {
     if (a === 'ARENA_TRAP' && e && !e.types.includes('FLYING') && e.ability !== 'LEVITATE') return 1.5;
     return 1;
   }
+  // What switching your lead costs right now: { discards, free, ok, anticipate, baton, tax, taxBy } (the UI shows it).
+  // Free after a faint, with ANTICIPATION's warning or a BATON PASS; a foe's ARENA TRAP / SHADOW TAG adds a discard.
+  switchCost() {
+    if (this.faintSwitch) return { discards: 0, free: true, ok: true, fainted: true, tax: 0 };
+    const anticipate = this.sides.player.anticipate === this.turn, baton = !anticipate && this.freeSwitches > 0;
+    const taxBy = this.switchTax(), tax = taxBy ? 1 : 0, discards = (anticipate || baton ? 0 : 1) + tax;
+    return { discards, free: discards === 0, ok: this.discardsLeft >= discards, anticipate, baton, tax, taxBy };
+  }
   // A foe with ARENA TRAP / SHADOW TAG: switching your lead costs 1 extra discard (ARENA TRAP: grounded leads only).
+  // Returns the trapping ability, or null.
   switchTax() {
     const e = this.enemy(), l = this.lead();
-    if (!e || e.hp <= 0 || !l) return 0;
-    if (e.ability === 'SHADOW_TAG') return 1;
-    if (e.ability === 'ARENA_TRAP' && !this.ptypes(l).includes('FLYING') && this.pab(l) !== 'LEVITATE') return 1;
-    return 0;
+    if (!e || e.hp <= 0 || !l) return null;
+    if (e.ability === 'SHADOW_TAG') return 'SHADOW_TAG';
+    if (e.ability === 'ARENA_TRAP' && !this.ptypes(l).includes('FLYING') && this.pab(l) !== 'LEVITATE') return 'ARENA_TRAP';
+    return null;
   }
   ms(uid) { return (this.monState[uid] ||= { sleep: 0, recharge: 0, toxic: 0, drowsy: false }); }
   maxHpOf(side, mon) { return side === 'enemy' ? mon.maxHp : maxHp(mon); }
@@ -439,7 +455,7 @@ export class Battle {
     if (info.stab || this.ptypes(owner).includes(type)) dmg *= oab === 'ADAPTABILITY' ? 2 : 1.5;
     const pinch = { OVERGROW: 'GRASS', BLAZE: 'FIRE', TORRENT: 'WATER', SWARM: 'BUG' }[oab];
     if (pinch === type && owner.hp <= maxHp(owner) / 3) { dmg *= 1.5; label = oab; }
-    // attacking abilities (prototype)
+    // attacking abilities (v0.5.0)
     if (oab === 'TECHNICIAN' && power <= 60) dmg *= 1.5;
     if (oab === 'RIVALRY' && enemy.types.some(t => this.ptypes(owner).includes(t))) dmg *= 1.25;
     if (oab === 'TINTED_LENS' && eff > 0 && eff < 1) dmg *= 2;
@@ -697,6 +713,7 @@ export class Battle {
       // Type matchup against the current lead (0 when an ability like LEVITATE blocks it).
       this.intent.eff = FIXED_DAMAGE[move.effect] ? 1 : hi === 0 ? 0 : typeEffect(move.type, this.ptypes(lead));
       this.intent.kind = 'attack';
+      this.intent.flinch = this.flinchChance(move, e, lead);
     } else {
       this.intent.damage = null;
       this.intent.eff = 1;
@@ -857,14 +874,13 @@ export class Battle {
     const mon = this.run.party.find(m => m.uid === uid);
     if (!mon || isFainted(mon) || uid === this.leadUid) return [];
     if (!forced) {
-      const tax = this.faintSwitch ? 0 : this.switchTax();
-      if (tax && this.discardsLeft < tax + (this.freeSwitches > 0 || this.sides.player.anticipate === this.turn ? 0 : 1)) return [];
+      const cost = this.switchCost();
+      if (!cost.ok) return [];
       if (this.faintSwitch) this.faintSwitch = false;
-      else if (this.sides.player.anticipate === this.turn) this.sides.player.anticipate = 0;
-      else if (this.freeSwitches > 0) this.freeSwitches--;
-      else if (this.discardsLeft > 0) this.discardsLeft--;
-      else return [];
-      if (tax) { this.discardsLeft -= tax; this.msg(`The foe's ${this.enemy().ability.replace('_', ' ')} makes switching costly! (-${tax} discard)`); }
+      else if (cost.anticipate) this.sides.player.anticipate = 0;
+      else if (cost.baton) this.freeSwitches--;
+      this.discardsLeft -= cost.discards;
+      if (cost.tax) this.msg(`The foe's ${cost.taxBy.replace('_', ' ')} makes switching cost an extra discard!`);
       const old = this.lead();
       if (this.pab(old) === 'NATURAL_CURE' && old.status) { old.status = null; }
     }
@@ -994,6 +1010,18 @@ export class Battle {
   resolveHand(infos) {
     const live = infos.filter(i => i.owner && !isFainted(i.owner));
     if (!live.length) { this.msg(`${monName(infos[0]?.owner) || 'Your POKéMON'} fainted before it could attack, so its hand was lost!`); return; }
+    // v0.5.0: the foe moved first and made your lead flinch: the hand is spent and does nothing
+    const lead0 = this.lead();
+    if (this.sides.player.flinch && lead0 && !isFainted(lead0)) {
+      this.sides.player.flinch = false;
+      this.handsPlayed++;
+      this.ms(lead0.uid).flinchedTurn = this.turn;
+      this.emit({ t: 'flinch', side: 'player', uid: lead0.uid, ids: infos.map(i => i.id) });
+      this.msg(`${monName(lead0)} flinched! Its hand did nothing.`);
+      if (!this.dry) this.flinchCount = (this.flinchCount || 0) + 1;
+      if (this.pab(lead0) === 'STEADFAST') this.addStage('player', 'spe', 1, 'STEADFAST');
+      return;
+    }
     const e = this.enemy();
     // Confusion: 50% chance the lead hurts itself and the hand deals half damage.
     let confusedPenalty = false;
@@ -1229,6 +1257,11 @@ export class Battle {
 
   contactAbility(defSide, defMon, atkSide, atkMon) {
     const ab = defSide === 'enemy' ? defMon.ability : this.pab(defMon);
+    // v0.5.0: once per hand (your cards touching a foe) or per foe attack, not once per card / hit. (The key names
+    // the player too: co-op players share a foe's side.)
+    const key = atkSide === 'player' ? `h${this.p ?? 0}:${this.turn}:${this.handsPlayed}` : `f${this.turn}`;
+    if (this.sides[defSide].contactKey === key) return;
+    this.sides[defSide].contactKey = key;
     if (CONTACT_PUNISH[ab] && this.rng.chance(0.3)) {
       this.msg(`${this.monName(defMon)}'s ${ab.replace('_', ' ')}!`);
       this.inflictStatus(atkSide, CONTACT_PUNISH[ab], ab, false, atkMon);
@@ -1238,8 +1271,6 @@ export class Battle {
       if (atkSide === 'player') this.damagePlayer(atkMon, Math.max(1, Math.floor(maxHp(atkMon) / 16)));
       else this.damageEnemy(Math.floor(atkMon.maxHp / 16), 'ROUGH_SKIN');
     } else if (ab === 'CUTE_CHARM' && !this.dry) {
-      if (atkSide === 'player' && this.cuteHand === this.handsPlayed) return;
-      if (atkSide === 'player') this.cuteHand = this.handsPlayed;
       const tough = atkSide === 'enemy' && (atkMon.isBoss || atkMon.isElite || atkMon.legendary);
       if (!tough && !this.sides[atkSide].infatuated && this.abOf(atkSide, atkMon) !== 'OBLIVIOUS' && this.rng.chance(0.3)) {
         this.sides[atkSide].infatuated = 3;
@@ -1263,7 +1294,7 @@ export class Battle {
     if (es.lockOn > 0) es.lockOn--;
     const move = this.intent?.move || this.moveData('TACKLE');
     if (move.effect === 'RECHARGE_TURN') { this.msg(`${this.monName(e)} must recharge!`); this.ms(e.uid).recharge = 0; return; }
-    if (es.flinch) { this.msg(`${this.monName(e)} flinched!`); return; }
+    if (es.flinch) { this.msg(`${this.monName(e)} flinched!`); if (e.ability === 'STEADFAST') this.addStage('enemy', 'spe', 1, 'STEADFAST'); return; }
     if (e.status === 'SLP') {
       if (e.sleepTurns > 0) { e.sleepTurns--; this.msg(`${this.monName(e)} is fast asleep.`); this.emit({ t: 'statusAnim', side: 'enemy', status: 'SLP' }); return; }
       e.status = null; this.msg(`${this.monName(e)} woke up!`); this.emit({ t: 'status', side: 'enemy', status: null });
@@ -1362,6 +1393,7 @@ export class Battle {
     if (hits > 1 && n > 1) this.msg(`Hit ${n} times!`);
     ps.lastDamage = total;
     if (total > 0 && !isFainted(lead) && !(this.defAb('player', lead, e.ability) === 'SHIELD_DUST' && move.chance)) (EFFECTS[move.effect] || EFFECTS.HIT)(ctx);
+    if (total > 0 && !isFainted(lead) && e.ability === 'STENCH' && this.rng.chance(0.1)) this.flinch('player'); // (foe STENCH)
     // COLOR CHANGE: your lead becomes the type of the attack that hit it
     if (total > 0 && !isFainted(lead) && this.pab(lead) === 'COLOR_CHANGE' && move.type && !this.ptypes(lead).includes(move.type)) { ps.typeOverride = { uid: lead.uid, types: [move.type] }; this.msg(`${monName(lead)}'s COLOR CHANGE made it the ${move.type} type!`); }
     if (move.effect === 'EXPLOSION') this.damageEnemy(e.hp, 'explosion');
@@ -1518,13 +1550,27 @@ export class Battle {
     this.emit({ t: 'statusAnim', side, status: 'CONFUSED' });
   }
 
+  // A flinch only matters if the target hasn't moved yet this turn: a foe skips its move (enemyAct), your lead loses
+  // its hand (resolveHand). INNER FOCUS and SHIELD DUST block it; your lead can't flinch two turns running.
   flinch(side, always) {
     const mon = this.activeMon(side);
+    if (!mon) return;
     const ab = side === 'enemy' ? mon.ability : this.pab(mon);
-    if (ab === 'INNER_FOCUS') return;
-    // A flinch only matters if the target hasn't moved yet this turn.
+    if (ab === 'INNER_FOCUS' || ab === 'SHIELD_DUST') return;
+    if (side === 'player' && this.ms(mon.uid).flinchedTurn === this.turn - 1) return;
     this.sides[side].flinch = true;
-    if (ab === 'STEADFAST') this.addStage(side, 'spe', 1, 'STEADFAST'); // (your POKéMON don't flinch here: they just speed up)
+  }
+  // The chance (0-1) that the foe's move makes your lead flinch if it lands before your hand (intents and tooltips).
+  flinchChance(move, e = this.enemy(), lead = this.lead()) {
+    if (!move || !e || !lead || !(move.power > 0)) return 0;
+    const ab = this.pab(lead);
+    if (ab === 'INNER_FOCUS' || ab === 'SHIELD_DUST' || this.ms(lead.uid).flinchedTurn === this.turn - 1) return 0;
+    let p = 0;
+    if (FLINCH_EFFECTS.has(move.effect)) p = (move.chance || 0) / 100;
+    else if (move.effect === 'SKY_ATTACK') p = 0.3;
+    else if (move.effect === 'FAKE_OUT') p = this.turn === 1 ? 1 : 0;
+    if (e.ability === 'STENCH') p = 1 - (1 - p) * 0.9;
+    return p;
   }
 
   addStage(side, stat, n, src, fromFoe) {

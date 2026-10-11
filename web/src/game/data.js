@@ -61,7 +61,7 @@ function indexData() {
   // Text rewritten for what moves and abilities actually do in this game (text_overrides.js).
   for (const [k, d] of Object.entries(MOVE_DESC)) if (D.moves[k]) D.moves[k].desc = d;
   for (const [k, d] of Object.entries(ABILITY_DESC)) if (D.abilities[k]) D.abilities[k].desc = d;
-  // (abilities prototype) every ability's text as it works here, and the Gen 4 abilities
+  // (v0.5.0 abilities) every ability's text as it works here, and the Gen 4 abilities
   for (const [k, name] of Object.entries(GEN4_ABILITIES)) if (!D.abilities[k]) D.abilities[k] = { name, desc: '', gen4: true };
   for (const [k, d] of Object.entries(ABILITY_TEXT)) if (D.abilities[k]) D.abilities[k].desc = d;
   // Combo upgrades are named after the combo they level up.

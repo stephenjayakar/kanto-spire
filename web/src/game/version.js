@@ -2,9 +2,25 @@
 // Game version and patch notes (shown from the title screen). Versions are major.minor.patch: every production
 // deploy that changes the game bumps the patch (v0.2.0 -> v0.2.1); the owner calls minor bumps (v0.1.x -> v0.2.0);
 // no major bumps yet. Each one gets a new top PATCH_NOTES entry; see AGENTS.md.
-export const VERSION = 'v0.4.7';
+export const VERSION = 'v0.5.0';
 
 export const PATCH_NOTES = [
+  {
+    v: 'v0.5.0',
+    sections: [
+      ['NEW', [
+        'Every ability now does something, for your POKéMON and for foes. Hover a POKéMON to read what its ability does.',
+        'Gen 4 POKéMON have their HeartGold abilities (BIDOOF: SIMPLE or UNAWARE, PORYGON-Z: ADAPTABILITY or DOWNLOAD...). POKéMON you already caught keep the ability they had.',
+        "Your POKéMON can flinch now: if the foe moves first and its attack makes your lead flinch, your hand that turn does nothing. The foe's intent warns you (FLINCH and a %). INNER FOCUS and SHIELD DUST stop it, and a POKéMON never flinches two turns in a row.",
+        'Abilities that work outside battle: PICKUP finds items, HONEY GATHER finds berries, ILLUMINATE makes rare POKéMON show up more, and ARENA TRAP or SHADOW TAG in the lead makes catching easier.',
+      ]],
+      ['CHANGES', [
+        'Abilities that punish touching (STATIC, FLAME BODY, POISON POINT, EFFECT SPORE, ROUGH SKIN, CUTE CHARM) trigger at most once per hand, not once per card.',
+        "A foe with PRESSURE costs you one discard at the start of the battle, trainers included (once per battle, not on top of a legendary's PRESSURE).",
+        'A foe with ARENA TRAP or SHADOW TAG makes switching cost an extra discard; the discard box shows what a switch costs.',
+      ]],
+    ],
+  },
   {
     v: 'v0.4.7',
     sections: [

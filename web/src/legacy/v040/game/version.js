@@ -2,9 +2,27 @@
 // Game version and patch notes (shown from the title screen). Versions are major.minor.patch: every production
 // deploy that changes the game bumps the patch (v0.2.0 -> v0.2.1); the owner calls minor bumps (v0.1.x -> v0.2.0);
 // no major bumps yet. Each one gets a new top PATCH_NOTES entry; see AGENTS.md.
-export const VERSION = 'v0.4.6';
+export const VERSION = 'v0.4.7';
 
 export const PATCH_NOTES = [
+  {
+    v: 'v0.4.7',
+    sections: [
+      ['NEW', [
+        "The co-op room shows your best ascension, and the highest ascension each player has unlocked with their starter",
+      ]],
+      ['CHANGES', [
+        'Hovering a POKéMON in battle lists its stat changes',
+        'Hidden intents (A2+) no longer hint at the kind of move by the color of their frame',
+        'In 3-4 player co-op, your team’s stat changes show above your row',
+      ]],
+      ['FIXES', [
+        'Fixed accuracy and evasion changes (SAND-ATTACK, SMOKESCREEN, DOUBLE TEAM...) not showing in co-op battles',
+        "Fixed the foe's stat changes hiding behind its intent in solo battles",
+        'Fixed hidden intents (A2+) flashing red in co-op when the foe could knock out your POKéMON',
+      ]],
+    ],
+  },
   {
     v: 'v0.4.6',
     sections: [

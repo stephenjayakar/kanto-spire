@@ -493,7 +493,7 @@ export function postBattle(run, b, rng, skill, metrics) {
   if (won && cfg.rewardMons?.length) addMon(run, [...cfg.rewardMons].sort((a, c) => monValue(c) - monValue(a))[0], skill);
   const dropChance = cfg.rival ? 1 : { wild: 0.3, trainer: 0.45, elite: 0.8, boss: 1 }[kind] ?? 0.3;
   if (rng.chance(dropChance)) gainBotItem(run, run.randomConsumable(rng), skill);
-  { const am = run.mods(); // field abilities (abilities prototype), like scenes/reward.js
+  { const am = run.mods(); // field abilities (v0.5.0 abilities), like scenes/reward.js
     if (won && am.pickup && rng.chance(am.pickup)) gainBotItem(run, run.randomConsumable(rng), skill);
     if (won && am.honey && rng.chance(0.2)) gainBotItem(run, run.randomBerry(rng), skill); }
   if (cfg.moneyMult && r.moneyFinal) run.addMoney(Math.floor(r.moneyFinal * (cfg.moneyMult - 1)));

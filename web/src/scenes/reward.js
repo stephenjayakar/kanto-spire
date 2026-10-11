@@ -63,7 +63,7 @@ export class RewardScene {
     const mods = run.mods();
     if (mods.itemfinder && rng.chance(0.3)) this.rewards.push({ kind: 'item', key: run.randomConsumable(rng), label: 'ITEMFINDER found:' });
     if (mods.berryPouch && rng.chance(0.4)) this.rewards.push({ kind: 'item', key: run.randomBerry(rng), label: 'BERRY POUCH:' });
-    // field abilities (abilities prototype): PICKUP, HONEY GATHER (won battles only)
+    // field abilities (v0.5.0 abilities): PICKUP, HONEY GATHER (won battles only)
     if (won && mods.pickup && rng.chance(mods.pickup)) this.rewards.push({ kind: 'item', key: run.randomConsumable(rng), label: 'PICKUP found:' });
     if (won && mods.honey && rng.chance(0.2)) this.rewards.push({ kind: 'item', key: run.randomBerry(rng), label: 'HONEY GATHER:' });
     const seenItems = new Set();

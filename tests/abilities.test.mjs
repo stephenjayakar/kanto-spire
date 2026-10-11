@@ -7,20 +7,21 @@ import { Battle, makeEnemy, effectiveness, abilityOf } from '../web/src/game/bat
 import { makeMon, maxHp } from '../web/src/game/pokemon.js';
 import { RNG } from '../web/src/game/rng.js';
 import { GEN4_ABILITIES, ABILITY_TEXT } from '../web/src/game/abilities.js';
+import { DuoBattle } from '../web/src/game/coop/duo.js';
 
 await loadData(async f => JSON.parse(fs.readFileSync('web/assets/data/' + f, 'utf8')));
 let pass = 0, fail = 0;
 const t = (name, fn) => { try { fn(); pass++; } catch (e) { fail++; console.log('FAIL', name, '-', e.message, process.env.STACK ? e.stack : ''); } };
 
 // A battle: your `species` (forced ability) with `moves` against a wild `foe` (forced ability).
-function setup({ species = 'MACHOP', ab = null, moves = ['KARATE_CHOP'], level = 30, foe = 'RATTATA', foeAb = null, foeLevel = 30, relics = [] } = {}) {
+function setup({ species = 'MACHOP', ab = null, moves = ['KARATE_CHOP'], level = 30, foe = 'RATTATA', foeAb = null, foeLevel = 30, relics = [], foeMoves = null } = {}) {
   const run = Run.create({ starter: 'CHARMANDER', seed: 'ABIL' });
   const mon = makeMon(species, level, { rng: new RNG('m'), moves });
   mon.moves = moves.map(m => ({ move: m, copies: 3 }));
   if (ab) mon.ability = ab;
   run.party = [mon];
   for (const r of relics) run.addRelic(r);
-  const e = makeEnemy(foe, foeLevel, { rng: new RNG('e') });
+  const e = makeEnemy(foe, foeLevel, { rng: new RNG('e'), ...(foeMoves ? { moves: foeMoves } : {}) });
   if (foeAb !== null) e.ability = foeAb;
   const b = new Battle(run, { kind: 'wild', enemies: [e], rng: new RNG('b') });
   b.start();
@@ -130,6 +131,60 @@ t('ARENA TRAP lead: catch rate x1.5', () => {
   const n = setup({ species: 'DIGLETT', ab: 'SAND_VEIL', moves: ['SCRATCH'], foe: 'RATTATA', foeAb: 'RUN_AWAY' });
   a.e.hp = n.e.hp = Math.floor(a.e.maxHp / 2);
   assert.ok(a.b.catchChance('POKE_BALL') > n.b.catchChance('POKE_BALL'));
+});
+
+const allIn = (b) => { for (const p of Object.values(b.decks)) { p.hand = [...p.hand, ...p.draw]; p.draw = []; } };
+t('flinch: a foe moving first with a flinch effect cancels your hand (FAKE OUT, turn 1)', () => {
+  const { b, e } = setup({ species: 'MACHOP', ab: 'GUTS', moves: ['KARATE_CHOP'], foe: 'MEOWTH', foeAb: 'PICKUP', foeMoves: ['FAKE_OUT'], foeLevel: 20 });
+  allIn(b);
+  assert.equal(b.intent.flinch, 1, 'the intent warns');
+  const hp = e.hp;
+  const ev = b.play([b.deck.hand[0].id]);
+  assert.ok(ev.some(x => x.t === 'flinch' && x.side === 'player'), 'flinch event');
+  assert.ok(ev.some(x => x.t === 'msg' && /flinched/.test(x.text)));
+  assert.equal(e.hp, hp, 'the hand did nothing');
+  assert.ok(!ev.some(x => x.t === 'card' && x.dmg > 0));
+});
+t('flinch: INNER FOCUS and SHIELD DUST block it; STEADFAST speeds up; no two turns running', () => {
+  for (const ab of ['INNER_FOCUS', 'SHIELD_DUST']) {
+    const { b, e } = setup({ species: 'MACHOP', ab, moves: ['KARATE_CHOP'], foe: 'MEOWTH', foeAb: 'PICKUP', foeMoves: ['FAKE_OUT'], foeLevel: 20 });
+    allIn(b); assert.equal(b.intent.flinch, 0, ab);
+    const hp = e.hp; const ev = b.play([b.deck.hand[0].id]);
+    assert.ok(!ev.some(x => x.t === 'flinch'), ab); assert.ok(e.hp < hp, ab + ': the hand landed');
+  }
+  const { b, mon } = setup({ species: 'RIOLU', ab: 'STEADFAST', moves: ['QUICK_ATTACK'], foe: 'MEOWTH', foeAb: 'PICKUP', foeMoves: ['FAKE_OUT'], foeLevel: 20 });
+  allIn(b); b.play([b.deck.hand.find(c => c.move === 'QUICK_ATTACK').id]);
+  assert.equal(b.sides.player.stages.spe, 1, 'STEADFAST +1 SPEED');
+  assert.equal(b.ms(mon.uid).flinchedTurn, 1);
+  assert.equal(b.flinchChance({ ...D.moves.BITE, key: 'BITE' }), 0, 'the turn after a flinch: immune');
+});
+t('contact abilities roll once per hand', () => {
+  // count ROUGH SKIN hits directly: one per hand
+  const { b: b2, mon: m2, e: e2 } = setup({ species: 'MACHOP', ab: 'GUTS', moves: ['KARATE_CHOP'], foe: 'CACNEA', foeAb: 'ROUGH_SKIN', foeLevel: 60 });
+  e2.status = 'SLP'; e2.sleepTurns = 5; // (it doesn't hit back)
+  allIn(b2); const h0 = m2.hp;
+  b2.play(b2.deck.hand.filter(c => c.move === 'KARATE_CHOP').slice(0, 3).map(c => c.id));
+  assert.equal(h0 - m2.hp, Math.max(1, Math.floor(maxHp(m2) / 16)), 'one ROUGH SKIN hit for a 3-card hand');
+});
+t('switch cost: ANTICIPATION free, SHADOW TAG +1 discard', () => {
+  const { b, run } = setup({ species: 'CROAGUNK', ab: 'ANTICIPATION', moves: ['POISON_STING'], foe: 'WOBBUFFET', foeAb: 'SHADOW_TAG' });
+  run.party.push(makeMon('RATTATA', 20, { rng: new RNG('r') }));
+  b.buildDeck?.();
+  const c = b.switchCost();
+  assert.equal(c.tax, 1); assert.equal(c.taxBy, 'SHADOW_TAG'); assert.equal(c.discards, 2);
+  b.sides.player.anticipate = b.turn;
+  const c2 = b.switchCost(); assert.equal(c2.discards, 1, 'ANTICIPATION waives the normal discard, the tax stays');
+});
+
+t('co-op: LIGHTNING ROD / STORM DRAIN draw the move; PLUS / MINUS count the partner lead', () => {
+  const sub = (p, ab) => ({ p, lead: () => ({ hp: 10, ab }), pab: (l) => l.ab });
+  const duo = { subs: [sub(0, 'BLAZE'), sub(1, 'LIGHTNING_ROD'), sub(2, 'STORM_DRAIN')], out: () => false };
+  const rod = (k, p) => DuoBattle.prototype.rodFor.call(duo, { ...D.moves[k], key: k }, p);
+  assert.equal(rod('THUNDERBOLT', 0), 1); assert.equal(rod('SURF', 0), 2); assert.equal(rod('FLAMETHROWER', 0), null);
+  assert.equal(rod('THUNDERBOLT', 1), null, 'aimed at the rod already'); assert.equal(rod('THUNDER_WAVE', 0), null, 'status moves stay');
+  const me = { run: { party: [] }, duo: { subs: [], out: () => false } };
+  me.duo.subs = [me, { p: 1, lead: () => ({ hp: 5, ab: 'MINUS' }), pab: (l) => l.ab }];
+  assert.equal(Battle.prototype.plusMinus.call(me, {}), true);
 });
 
 console.log(`abilities tests: ${pass} passed, ${fail} failed`);

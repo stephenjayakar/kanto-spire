@@ -5,6 +5,18 @@
 *Notion copy: https://app.notion.com/p/Kanto-Spire-making-every-ability-do-something-proposal-3f6086354b46813c8ba7f11d301558cd*
 *2026-10-11 · firered-roguelike-convex (prod main, read only: v0.4.6 when branched; v0.4.7 landed since, UI only) · prototype: branch `abilities` @ `b98cb3e` in E:/BigData/games/firered-roguelike-abilities · nothing merged, pushed or deployed*
 
+## Approved and built as v0.5.0 (2026-10-11)
+
+The owner approved shipping this as **v0.5.0**, in one release. Changes on top of the proposal below:
+- **Contact abilities trigger once per hand** (your cards touching a foe) or once per foe attack: STATIC, FLAME BODY, POISON POINT, EFFECT SPORE, ROUGH SKIN, CUTE CHARM (`Battle.contactAbility`, keyed per player and turn).
+- **PRESSURE** costs a discard on any foe, ordinary trainers' POKéMON included: once per battle, and not on top of the legendary PRESSURE rule.
+- **Your POKéMON can flinch.** It only happens when the foe moves before your hand that turn and its move's flinch effect lands (the move's chance; a foe's STENCH adds 10%). The hand is spent and does nothing (`resolveHand`; event `{t:'flinch'}`, "X flinched!" plus floating FLINCHED!). The intent shows `FLINCH n%` and the tooltip warns when the foe acts first (not at A2+, where intents are hidden). INNER FOCUS and SHIELD DUST block it; STEADFAST gives +1 SPEED when it happens; co-op is per player's lead. **Cap: a lead can't flinch two turns in a row** (it fired 119 times in 2,400 bot runs; flinches cancel 0.73% of hands, in 2.45% of battles).
+- **Switching shows its cost:** `Battle.switchCost()` drives both the logic and the UI. The discard box shows `SWITCH COSTS 2 DISCARDS` under a foe's ARENA TRAP / SHADOW TAG and `SWITCH FREE (ANTICIPATION)`, and the switch dialog spells it out. In co-op, any foe on the field counts.
+- **Co-op:** LIGHTNING ROD / STORM DRAIN draw a foe's ELECTRIC / WATER attack aimed at the partner (`DuoBattle.rodFor`). PLUS / MINUS count the partner's lead.
+- **Tooltips** use plain English (`ABILITY_TEXT`). Patch notes are in `version.js`.
+- Rebased on v0.4.7. `legacy/v040` is byte-identical to v0.4.7's 24 logic files (v0.4.7 changed only version.js text) and covers v0.4.0-v0.4.7. LOGIC_ID is `v050`.
+- **Balance** (24 seeds x 100 runs, A0, `--spire --rotate`): v0.4.7 **17.2%** (412/2400) -> v0.5.0 **15.4%** (369/2400), -1.8 pp (±1.1, about 1.7 sigma). Act-by-act losses are unchanged; slightly more runs now reach and die in the ELITE FOUR (E4 deaths 1.4% -> 2.3%).
+
 ## Inventory: what abilities do today
 
 | | Gen 3 (FireRed) | Gen 4 (HGSS) | Total |

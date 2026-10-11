@@ -22,7 +22,7 @@ import { COOP_TUNING } from '../../game/coop/tuning.js';
 import { PCOL, PFONT, drawCoopOverlay, drawPartnerChip, playerStatus, coopToast } from './ui.js';
 import { MoveAnims } from '../../anim/player.js';
 import { pickHandAnim, ANIM_SPEED } from '../../anim/pick.js';
-import { opaqueBounds, monSprite, foeSprite, foeAnimFrame, drawStageTags, stageText } from '../common.js';
+import { opaqueBounds, monSprite, foeSprite, foeAnimFrame, drawStageTags, stageText, switchCostText } from '../common.js';
 import { tinted } from '../../engine/assets.js';
 import { AUTO, autoKey, autoStopInput, manualKey, autoLowHp, drawAutoButton } from '../auto.js';
 
@@ -501,6 +501,7 @@ export class CoopBattleScene {
         shake(e.mul >= 1.5 ? 3 : 1);
         await this.wait(0.35);
         break;
+      case 'flinch': if ((e.p ?? me) === me) { floatText('FLINCHED!', SCENE_X + 110, SCENE_Y + 96, { color: 'orange', scale: 2, life: 1.4 }); Sound.playSE('se_failure'); await this.wait(0.5); } break;
       case 'relic': if (e.p === me) this.bounceSource(e.key, e.text, 'gold'); await this.wait(0.2); break;
       case 'total': {
         if (this.pendingAnim && (e.p ?? this.me) === this.pendingAnim.p) this.pendingAnim.scored = true; // (plays as the next event comes up)
@@ -1312,6 +1313,9 @@ export class CoopBattleScene {
     pixBox(ctx, x, y, w, h, '#101018d8', hidden ? '#8890a0' : it.kind === 'attack' ? '#ff6060' : it.kind === 'buff' ? '#60a0ff' : '#c080ff', 3);
     const first = this.intentFirst(slot, it); // (before its target's hand: the move order tags)
     text(ctx, first ? 'FIRST!' : 'INTENT', x + 4, y + 1, { color: first ? 'red' : 'gray', font: 'small' });
+    // v0.5.0: it moves before its target's hand with a move that can flinch (that hand would do nothing)
+    const flinchP = !hidden && first && it.kind === 'attack' && it.flinch > 0 ? Math.round(it.flinch * 100) : 0;
+    if (flinchP) text(ctx, 'FLINCH', x + 6 + measure('FIRST!', 'small'), y + 1, { color: 'orange', font: 'small' });
     // -> target player
     const tw = measure('-> ' + tname, 'small') + 6;
     pixBox(ctx, x + w - tw - 3, y + 2, tw, 11, PCOL[tp] || '#606060', null, 2);
@@ -1337,7 +1341,7 @@ export class CoopBattleScene {
       const lead = d.subs[tp]?.lead();
       const who = tp === this.me ? 'your' : `${this.s.nameOf(tp)}'s`;
       const mv = it.move;
-      tip(hidden ? 'INTENT HIDDEN' : mv.name, `${hidden ? "Ascension 2+: you can't see the foe's move." : `${mv.type} · PWR ${mv.power || '-'} · ACC ${mv.accuracy || '-'}\n${mv.desc || ''}`}\nTargets ${who} ${lead ? monName(lead) : 'lead'}${!hidden && it.kind === 'attack' ? `: ${it.text} HP${it.eff !== 1 ? ` (x${it.eff})` : ''}${it.lethal ? ' — could KO it!' : ''}` : '.'}\n${first ? `It acts BEFORE ${tp === this.me ? 'your' : `${this.s.nameOf(tp)}'s`} hand (see the move order tags).` : `${tp === this.me ? 'Your' : `${this.s.nameOf(tp)}'s`} hand resolves before it acts.`}`, { width: 210 });
+      tip(hidden ? 'INTENT HIDDEN' : mv.name, `${hidden ? "Ascension 2+: you can't see the foe's move." : `${mv.type} · PWR ${mv.power || '-'} · ACC ${mv.accuracy || '-'}\n${mv.desc || ''}`}\nTargets ${who} ${lead ? monName(lead) : 'lead'}${!hidden && it.kind === 'attack' ? `: ${it.text} HP${it.eff !== 1 ? ` (x${it.eff})` : ''}${it.lethal ? ' — could KO it!' : ''}` : '.'}\n${first ? `It acts BEFORE ${tp === this.me ? 'your' : `${this.s.nameOf(tp)}'s`} hand (see the move order tags).` : `${tp === this.me ? 'Your' : `${this.s.nameOf(tp)}'s`} hand resolves before it acts.`}${flinchP ? `\n${flinchP}% chance ${lead ? monName(lead) : 'the lead'} flinches: that hand would do nothing.` : ''}${it.drawnBy !== undefined ? '\n(Drawn to this lead by its ability.)' : ''}`, { width: 210 });
     }
   }
 
@@ -1505,8 +1509,10 @@ export class CoopBattleScene {
     if (DECK_RULES.freeDiscard) {
       const ready = sub.freeDiscardOk(1);
       text(ctx, ready ? `FREE DISCARD READY (${DECK_RULES.freeDiscard})` : 'free discard used', x + w / 2, 158, { align: 'center', color: ready ? 'gold' : 'gray', font: 'small' });
-      text(ctx, `Play up to ${sub.maxPlay} · Hand ${sub.handSize}`, x + w / 2, 169, { align: 'center', color: 'gray', font: 'small' });
-      if (hover(x, 130, w, 52)) tip('DISCARDS', `Once per turn you may discard up to ${DECK_RULES.freeDiscard} cards for free. Bigger discards, a second discard in the same turn, and switching your lead use up one of your discards (${sub.discardsLeft} left this battle).
+      const sc = sub.switchCost();
+      if (!sc.fainted && sc.discards !== 1) text(ctx, sc.discards === 0 ? `SWITCH FREE (${sc.anticipate ? 'ANTICIPATION' : 'BATON PASS'})` : `SWITCH COSTS ${sc.discards} DISCARDS`, x + w / 2, 169, { align: 'center', color: sc.discards === 0 ? 'gold' : 'red', font: 'small', maxW: w - 6 });
+      else text(ctx, `Play up to ${sub.maxPlay} · Hand ${sub.handSize}`, x + w / 2, 169, { align: 'center', color: 'gray', font: 'small' });
+      if (hover(x, 130, w, 52)) tip('DISCARDS', `Once per turn you may discard up to ${DECK_RULES.freeDiscard} cards for free. Bigger discards, a second discard in the same turn, and switching your lead use up one of your discards (${sub.discardsLeft} left this battle).${sc.fainted || sc.discards === 1 ? '' : ` Right now a switch costs ${switchCostText(sc)}.`}
 DECK: cards left in the draw pile / cards in your lead's deck.`, { width: 200 });
     } else text(ctx, `Play up to ${sub.maxPlay} · Hand ${sub.handSize}`, x + w / 2, 164, { align: 'center', color: 'gray', font: 'small' });
     // party
@@ -1707,10 +1713,10 @@ DECK: cards left in the draw pile / cards in your lead's deck.`, { width: 200 })
     const sub = this.sub;
     // your lead fainted: the switch is free and needs no confirming (the foes stay in view; see the party panel)
     if (sub.faintSwitch) { if (this.canChoose()) this.post({ type: 'switch', uid: mon.uid }); return; }
-    const free = sub.freeSwitches > 0;
-    if (!free && sub.discardsLeft <= 0) { this.toast = { text: 'Switching costs a discard — none left!', t: 2 }; return; }
+    const sc = sub.switchCost();
+    if (!sc.ok) { this.toast = { text: `Switching costs ${switchCostText(sc)}: not enough discards!`, t: 2 }; return; }
     pushOverlay(new ChoiceModal({
-      title: `Send out ${monName(mon)}?`, body: free ? 'This switch is free.' : 'Switching your lead costs 1 discard. The new lead takes the foes\' hits, and your hand becomes its deck.',
+      title: `Send out ${monName(mon)}?`, body: sc.free ? `This switch is free (${sc.anticipate ? 'ANTICIPATION' : 'BATON PASS'}).` : `Switching your lead costs ${switchCostText(sc)}. The new lead takes the foes' hits, and your hand becomes its deck.`,
       options: [{ label: 'Switch!', value: 1, color: THEME.green }, { label: 'Cancel', value: 0, color: '#806060' }],
       onClose: (v) => { if (v === 1 && this.canChoose()) this.post({ type: 'switch', uid: mon.uid }); },
     }));

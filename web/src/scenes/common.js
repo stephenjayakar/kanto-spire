@@ -538,6 +538,14 @@ export function drawPartyPanel(ctx, run, x, y, w, opts = {}) {
   return clickedMon;
 }
 
+// What a switch costs right now, in words (Battle.switchCost: ANTICIPATION, BATON PASS, ARENA TRAP / SHADOW TAG).
+export function switchCostText(c) {
+  if (!c) return '';
+  if (c.fainted) return 'free';
+  const why = [c.anticipate ? 'ANTICIPATION' : c.baton ? 'BATON PASS' : null, c.tax ? `foe's ${c.taxBy.replace('_', ' ')} +1` : null].filter(Boolean).join(', ');
+  return `${c.discards === 0 ? 'FREE' : c.discards + ' discard' + (c.discards > 1 ? 's' : '')}${why ? ` (${why})` : ''}`;
+}
+
 // The WEAK TO / RESISTS / IMMUNE TO lines of a POKéMON tooltip (the foe's and your own read the same).
 export function matchupText(types) {
   const all = Object.keys(TYPE_COLORS).filter(t => D.types.chart[t]);

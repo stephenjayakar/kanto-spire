@@ -17,7 +17,7 @@ import { battleFinished } from './flow.js';
 import { STAT_NAMES, PROTECT_EFFECTS } from '../game/effects.js';
 import { MoveAnims } from '../anim/player.js';
 import { pickHandAnim, ANIM_SPEED, HAND_START_EVENTS, orderTurnEvents } from '../anim/pick.js';
-import { opaqueBounds, drawStageTags, stageText } from './common.js';
+import { opaqueBounds, drawStageTags, stageText, switchCostText } from './common.js';
 import { AUTO, autoKey, autoStopInput, manualKey, autoLowHp, drawAutoButton } from './auto.js';
 
 const SCENE_X = 160, SCENE_Y = 27, SCENE_W = 480, SCENE_H = 200;
@@ -179,6 +179,12 @@ export class BattleScene {
       case 'turn': this.score = null; this.syncHand(); break;
       case 'draw': this.syncHand(); Sound.playSE('se_card_flip'); await this.wait(0.12); break;
       case 'reshuffle': await this.wait(0.05); break;
+      case 'flinch':
+        floatText('FLINCHED!', SCENE_X + 110, SCENE_Y + 96, { color: 'orange', scale: 2, life: 1.4 });
+        Sound.playSE('se_failure');
+        shake(2);
+        await this.wait(0.6);
+        break;
       case 'foeFirst':
         floatText('FOE MOVES FIRST!', SCENE_X + 240, SCENE_Y + 60, { color: 'orange', scale: 2, life: 1.2 });
         Sound.playSE('se_m_screech');
@@ -838,6 +844,9 @@ export class BattleScene {
       return;
     }
     text(ctx, (it.first ? 'FIRST! ' : '') + 'INTENT', x + 2, y - 1, { color: it.first ? 'red' : 'gray', font: 'small' });
+    // v0.5.0: the foe moves first with a move that can make your lead flinch (its hand would do nothing)
+    const flinchP = !hidden && it.first && it.kind === 'attack' && it.flinch > 0 ? Math.round(it.flinch * 100) : 0;
+    if (flinchP) text(ctx, `FLINCH ${flinchP}%`, x + 70, y - 1, { color: 'orange', font: 'small' });
     if (hidden) {
       // A2+: the foe's move stays secret (no KO! either)
       text(ctx, '???', x + 2, y + 10, { color: 'white', font: 'small' });
@@ -857,7 +866,7 @@ export class BattleScene {
     } else text(ctx, it.text, x + w - 10, y + 10, { align: 'right', color: it.kind === 'buff' ? 'blue' : 'purple', font: 'small' });
     if (hover(x - 4, y - 2, w, 30)) {
       const lead = this.b.lead();
-      tip(`${mv.name}`, `${mv.type} · PWR ${mv.power || '-'} · ACC ${mv.accuracy || '-'}\n${mv.desc || ''}\n${it.kind === 'attack' ? `Expected damage to ${monName(lead)}: ${it.text} HP.${it.eff !== 1 ? ` (x${it.eff} vs ${typesOf(lead).join('/')})` : ''}` : ''}\n${it.first ? 'The foe acts first: BEFORE your hand resolves.' : 'You act first: your hand resolves before the foe moves.'}`, { width: 200 });
+      tip(`${mv.name}`, `${mv.type} · PWR ${mv.power || '-'} · ACC ${mv.accuracy || '-'}\n${mv.desc || ''}\n${it.kind === 'attack' ? `Expected damage to ${monName(lead)}: ${it.text} HP.${it.eff !== 1 ? ` (x${it.eff} vs ${typesOf(lead).join('/')})` : ''}` : ''}\n${it.first ? 'The foe acts first: BEFORE your hand resolves.' : 'You act first: your hand resolves before the foe moves.'}${flinchP ? `\n${flinchP}% chance ${monName(lead)} flinches: your hand this turn would do nothing.` : ''}`, { width: 200 });
     }
   }
 
@@ -924,8 +933,10 @@ export class BattleScene {
     if (DECK_RULES.freeDiscard) {
       const ready = b.freeDiscardOk(1);
       text(ctx, ready ? `FREE DISCARD READY (${DECK_RULES.freeDiscard})` : 'free discard used', x + w / 2, 158, { align: 'center', color: ready ? 'gold' : 'gray', font: 'small' });
-      text(ctx, `Play up to ${b.maxPlay} · Hand ${b.handSize}`, x + w / 2, 169, { align: 'center', color: 'gray', font: 'small' });
-      if (hover(x, 130, w, 52)) tip('DISCARDS', `Once per turn you may discard up to ${DECK_RULES.freeDiscard} cards for free. Bigger discards, a second discard in the same turn, and switching your lead use up one of your discards (${b.discardsLeft} left this battle).
+      const sc = b.switchCost();
+      if (!sc.fainted && sc.discards !== 1) text(ctx, sc.discards === 0 ? `SWITCH FREE (${sc.anticipate ? 'ANTICIPATION' : 'BATON PASS'})` : `SWITCH COSTS ${sc.discards} DISCARDS`, x + w / 2, 169, { align: 'center', color: sc.discards === 0 ? 'gold' : 'red', font: 'small', maxW: w - 6 });
+      else text(ctx, `Play up to ${b.maxPlay} · Hand ${b.handSize}`, x + w / 2, 169, { align: 'center', color: 'gray', font: 'small' });
+      if (hover(x, 130, w, 52)) tip('DISCARDS', `Once per turn you may discard up to ${DECK_RULES.freeDiscard} cards for free. Bigger discards, a second discard in the same turn, and switching your lead use up one of your discards (${b.discardsLeft} left this battle).${sc.fainted || sc.discards === 1 ? '' : ` Right now a switch costs ${switchCostText(sc)}.`}
 DECK: cards left in the draw pile / cards in your lead's deck.`, { width: 200 });
     } else text(ctx, `Play up to ${b.maxPlay} · Hand ${b.handSize}`, x + w / 2, 164, { align: 'center', color: 'gray', font: 'small' });
     // party
@@ -1088,10 +1099,10 @@ DECK: cards left in the draw pile / cards in your lead's deck.`, { width: 200 })
     const b = this.b;
     // your lead fainted: the switch is free and needs no confirming (the foes stay in view; see the party panel)
     if (b.faintSwitch) { this.runEvents(b.switchLead(mon.uid)); return; }
-    const free = b.freeSwitches > 0;
-    if (!free && b.discardsLeft <= 0) { this.toast = { text: 'Switching costs a discard — none left!', t: 2 }; return; }
+    const sc = b.switchCost();
+    if (!sc.ok) { this.toast = { text: `Switching costs ${switchCostText(sc)}: not enough discards!`, t: 2 }; return; }
     pushOverlay(new ChoiceModal({
-      title: `Send out ${monName(mon)}?`, body: free ? 'This switch is free (BATON PASS).' : 'Switching your lead costs 1 discard. The new lead takes the enemy\'s hits, and your hand becomes its deck.',
+      title: `Send out ${monName(mon)}?`, body: sc.free ? `This switch is free (${sc.anticipate ? 'ANTICIPATION' : 'BATON PASS'}).` : `Switching your lead costs ${switchCostText(sc)}. The new lead takes the enemy's hits, and your hand becomes its deck.`,
       options: [{ label: 'Switch!', value: 1, color: THEME.green }, { label: 'Cancel', value: 0, color: '#806060' }],
       onClose: async (v) => { if (v === 1) await this.runEvents(b.switchLead(mon.uid)); },
     }));

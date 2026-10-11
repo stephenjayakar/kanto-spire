@@ -64,7 +64,7 @@ export function applyGen4(D, g4) {
     if (D.species[key]) continue;
     const c = structuredClone(s);
     c.evolutions = gameEvolutions(c.evolutions);
-    // (abilities prototype) the HGSS abilities, Gen 4 ones included (abilities.js); old saves' mons are pinned
+    // (v0.5.0 abilities) the HGSS abilities, Gen 4 ones included (abilities.js); old saves' mons are pinned
     if (c.gen4Abilities?.length) c.abilities = c.gen4Abilities.map(a => ABILITY_ALIAS[a] || a);
     D.species[key] = c;
     n++;

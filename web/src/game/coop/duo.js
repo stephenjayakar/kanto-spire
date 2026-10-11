@@ -86,6 +86,13 @@ export class SubBattle extends Battle {
     if (ri !== undefined) this.focus(ri);
   }
 
+  // ARENA TRAP / SHADOW TAG: any foe on the field can make switching cost the extra discard.
+  switchTax() {
+    if (!this.duo) return super.switchTax();
+    for (const ri of this.duo.liveField()) { const t = this.withFocus(ri, () => Battle.prototype.switchTax.call(this)); if (t) return t; }
+    return null;
+  }
+
   relicHooks(name) {
     const out = super.relicHooks(name);
     if (name === 'onHand' && this._teamUp) out.push([TEAM_UP_DEF, { key: 'TEAM_UP', state: {} }]);
@@ -449,11 +456,23 @@ export class DuoBattle {
         const s = this.subs[p];
         s.withFocus(ri, () => {
           const move = s.pickEnemyMove(this.enemies[ri], s.lead());
-          this.intents[i] = { ri, move, target: p, first: false, kind: 'attack', text: '', damage: null, eff: 1, lethal: false };
+          // LIGHTNING ROD / STORM DRAIN: another player's lead draws the foe's ELECTRIC / WATER move to itself
+          const q = this.rodFor(move, p);
+          if (q !== null) { taken[taken.lastIndexOf(p)] = q; this.emit({ t: 'msg', text: `${monName(this.subs[q].lead())}'s ${move.type === 'WATER' ? 'STORM DRAIN' : 'LIGHTNING ROD'} draws the foe's ${move.name}!` }); }
+          this.intents[i] = { ri, move, target: q ?? p, first: false, kind: 'attack', text: '', damage: null, eff: 1, lethal: false, ...(q !== null ? { drawnBy: q } : {}) };
         });
       }
     }
     this.refreshIntents();
+  }
+  // The player whose lead draws a foe's move aimed at player p (LIGHTNING ROD for ELECTRIC, STORM DRAIN for WATER), or null.
+  rodFor(move, p) {
+    const want = move?.type === 'ELECTRIC' ? 'LIGHTNING_ROD' : move?.type === 'WATER' ? 'STORM_DRAIN' : null;
+    if (!want || move.target === 'USER' || !(move.power > 0)) return null;
+    const has = (q) => { const l = this.subs[q]?.lead(); return !!l && l.hp > 0 && this.subs[q].pab(l) === want; };
+    if (has(p)) return null;
+    for (const s of this.subs) if (s.p !== p && !this.out(s.p) && has(s.p)) return s.p;
+    return null;
   }
   // An all-target foe's turn: its move (picked against one target, as usual) and who it hits: everyone still fighting
   // for a damaging move, else (a buff, a status move, RECHARGE) just that one target. null: fight normally (one player left).
