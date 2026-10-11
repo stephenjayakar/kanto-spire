@@ -27,12 +27,16 @@ const outDir = args.includes('--out') ? path.resolve(args[args.indexOf('--out') 
 if (!fs.existsSync(path.join(assets, 'data'))) { console.error('web/assets is missing; run the extract tools first.'); process.exit(1); }
 
 const POKEMON_BUCKETS = 8;
+// Folders in the shared web/assets that belong to unshipped branches (they upload from their own branch, which lists
+// them in its pack rules): hgss_music = the staging HGSS soundtrack prototype (branch hgss-music).
+const SKIP = ['hgss_music'];
 // (retro: the AUDIO STYLE: RETRO Game Boy music bank, tools/extract_retro_music.mjs. Newer clients fetch it only when a
 // player picks RETRO: net/assetpack.js ON_DEMAND; older ones load it in the background like the other lazy packs.)
 const LAZY = new Set(['sound', 'anims', 'hgss', 'emerald', 'pokemon-gen4', 'retro']);
 function fnv1a(s) { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619) >>> 0; return h; }
 // Which pack a file goes in (each stays far under the 20 MB HTTP action response limit).
 function packOf(rel) {
+  if (SKIP.some(d => rel.startsWith(d + '/'))) return null;
   if (rel.startsWith('gfx/gen4/pokemon/')) return 'pokemon-gen4';
   if (rel.includes('/hgss/')) return 'hgss';
   if (rel.startsWith('retro/')) return 'retro'; // (Pokemon Red + Silver music for AUDIO STYLE: RETRO)
@@ -72,7 +76,7 @@ function build() {
   for (const f of walk(assets).sort()) {
     const rel = path.relative(assets, f).split(path.sep).join('/');
     const pack = packOf(rel);
-    (groups[pack] ||= []).push([rel, f]);
+    if (pack) (groups[pack] ||= []).push([rel, f]);
   }
   return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b)).map(([name, list]) => {
     const files = {}, bufs = [];
