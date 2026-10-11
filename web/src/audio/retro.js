@@ -183,8 +183,8 @@ export const RETRO_SONG_SET = new Set([
 // ---- RETRO MIX: how the Game Boy engine sounds (gb-core.js MIXES; every mix plays exactly the same notes) -------------
 // RETRO_MIX_PICKER on: SETTINGS shows a RETRO MIX row (A / B / C) while RETRO is picked, saved in this browser only.
 // Off: no extra UI, everyone hears RETRO_MIX.
-export const RETRO_MIX_PICKER = true;
-export const RETRO_MIX = 'A';
+export const RETRO_MIX_PICKER = false;
+export const RETRO_MIX = 'C';
 export const RETRO_MIX_OPTIONS = [
   ['A', 'CLEAN', 'Smooth Game Boy tones and soft stereo, no clicks or harsh fizz. (Default)'],
   ['B', 'WARM', 'CLEAN with a softer top end and a small room around the sound.'],
