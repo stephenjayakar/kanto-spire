@@ -52,7 +52,7 @@ export const BOSS_RULES = {
     name: 'ICE BODY', desc: 'At the start of each turn 2 random cards in your hand freeze.',
     onTurnStart(b) {
       const pool = b.deck.hand.filter(c => !c.frozen);
-      for (const c of b.rng.sample(pool, Math.min(2, pool.length))) c.frozen = true;
+      if (b.abOf?.('player') !== 'SUCTION_CUPS') for (const c of b.rng.sample(pool, Math.min(2, pool.length))) c.frozen = true;
       if (pool.length) b.msg('Two cards froze solid!');
     },
   },
@@ -129,7 +129,7 @@ export const BOSS_RULES = {
   WALLACE: { name: 'RAIN DANCE', desc: 'Rain all battle and his POKéMON heal 6% each turn.', onBattleStart(b) { b.setWeather('RAIN', true); }, onTurnEnd(b) { b.healEnemy(0.06); } },
   SIDNEY: { name: 'INTIMIDATE', desc: 'Your ATTACK and SP. ATK start at -1.', onBattleStart(b) { b.addStage('player', 'atk', -1, 'SIDNEY'); b.addStage('player', 'spa', -1, 'SIDNEY'); } },
   PHOEBE: { name: 'SHADOW', desc: 'Some cards are face down and your lead loses 5% HP per hand.', faceDown: 0.25, afterHand(b) { const l = b.lead(); if (l && l.hp > 0) b.recoil('player', l, 0.05, 'SHADOW', true); } },
-  GLACIA: { name: 'HAIL', desc: 'Hail all battle; 1 card in hand freezes each turn.', onBattleStart(b) { b.setWeather('HAIL', true); }, onTurnStart(b) { const p = b.deck.hand.filter(c => !c.frozen); if (p.length) b.rng.pick(p).frozen = true; } },
+  GLACIA: { name: 'HAIL', desc: 'Hail all battle; 1 card in hand freezes each turn.', onBattleStart(b) { b.setWeather('HAIL', true); }, onTurnStart(b) { const p = b.deck.hand.filter(c => !c.frozen); if (p.length && b.abOf?.('player') !== 'SUCTION_CUPS') b.rng.pick(p).frozen = true; } },
   DRAKE: { name: 'DRAGON DANCE', desc: 'His POKéMON gain +1 SPEED and +1 ATTACK every other turn.', onTurnEnd(b) { if (b.turn % 2 === 0) { b.addStage('enemy', 'atk', 1, 'DRAKE'); b.addStage('enemy', 'spe', 1, 'DRAKE'); } } },
   STEVEN: { name: 'METAL BODY', desc: 'Hands below PAIR deal no damage; his team hits 10% harder.', enemyDamageMult: 1.1, onScore(b, S) { if (S.comboRank < 1) S.times(0, 'METAL BODY'); } },
   // v0.3.25: EMERALD's CHAMPION WALLACE (the RS_CHAMPION slot) brings STEVEN's rule under MILOTIC's ability

@@ -8,7 +8,9 @@ export { STAT_NAMES };
 function chance(ctx, p) {
   // Secondary effect chance (0 means always for status moves).
   if (!p) return true;
-  return ctx.b.rng.next() * 100 < p * (ctx.us === 'player' ? ctx.b.secondaryBoost : 1);
+  // SERENE GRACE: twice as likely (not flinching: a flinch every hand would lock foes out)
+  const sg = !ctx.flinchRoll && ctx.b.abOf?.(ctx.us, ctx.user) === 'SERENE_GRACE' ? 2 : 1;
+  return ctx.b.rng.next() * 100 < p * sg * (ctx.us === 'player' ? ctx.b.secondaryBoost : 1);
 }
 
 const stage = (stat, n, self = false) => (ctx) => {
@@ -28,7 +30,7 @@ const confuse = (ctx) => {
   if (ctx.move.power > 0 && !chance(ctx, ctx.move.chance)) return;
   ctx.b.confuse(ctx.them, ctx.move.power === 0);
 };
-const flinch = (ctx) => { if (chance(ctx, ctx.move.chance)) ctx.b.flinch(ctx.them); };
+const flinch = (ctx) => { if (chance({ ...ctx, flinchRoll: true }, ctx.move.chance)) ctx.b.flinch(ctx.them); };
 const heal = (frac) => (ctx) => ctx.b.healSide(ctx.us, ctx.user, frac, ctx.move.key);
 const nothing = () => {};
 
@@ -49,7 +51,7 @@ export const POWER_FN = {
   FURY_CUTTER: ({ b, card, move }) => move.power * Math.pow(2, Math.min(4, b.chain(card, 'fury'))),
   ROLLOUT: ({ b, card, move, us }) => move.power * Math.pow(2, Math.min(4, b.chain(card, 'rollout'))) * (b.sides[us].curled ? 2 : 1),
   SPIT_UP: ({ b, us }) => 100 * (b.sides[us].stockpile || 0),
-  WEATHER_BALL: ({ b, move }) => (b.weather ? move.power * 2 : move.power),
+  WEATHER_BALL: ({ b, move }) => ((b.wx ? b.wx() : b.weather) ? move.power * 2 : move.power),
   BEAT_UP: ({ b, us }) => 10 * b.healthyCount(us) + 10,
   TRIPLE_KICK: ({ move, hitIndex }) => move.power * (hitIndex + 1),
   RAGE: ({ b, us, move }) => move.power + 10 * (b.sides[us].rage || 0),
@@ -145,10 +147,10 @@ export const EFFECTS = {
   ALL_STATS_UP_HIT: stages([['atk', 1], ['def', 1], ['spa', 1], ['spd', 1], ['spe', 1]]),
   SUPERPOWER: (ctx) => { ctx.b.addStage(ctx.us, 'atk', -1, ctx.move.key); ctx.b.addStage(ctx.us, 'def', -1, ctx.move.key); },
   OVERHEAT: (ctx) => ctx.b.addStage(ctx.us, 'spa', -2, ctx.move.key),
-  ABSORB: (ctx) => ctx.b.healSide(ctx.us, ctx.user, ctx.move.power >= 60 ? 0.2 : 0.12, ctx.move.key),
-  DREAM_EATER: (ctx) => { if (ctx.target.status === 'SLP') ctx.b.healSide(ctx.us, ctx.user, 0.3, ctx.move.key); },
-  RECOIL: (ctx) => ctx.b.recoil(ctx.us, ctx.user, 1 / 8, ctx.move.key),
-  DOUBLE_EDGE: (ctx) => ctx.b.recoil(ctx.us, ctx.user, 1 / 6, ctx.move.key),
+  ABSORB: (ctx) => ctx.b.drainHeal(ctx, ctx.move.power >= 60 ? 0.2 : 0.12),
+  DREAM_EATER: (ctx) => { if (ctx.target.status === 'SLP') ctx.b.drainHeal(ctx, 0.3); },
+  RECOIL: (ctx) => { if (ctx.b.abOf?.(ctx.us, ctx.user) !== 'ROCK_HEAD') ctx.b.recoil(ctx.us, ctx.user, 1 / 8, ctx.move.key); },
+  DOUBLE_EDGE: (ctx) => { if (ctx.b.abOf?.(ctx.us, ctx.user) !== 'ROCK_HEAD') ctx.b.recoil(ctx.us, ctx.user, 1 / 6, ctx.move.key); },
   RECOIL_IF_MISS: nothing,
   RECHARGE: (ctx) => ctx.b.setRecharge(ctx.us, ctx.user),
   RAMPAGE: (ctx) => { if (ctx.b.rng.chance(0.5)) ctx.b.confuse(ctx.us, false, true); },
@@ -156,13 +158,13 @@ export const EFFECTS = {
   TRAP: (ctx) => { ctx.b.sides[ctx.them].trapped = ctx.b.rng.int(2, 5); ctx.b.msg(`${ctx.b.sideName(ctx.them)} was trapped!`); },
   RAPID_SPIN: (ctx) => { const s = ctx.b.sides[ctx.us]; s.trapped = 0; s.seeded = false; s.spikes = 0; },
   PAY_DAY: (ctx) => { if (ctx.us === 'player') { const amt = 5 * ctx.user.level; ctx.b.payDay += amt; ctx.b.msg(`Coins scattered everywhere! (+$${amt})`); } },
-  THIEF: (ctx) => { if (ctx.us === 'player') { const amt = 10 * ctx.user.level; ctx.b.payDay += amt; ctx.b.msg(`${ctx.b.monName(ctx.user)} swiped some cash! (+$${amt})`); } },
-  KNOCK_OFF: (ctx) => { ctx.b.sides[ctx.them].reflect = 0; ctx.b.sides[ctx.them].lightScreen = 0; },
+  THIEF: (ctx) => { if (ctx.us === 'player' && ctx.b.abOf?.('enemy', ctx.target) === 'STICKY_HOLD') return ctx.b.msg(`${ctx.b.monName(ctx.target)}'s STICKY HOLD keeps its things!`); if (ctx.us === 'player') { const amt = 10 * ctx.user.level; ctx.b.payDay += amt; ctx.b.msg(`${ctx.b.monName(ctx.user)} swiped some cash! (+$${amt})`); } },
+  KNOCK_OFF: (ctx) => { if (ctx.b.abOf?.(ctx.them, ctx.target) === 'STICKY_HOLD') return; ctx.b.sides[ctx.them].reflect = 0; ctx.b.sides[ctx.them].lightScreen = 0; },
   BRICK_BREAK: (ctx) => { if (ctx.b.sides[ctx.them].reflect || ctx.b.sides[ctx.them].lightScreen) ctx.b.msg('It shattered the barrier!'); ctx.b.sides[ctx.them].reflect = 0; ctx.b.sides[ctx.them].lightScreen = 0; },
   // The lead is out of reach until the turn ends: side.dodge names the move, so the Gen 3 exceptions apply
   // (SURF hits a DIVE user, EARTHQUAKE a DIG user...; see INVULN_HITS in battle.js).
   SEMI_INVULNERABLE: (ctx) => { if (ctx.us === 'player' && ctx.user === ctx.b.lead()) { const s = ctx.b.sides.player; s.dodge = ctx.move.key || true; s.dodgeUid = ctx.user.uid; ctx.b.msg(`${ctx.b.monName(ctx.user)} is out of reach!`); } },
-  SOLAR_BEAM: (ctx) => { if (ctx.b.weather !== 'SUN') ctx.b.setRecharge(ctx.us, ctx.user, 'charging'); },
+  SOLAR_BEAM: (ctx) => { if ((ctx.b.wx ? ctx.b.wx() : ctx.b.weather) !== 'SUN') ctx.b.setRecharge(ctx.us, ctx.user, 'charging'); },
   RAZOR_WIND: (ctx) => ctx.b.setRecharge(ctx.us, ctx.user, 'charging'),
   SKULL_BASH: (ctx) => { ctx.b.addStage(ctx.us, 'def', 1, ctx.move.key); ctx.b.setRecharge(ctx.us, ctx.user, 'charging'); },
   SKY_ATTACK: (ctx) => { ctx.b.setRecharge(ctx.us, ctx.user, 'charging'); flinch({ ...ctx, move: { ...ctx.move, chance: 30 } }); },
@@ -196,7 +198,7 @@ export const EFFECTS = {
     ctx.b.sides[ctx.them].yawn = 1;
     ctx.b.msg(`${ctx.b.sideName(ctx.them)} grew drowsy! It will fall asleep at the end of the turn.`);
   },
-  ATTRACT: (ctx) => { if (ctx.us === 'player' && (ctx.target.isBoss || ctx.target.isElite || ctx.target.legendary)) return ctx.b.msg(`${ctx.b.sideName(ctx.them)} is unmoved!`); ctx.b.sides[ctx.them].infatuated = 3; ctx.b.msg(`${ctx.b.sideName(ctx.them)} fell in love!`); },
+  ATTRACT: (ctx) => { if (ctx.b.abOf?.(ctx.them, ctx.target) === 'OBLIVIOUS') return ctx.b.msg(`${ctx.b.sideName(ctx.them)} is OBLIVIOUS to it!`); if (ctx.us === 'player' && (ctx.target.isBoss || ctx.target.isElite || ctx.target.legendary)) return ctx.b.msg(`${ctx.b.sideName(ctx.them)} is unmoved!`); ctx.b.sides[ctx.them].infatuated = 3; ctx.b.msg(`${ctx.b.sideName(ctx.them)} fell in love!`); },
   NIGHTMARE: (ctx) => { if (ctx.target.status === 'SLP') { ctx.b.sides[ctx.them].nightmare = true; ctx.b.msg(`${ctx.b.sideName(ctx.them)} began having a NIGHTMARE!`); } else ctx.b.msg('But it failed!'); },
   LEECH_SEED: (ctx) => {
     if (ctx.target.types?.includes('GRASS') || ctx.b.typesOfSide(ctx.them).includes('GRASS')) return ctx.b.msg("It doesn't affect the foe...");
@@ -255,7 +257,7 @@ export const EFFECTS = {
   PAIN_SPLIT: (ctx) => ctx.b.painSplit(ctx.us, ctx.user),
   BATON_PASS: (ctx) => { if (ctx.us === 'player') { ctx.b.freeSwitches += 1; ctx.b.batonPass = true; ctx.b.msg('Next switch is free and keeps stat changes!'); } },
   TELEPORT: (ctx) => ctx.b.tryEscape(ctx.us),
-  ROAR: (ctx) => ctx.b.tryEscape(ctx.us, true),
+  ROAR: (ctx) => { if (ctx.b.abOf?.(ctx.them, ctx.target) === 'SUCTION_CUPS') return ctx.b.msg(`${ctx.b.sideName(ctx.them)} anchors itself with SUCTION CUPS!`); ctx.b.tryEscape(ctx.us, true); },
   SUNNY_DAY: (ctx) => ctx.b.setWeather('SUN'), RAIN_DANCE: (ctx) => ctx.b.setWeather('RAIN'),
   SANDSTORM: (ctx) => ctx.b.setWeather('SAND'), HAIL: (ctx) => ctx.b.setWeather('HAIL'),
   WATER_SPORT: (ctx) => { ctx.b.sides[ctx.us].waterSport = true; ctx.b.msg("FIRE's power was weakened!"); },

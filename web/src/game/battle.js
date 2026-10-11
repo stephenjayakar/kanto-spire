@@ -8,6 +8,8 @@ import { BOSS_RULES } from './bosses.js';
 import { RNG } from './rng.js';
 import { TUNING } from './run.js';
 import { STARTERS } from './acts.js';
+import { SOUND_MOVES, ABSORB, ABSORB_HEAL, TRACE_BAN, BREAKABLE, PLATE_ITEMS } from './abilities.js';
+const FORECAST_TYPE = { SUN: 'FIRE', RAIN: 'WATER', HAIL: 'ICE' };
 
 // A stand-in battle for previews: fixed-damage moves with a random part use their average.
 const PREVIEW_B = { rng: { next: () => 0.5 } };
@@ -53,6 +55,12 @@ export function effectiveness(type, defTypes, ability, foresight = false) {
   if ((ability === 'FLASH_FIRE' && type === 'FIRE') || (ability === 'VOLT_ABSORB' && type === 'ELECTRIC') || (ability === 'WATER_ABSORB' && type === 'WATER')) eff = 0;
   if (ability === 'WONDER_GUARD' && eff <= 1) eff = 0;
   if (ability === 'THICK_FAT' && (type === 'FIRE' || type === 'ICE')) eff *= 0.5;
+  // (abilities prototype) Gen 5 LIGHTNING ROD / STORM DRAIN, MOTOR DRIVE, DRY SKIN, HEATPROOF, FILTER / SOLID ROCK
+  if ((ability === 'LIGHTNING_ROD' || ability === 'MOTOR_DRIVE') && type === 'ELECTRIC') eff = 0;
+  if ((ability === 'STORM_DRAIN' || ability === 'DRY_SKIN') && type === 'WATER') eff = 0;
+  if (ability === 'HEATPROOF' && type === 'FIRE') eff *= 0.5;
+  if (ability === 'DRY_SKIN' && type === 'FIRE') eff *= 1.25;
+  if ((ability === 'FILTER' || ability === 'SOLID_ROCK') && eff > 1) eff *= 0.75;
   return eff;
 }
 
@@ -166,8 +174,76 @@ export class Battle {
   isEnemyMon(mon) { return this.enemies.includes(mon); }
   sideName(side) { return side === 'player' ? monName(this.lead()) : this.monName(this.enemy()); }
   activeMon(side) { return side === 'player' ? this.lead() : this.enemy(); }
-  typesOfMon(side, mon) { return side === 'enemy' ? mon.types : typesOf(mon); }
+  typesOfMon(side, mon) { return side === 'enemy' ? mon.types : this.ptypes(mon); }
   typesOfSide(side) { return this.typesOfMon(side, this.activeMon(side)); }
+
+  // ---- abilities (prototype, docs/ABILITIES_PROPOSAL.md) ---------------------------------
+  // Your POKéMON's ability in this battle: a TRACE copy while it stays in, else its own.
+  pab(mon) { const t = this.sides.player.traced; return mon && t && t.uid === mon.uid ? t.ability : abilityOf(mon); }
+  // Either side's ability (default: the active POKéMON).
+  abOf(side, mon = this.activeMon(side)) { return !mon ? null : side === 'enemy' ? mon.ability : this.pab(mon); }
+  // The defender's ability as an attacker with `atkAb` sees it: MOLD BREAKER ignores the defensive ones.
+  defAb(side, mon, atkAb) { const a = this.abOf(side, mon); return atkAb === 'MOLD_BREAKER' && BREAKABLE.has(a) ? null : a; }
+  // Your POKéMON's types in this battle (COLOR CHANGE, FORECAST, MULTITYPE).
+  ptypes(mon) {
+    if (!mon) return [];
+    const o = this.sides.player.typeOverride;
+    if (o && o.uid === mon.uid) return o.types;
+    const ab = this.pab(mon);
+    if (ab === 'FORECAST') { const t = FORECAST_TYPE[this.wx()]; if (t) return [t]; }
+    if (ab === 'MULTITYPE') { const r = this.run.relics.find(x => PLATE_ITEMS[x.key]); if (r) return [PLATE_ITEMS[r.key]]; }
+    return typesOf(mon);
+  }
+  // The weather as it acts: none while a CLOUD NINE / AIR LOCK POKéMON is out (the weather still counts down).
+  wx() {
+    const w = this.weather;
+    if (!w) return null;
+    const sup = (a) => a === 'CLOUD_NINE' || a === 'AIR_LOCK';
+    const l = this.lead(), e = this.enemy();
+    return (l && l.hp > 0 && sup(this.pab(l))) || (e && e.hp > 0 && sup(e.ability)) ? null : w;
+  }
+  dampOut() { const l = this.lead(), e = this.enemy(); return (l && l.hp > 0 && this.pab(l) === 'DAMP') || (e && e.hp > 0 && e.ability === 'DAMP'); }
+  // SLOW START: its first 3 turns out (sides[side].inTurn = the turn it came out).
+  slowStart(side, mon) { return this.abOf(side, mon) === 'SLOW_START' && this.turn - (this.sides[side].inTurn || 1) < 3; }
+  // A foe with FORECAST takes the weather's type.
+  syncEnemyTypes() {
+    const e = this.enemy();
+    if (e && e.ability === 'FORECAST') e.types = [FORECAST_TYPE[this.wx()] || 'NORMAL'];
+  }
+  // VOLT / WATER ABSORB, DRY SKIN (heal 25%), FLASH FIRE (its FIRE moves x1.5), LIGHTNING ROD / STORM DRAIN (+1 SP. ATK),
+  // MOTOR DRIVE (+1 SPEED): this side's POKéMON just absorbed an attack.
+  absorbHit(side, mon, ab) {
+    const what = ABSORB[ab]?.[1];
+    if (!what || !mon || mon.hp <= 0) return;
+    this.msg(`${this.monName(mon)}'s ${ab.replace('_', ' ')} absorbed the attack!`);
+    if (what === 'heal') this.healSide(side, mon, ABSORB_HEAL, ab, side === 'player');
+    else if (what === 'flash') { this.sides[side].flashFire = side === 'player' ? mon.uid : true; this.msg(`${this.monName(mon)}'s FIRE power rose!`); }
+    else this.addStage(side, what, 1, ab);
+  }
+  // A drain move's heal (ABSORB, GIGA DRAIN, DREAM EATER...): LIQUID OOZE turns it into damage.
+  drainHeal(ctx, frac) {
+    if (this.abOf(ctx.them, ctx.target) !== 'LIQUID_OOZE') return this.healSide(ctx.us, ctx.user, frac, ctx.move.key);
+    this.msg(`${this.monName(ctx.user)} sucked up the LIQUID OOZE!`);
+    if (ctx.us === 'player') { this.damagePlayer(ctx.user, Math.max(1, Math.floor(maxHp(ctx.user) * frac))); this.checkLeadFaint(); }
+    else this.damageEnemy(Math.floor(ctx.user.maxHp * frac * (ctx.user.isBoss ? 0.6 : 1)), 'LIQUID_OOZE');
+  }
+  // PLUS / MINUS: another POKéMON in your party (not fainted) has PLUS or MINUS.
+  plusMinus(owner) { return this.run.party.some(m => m !== owner && m.hp > 0 && ['PLUS', 'MINUS'].includes(abilityOf(m))); }
+  // ARENA TRAP / SHADOW TAG in your lead: wild catch rate x1.5 (ARENA TRAP: not FLYING or levitating foes).
+  trapCatch(e = this.enemy()) {
+    const l = this.lead(), a = l ? this.pab(l) : null;
+    if (a === 'SHADOW_TAG') return 1.5;
+    if (a === 'ARENA_TRAP' && e && !e.types.includes('FLYING') && e.ability !== 'LEVITATE') return 1.5;
+    return 1;
+  }
+  // A foe with ARENA TRAP / SHADOW TAG: switching your lead costs 1 extra discard (ARENA TRAP: grounded leads only).
+  switchTax() {
+    const e = this.enemy(), l = this.lead();
+    if (!e || e.hp <= 0 || !l) return 0;
+    if (e.ability === 'SHADOW_TAG') return 1;
+    if (e.ability === 'ARENA_TRAP' && !this.ptypes(l).includes('FLYING') && this.pab(l) !== 'LEVITATE') return 1;
+    return 0;
+  }
   ms(uid) { return (this.monState[uid] ||= { sleep: 0, recharge: 0, toxic: 0, drowsy: false }); }
   maxHpOf(side, mon) { return side === 'enemy' ? mon.maxHp : maxHp(mon); }
   hpFrac(side, mon) { return mon.hp / this.maxHpOf(side, mon); }
@@ -265,7 +341,7 @@ export class Battle {
         this.emit({ t: 'reshuffle' });
       }
       const c = this.deck.draw.pop();
-      if (this.bossRule?.faceDown && this.rng.chance(this.bossRule.faceDown) && !this.mods.trueSight) c.faceDown = true;
+      if (this.bossRule?.faceDown && this.rng.chance(this.bossRule.faceDown) && !this.mods.trueSight && this.pab(this.lead()) !== 'SUCTION_CUPS') c.faceDown = true;
       this.deck.hand.push(c);
       drawn++;
     }
@@ -285,7 +361,7 @@ export class Battle {
     let move = this.moveData(card.move) || this.moveData('TACKLE');
     let type = move.type;
     if (move.effect === 'HIDDEN_POWER' && owner) type = hiddenPower(owner).type;
-    if (move.effect === 'WEATHER_BALL' && this.weather) type = { SUN: 'FIRE', RAIN: 'WATER', SAND: 'ROCK', HAIL: 'ICE' }[this.weather];
+    if (move.effect === 'WEATHER_BALL' && this.wx()) type = { SUN: 'FIRE', RAIN: 'WATER', SAND: 'ROCK', HAIL: 'ICE' }[this.wx()];
     const status = move.power === 0 && !FIXED_DAMAGE[move.effect] && !['COUNTER', 'MIRROR_COAT', 'BIDE', 'SUPER_FANG', 'ENDEAVOR', 'OHKO', 'METRONOME', 'MIRROR_MOVE', 'ASSIST', 'NATURE_POWER', 'SLEEP_TALK', 'PSYWAVE', 'PRESENT', 'MAGNITUDE', 'SPIT_UP', 'FLAIL', 'LOW_KICK', 'RETURN', 'FRUSTRATION', 'HIDDEN_POWER', 'BEAT_UP'].includes(move.effect);
     const physical = !isSpecialMove(move.key, type);
     const st = owner ? stats(owner) : { atk: 10, spa: 10 };
@@ -299,7 +375,8 @@ export class Battle {
     else if (card.frozen) { playable = false; reason = 'ICED'; }
     // v0.3.23: the turn after a FLY / DIG / DIVE / BOUNCE dodge the lead is landing: no dodging or protecting again
     else if (ms.landing === this.turn && (move.effect === 'SEMI_INVULNERABLE' || PROTECT_EFFECTS.has(move.effect))) { playable = false; reason = 'LANDING'; }
-    else if (abilityOf(owner) === 'TRUANT' && this.handsPlayed % 2 === 1) { playable = false; reason = 'LOAFING'; }
+    else if (this.pab(owner) === 'TRUANT' && this.handsPlayed % 2 === 1) { playable = false; reason = 'LOAFING'; }
+    else if (move.effect === 'EXPLOSION' && this.dampOut()) { playable = false; reason = 'DAMP'; }
     const power = move.power || 0;
     const statVal = physical ? st.atk : st.spa;
     // rawPower: move power + attacking stat (a rough "how strong is this card" number for bots)
@@ -309,11 +386,11 @@ export class Battle {
       card, id: card.id, uid: card.uid, owner, move, type, power, status, physical, playable, reason,
       rawPower, species, isLead: card.uid === this.leadUid,
       canEvolve: owner ? (D.species[owner.species]?.evolutions || []).length > 0 : false,
-      stab: owner ? typesOf(owner).includes(type) : false,
+      stab: owner ? this.ptypes(owner).includes(type) : false,
       faceDown: !!card.faceDown,
-      eff: !status && this.enemy() ? this.effVsEnemy(type) : 1,
+      eff: !status && this.enemy() ? this.effVsEnemy(type, move.key) : 1,
       // the foe's ability (not its type) is what stops this card
-      blockedBy: !status && this.enemy() && this.effVsEnemy(type) === 0 && typeEffect(type, this.enemy().types) > 0 ? this.enemy().ability : null,
+      blockedBy: !status && this.enemy() && this.effVsEnemy(type, move.key) === 0 && typeEffect(type, this.enemy().types) > 0 ? this.enemy().ability : null,
     };
     // Expected damage of this card against the current foe (no crits or misses), shown on the card face.
     info.dmgPreview = status || !owner || !this.enemy() ? 0 : this.cardPreview(info);
@@ -326,40 +403,60 @@ export class Battle {
   // 85-100% random roll so previews are exact.
   hitCore(owner, enemy, power, physical) {
     const st = stats(owner), ps = this.sides.player, es = this.sides.enemy;
-    let atk = physical ? st.atk * stageMult(ps.stages.atk) : st.spa * stageMult(ps.stages.spa);
-    const oab = abilityOf(owner);
+    const oab = this.pab(owner), eab = this.defAb('enemy', enemy, oab);
+    // UNAWARE: a foe with it ignores your stat stages; yours ignores the foe's DEFENSE / SP. DEF stages
+    let atk = physical ? st.atk * stageMult(eab === 'UNAWARE' ? 0 : ps.stages.atk) : st.spa * stageMult(eab === 'UNAWARE' ? 0 : ps.stages.spa);
     if (physical && (oab === 'HUGE_POWER' || oab === 'PURE_POWER')) atk *= 2;
     if (physical && oab === 'HUSTLE') atk *= 1.5;
     if (physical && oab === 'GUTS' && owner.status) atk *= 1.5;
     if (physical && owner.status === 'BRN' && oab !== 'GUTS') atk *= 0.5;
-    const def = Math.max(1, (physical ? enemy.stats.def : enemy.stats.spd) * stageMult(physical ? es.stages.def : es.stages.spd));
+    if (physical && oab === 'FLOWER_GIFT' && this.wx() === 'SUN') atk *= 1.5;
+    let def = (physical ? enemy.stats.def : enemy.stats.spd) * stageMult(oab === 'UNAWARE' ? 0 : physical ? es.stages.def : es.stages.spd);
+    if (physical && eab === 'MARVEL_SCALE' && enemy.status) def *= 1.5;
+    if (!physical && eab === 'FLOWER_GIFT' && this.wx() === 'SUN') def *= 1.5;
+    def = Math.max(1, def);
     return ((Math.floor(2 * owner.level / 5) + 2) * power * atk / def) / 50 + 2;
   }
 
   // Type effectiveness of a card's type on the foe, including immunity abilities and FORESIGHT.
-  cardEff(type, enemy) { return effectiveness(type, enemy.types, enemy.ability, this.sides.enemy.foresight); }
+  // (abilities: MOLD BREAKER ignores the foe's ability; SOUNDPROOF / CACOPHONY block sound moves)
+  cardEff(type, enemy, moveKey) {
+    const ab = this.defAb('enemy', enemy, this.pab(this.lead()));
+    if (moveKey && SOUND_MOVES.has(moveKey) && (ab === 'SOUNDPROOF' || ab === 'CACOPHONY')) return 0;
+    return effectiveness(type, enemy.types, ab, this.sides.enemy.foresight);
+  }
 
   // Damage of one hit of an attack card (no crit), with every per-card modifier and held-item bonus.
   // Returns { dmg, eff, srcs, label }.
   hitDamage(info, { move = info.move, type = info.type, power = move.power, h = 0, enemy = this.enemy() } = {}) {
     const owner = info.owner, ps = this.sides.player, es = this.sides.enemy;
     const physical = !isSpecialMove(move.key, type);
-    const eff = this.cardEff(type, enemy);
+    const eff = this.cardEff(type, enemy, move.key);
     let dmg = this.hitCore(owner, enemy, power, physical), label = null;
     if (move.effect === 'EXPLOSION') dmg *= 2;
     if ((physical && es.reflect) || (!physical && es.lightScreen)) dmg *= 0.5;
-    if (info.stab || typesOf(owner).includes(type)) dmg *= 1.5;
-    const oab = abilityOf(owner);
+    const oab = this.pab(owner);
+    if (info.stab || this.ptypes(owner).includes(type)) dmg *= oab === 'ADAPTABILITY' ? 2 : 1.5;
     const pinch = { OVERGROW: 'GRASS', BLAZE: 'FIRE', TORRENT: 'WATER', SWARM: 'BUG' }[oab];
     if (pinch === type && owner.hp <= maxHp(owner) / 3) { dmg *= 1.5; label = oab; }
-    if (this.weather === 'SUN') { if (type === 'FIRE') dmg *= 1.5; if (type === 'WATER') dmg *= 0.5; }
-    if (this.weather === 'RAIN') { if (type === 'WATER') dmg *= 1.5; if (type === 'FIRE' || move.effect === 'SOLAR_BEAM') dmg *= 0.5; }
+    // attacking abilities (prototype)
+    if (oab === 'TECHNICIAN' && power <= 60) dmg *= 1.5;
+    if (oab === 'RIVALRY' && enemy.types.some(t => this.ptypes(owner).includes(t))) dmg *= 1.25;
+    if (oab === 'TINTED_LENS' && eff > 0 && eff < 1) dmg *= 2;
+    if ((oab === 'PLUS' || oab === 'MINUS') && !physical && this.plusMinus(owner)) dmg *= 1.5;
+    if (type === 'FIRE' && ps.flashFire === owner.uid) dmg *= 1.5;
+    if (oab === 'KLUTZ') dmg *= 1.5;
+    if (this.slowStart('player', owner)) dmg *= 0.5;
+    const W = this.wx();
+    if (W === 'SUN') { if (type === 'FIRE') dmg *= 1.5; if (type === 'WATER') dmg *= 0.5; }
+    if (W === 'RAIN') { if (type === 'WATER') dmg *= 1.5; if (type === 'FIRE' || move.effect === 'SOLAR_BEAM') dmg *= 0.5; }
     if (es.mudSport && type === 'ELECTRIC') dmg *= 0.5;
     if (es.waterSport && type === 'FIRE') dmg *= 0.5;
     if (ps.charge && type === 'ELECTRIC') dmg *= 2;
     dmg *= eff;
     // held items and badges: per-card multipliers (LIGHT BALL), +% bonuses (CHARCOAL) and flat damage
     const card = { ...info, type, physical, eff }, srcs = [];
+    if (oab === 'KLUTZ') return { dmg, eff, srcs, label }; // KLUTZ: no held-item bonuses on its cards
     for (const [def] of this.relicHooks('cardTimes')) { const f = def.cardTimes(card, this); if (f !== 1) { dmg *= f; srcs.push(def.key); } }
     let pct = 0;
     const IS = TUNING.itemScale ?? 1; // experiment knob: scales every held-item/badge damage bonus
@@ -372,7 +469,7 @@ export class Battle {
   // Expected damage of a card for previews and combo choice (no crits/misses; random powers averaged).
   cardPreview(info) {
     const owner = info.owner, e = this.enemy(), m = info.move;
-    if (FIXED_DAMAGE[m.effect]) return this.cardEff(info.type, e) === 0 ? 0 : FIXED_DAMAGE[m.effect]({ user: owner, b: PREVIEW_B });
+    if (FIXED_DAMAGE[m.effect]) return this.cardEff(info.type, e, m.key) === 0 ? 0 : FIXED_DAMAGE[m.effect]({ user: owner, b: PREVIEW_B });
     if (['COUNTER', 'MIRROR_COAT', 'BIDE'].includes(m.effect)) return this.sides.player.hitThisTurn ? 2 * (this.sides.player.lastDamage || 0) : 0;
     if (['SUPER_FANG', 'ENDEAVOR', 'OHKO', 'MEMENTO'].includes(m.effect)) return 0;
     let power = m.power;
@@ -415,21 +512,50 @@ export class Battle {
       this.damageEnemy(d, 'SPIKES');
       this.msg(`${this.monName(e)} is hurt by spikes!`);
     }
+    this.sides.enemy.inTurn = Math.max(1, this.turn);
+    // TRACE: a foe with it copies your lead's ability
+    const lead0 = this.lead();
+    if (e.ability === 'TRACE' && lead0 && !TRACE_BAN.has(this.pab(lead0)) && this.pab(lead0)) { e.ability = this.pab(lead0); this.msg(`${this.monName(e)} TRACED ${monName(lead0)}'s ${e.ability.replace('_', ' ')}!`); }
     const ab = e.ability;
     if (ab === 'INTIMIDATE') { this.msg(`${this.monName(e)}'s INTIMIDATE cuts your ATTACK!`); this.addStage('player', 'atk', -1, 'INTIMIDATE', true); }
     if (ab === 'DRIZZLE') this.setWeather('RAIN', true);
     if (ab === 'DROUGHT') this.setWeather('SUN', true);
     if (ab === 'SAND_STREAM') this.setWeather('SAND', true);
+    if (ab === 'SNOW_WARNING') this.setWeather('HAIL', true);
+    if (ab === 'MOLD_BREAKER') this.msg(`${this.monName(e)} breaks the mold!`);
+    if (ab === 'DOWNLOAD' && lead0) { const st = stats(lead0); this.addStage('enemy', st.def < st.spd ? 'atk' : 'spa', 1, 'DOWNLOAD'); }
+    // PRESSURE: one fewer discard, once per battle (not on top of a legendary's PRESSURE rule)
+    if (ab === 'PRESSURE' && !this.pressureUsed && this.bossRule?.name !== 'PRESSURE') {
+      this.pressureUsed = true;
+      if (this.discardsLeft > 0) { this.discardsLeft--; this.msg(`${this.monName(e)} is exerting its PRESSURE! (-1 discard)`); }
+    }
+    this.syncEnemyTypes();
   }
 
   onLeadEnter() {
     const lead = this.lead();
-    const ab = abilityOf(lead);
+    this.leadAbilityEnter(lead);
+    const ab = this.pab(lead);
     if (ab === 'INTIMIDATE') { this.msg(`${monName(lead)}'s INTIMIDATE cuts the foe's ATTACK!`); this.addStage('enemy', 'atk', -1, 'INTIMIDATE', true); }
     if (ab === 'DRIZZLE') this.setWeather('RAIN', true);
     if (ab === 'DROUGHT') this.setWeather('SUN', true);
     if (ab === 'SAND_STREAM') this.setWeather('SAND', true);
+    if (ab === 'SNOW_WARNING') this.setWeather('HAIL', true);
     if (this.bossRule?.onLeadEnter) this.bossRule.onLeadEnter(this, lead);
+  }
+
+  // Ability state of a lead that comes out (co-op duo battles call this too): TRACE, MOLD BREAKER, DOWNLOAD, SLOW START.
+  leadAbilityEnter(lead) {
+    const ps = this.sides.player;
+    ps.traced = null; ps.typeOverride = null; ps.flashFire = null; ps.unburden = null;
+    if (!lead) return;
+    ps.inTurn = Math.max(1, this.turn);
+    const e = this.enemy();
+    if (abilityOf(lead) === 'TRACE' && e && e.ability && !TRACE_BAN.has(e.ability)) { ps.traced = { uid: lead.uid, ability: e.ability }; this.msg(`${monName(lead)} TRACED the foe's ${e.ability.replace('_', ' ')}!`); }
+    const ab = this.pab(lead);
+    if (ab === 'MOLD_BREAKER') this.msg(`${monName(lead)} breaks the mold!`);
+    if (ab === 'SLOW_START') this.msg(`${monName(lead)} can't get it going!`);
+    if (ab === 'DOWNLOAD' && e && !(this.downloaded ||= new Set()).has(lead.uid)) { this.downloaded.add(lead.uid); this.addStage('player', e.stats.def < e.stats.spd ? 'atk' : 'spa', 1, 'DOWNLOAD'); }
   }
 
   startTurn() {
@@ -476,17 +602,23 @@ export class Battle {
     const lead = this.lead();
     if (!e || !lead) return;
     const move = this.pickEnemyMove(e, lead);
+    if (e.ability === 'MULTITYPE' && move.power > 0 && move.type) e.types = [move.type];
     this.intent = { move, first: this.enemyActsFirst(null, move) };
     this.updateIntentPreview();
+    // ANTICIPATION: the foe's coming attack is super effective on your lead: switching is free this turn
+    if (this.pab(lead) === 'ANTICIPATION' && this.intent.kind === 'attack' && this.intent.eff > 1) { this.sides.player.anticipate = this.turn; this.msg(`${monName(lead)} shuddered! (switching is free this turn)`); }
   }
 
   // The foe's move for this turn against the given lead (weighted by damage / status value).
   pickEnemyMove(e, lead) {
     const options = e.moves.map(k => this.moveData(k)).filter(Boolean);
+    // PRESSURE in your lead: the foe can't pick the move it used last turn (if it has another)
+    const noRepeat = this.pab(lead) === 'PRESSURE' && options.length > 1 ? this.sides.enemy.lastMove : null;
     const weights = options.map(m => {
       if (this.sides.enemy.taunt && m.power === 0) return 0;
+      if (noRepeat && m.key === noRepeat) return 0;
       if (m.power > 0 || FIXED_DAMAGE[m.effect]) {
-        const eff = typeEffect(m.type, typesOf(lead));
+        const eff = typeEffect(m.type, this.ptypes(lead));
         const stab = e.types.includes(m.type) ? 1.5 : 1;
         let w = Math.max(1, (m.power || 40)) * eff * stab;
         if (m.effect === 'EXPLOSION') w *= 0.3;
@@ -498,7 +630,7 @@ export class Battle {
     });
     // self-KO moves (SELF-DESTRUCT, EXPLOSION): never for a boss / elite / legendary; others only as a last resort
     // when nearly beaten (v0.3.11)
-    const barred = (m) => isSelfKO(m.key) && (e.isBoss || e.isElite || e.legendary || e.hp > e.maxHp * SELF_KO_HP);
+    const barred = (m) => isSelfKO(m.key) && (e.isBoss || e.isElite || e.legendary || e.hp > e.maxHp * SELF_KO_HP || this.dampOut());
     const usable = options.map((m, i) => i).filter(i => !barred(options[i]));
     let move = usable.length ? this.rng.weighted(usable, i => weights[i] + 0.0001) : -1;
     move = options[move] || this.moveData('STRUGGLE') || this.moveData('TACKLE');
@@ -515,7 +647,7 @@ export class Battle {
     if (eff.includes('_UP') || ['CALM_MIND', 'BULK_UP', 'DRAGON_DANCE', 'COSMIC_POWER', 'DEFENSE_CURL', 'MINIMIZE', 'GROWTH', 'CURSE'].includes(eff)) return es.stages.atk >= 2 || es.stages.def >= 2 ? 3 : 18;
     if (['RESTORE_HP', 'SOFTBOILED', 'MORNING_SUN', 'SYNTHESIS', 'MOONLIGHT', 'REST', 'SWALLOW', 'WISH'].includes(eff)) return e.hp < e.maxHp * 0.5 ? 60 : 0;
     if (eff === 'PROTECT' || eff === 'DETECT') return this.turn % 3 === 0 ? 15 : 0;
-    if (eff === 'LEECH_SEED') return ps.seeded || typesOf(lead).includes('GRASS') ? 0 : 30;
+    if (eff === 'LEECH_SEED') return ps.seeded || this.ptypes(lead).includes('GRASS') ? 0 : 30;
     if (eff === 'REFLECT') return es.reflect ? 0 : 15;
     if (eff === 'LIGHT_SCREEN') return es.lightScreen ? 0 : 15;
     if (eff === 'SPLASH') return 1;
@@ -530,8 +662,11 @@ export class Battle {
     let s = this.statsOf(side, mon).spe * stageMult(this.sides[side].stages.spe);
     if (mon.status === 'PAR') s *= 0.25;
     if (side === 'player' && this.mods.speedMult) s *= 1 + this.mods.speedMult;
-    const ab = side === 'enemy' ? mon.ability : abilityOf(mon);
-    if ((ab === 'SWIFT_SWIM' && this.weather === 'RAIN') || (ab === 'CHLOROPHYLL' && this.weather === 'SUN')) s *= 2;
+    const ab = side === 'enemy' ? mon.ability : this.pab(mon);
+    const W = this.wx();
+    if ((ab === 'SWIFT_SWIM' && W === 'RAIN') || (ab === 'CHLOROPHYLL' && W === 'SUN')) s *= 2;
+    if (this.slowStart(side, mon)) s *= 0.5;
+    if (this.sides[side].unburden && (side === 'enemy' || this.sides[side].unburden === mon.uid)) s *= 2;
     return s;
   }
 
@@ -560,7 +695,7 @@ export class Battle {
       const nHits = move.effect === 'MULTI_HIT' ? 5 : move.effect === 'DOUBLE_HIT' || move.effect === 'TWINEEDLE' ? 2 : 1;
       this.intent.lethal = hi * nHits >= lead.hp;
       // Type matchup against the current lead (0 when an ability like LEVITATE blocks it).
-      this.intent.eff = FIXED_DAMAGE[move.effect] ? 1 : hi === 0 ? 0 : typeEffect(move.type, typesOf(lead));
+      this.intent.eff = FIXED_DAMAGE[move.effect] ? 1 : hi === 0 ? 0 : typeEffect(move.type, this.ptypes(lead));
       this.intent.kind = 'attack';
     } else {
       this.intent.damage = null;
@@ -576,23 +711,37 @@ export class Battle {
       const raw = move.effect === 'LEVEL_DAMAGE' ? e.level : move.effect === 'DRAGON_RAGE' ? 40 : move.effect === 'SONICBOOM' ? 20 : Math.floor(e.level * (preview ? 1 : (0.5 + this.rng.next())));
       return Math.round(raw * this.dmgScale);
     }
-    const tTypes = typesOf(target);
-    const eff = effectiveness(move.type, tTypes, abilityOf(target), this.sides.player.foresight);
+    const tTypes = this.ptypes(target);
+    const tab = this.defAb('player', target, e.ability);
+    const eff = SOUND_MOVES.has(move.key) && (tab === 'SOUNDPROOF' || tab === 'CACOPHONY') ? 0 : effectiveness(move.type, tTypes, tab, this.sides.player.foresight);
     if (eff === 0) return 0;
     const physical = !isSpecialMove(move.key, move.type);
     const es = this.sides.enemy, ps = this.sides.player;
     const tst = stats(target);
-    let atk = (physical ? e.stats.atk : e.stats.spa) * stageMult(physical ? es.stages.atk : es.stages.spa);
-    let def = (physical ? tst.def : tst.spd) * stageMult(physical ? ps.stages.def : ps.stages.spd);
+    // UNAWARE: your lead with it ignores the foe's ATTACK / SP. ATK stages; a foe with it ignores your DEFENSE / SP. DEF stages
+    let atk = (physical ? e.stats.atk : e.stats.spa) * stageMult(tab === 'UNAWARE' ? 0 : physical ? es.stages.atk : es.stages.spa);
+    let def = (physical ? tst.def : tst.spd) * stageMult(e.ability === 'UNAWARE' ? 0 : physical ? ps.stages.def : ps.stages.spd);
+    if (physical && e.ability === 'GUTS' && e.status) atk *= 1.5;
+    if (physical && e.ability === 'FLOWER_GIFT' && this.wx() === 'SUN') atk *= 1.5;
+    if (physical && tab === 'MARVEL_SCALE' && target.status) def *= 1.5;
+    if (!physical && tab === 'FLOWER_GIFT' && this.wx() === 'SUN') def *= 1.5;
     if (crit) { atk = Math.max(atk, physical ? e.stats.atk : e.stats.spa); def = Math.min(def, physical ? tst.def : tst.spd); }
     let power = move.power;
     if (POWER_FN[move.effect]) power = POWER_FN[move.effect]({ user: e, target, b: this, us: 'enemy', move, hitIndex: 0, card: null }) || power;
     if (e.ability === 'HUGE_POWER' || e.ability === 'PURE_POWER') { if (physical) atk *= 2; }
     if (e.ability === 'HUSTLE' && physical) atk *= 1.5;
     if (['OVERGROW', 'BLAZE', 'TORRENT', 'SWARM'].includes(e.ability) && e.hp <= e.maxHp / 3 && move.type === { OVERGROW: 'GRASS', BLAZE: 'FIRE', TORRENT: 'WATER', SWARM: 'BUG' }[e.ability]) power *= 1.5;
-    let dmg = gen3Damage({ level: e.level, power, atk, def, stab: e.types.includes(move.type), effect: eff, burned: e.status === 'BRN', physical, rand, crit });
-    if (this.weather === 'SUN') { if (move.type === 'FIRE') dmg *= 1.5; if (move.type === 'WATER') dmg *= 0.5; }
-    if (this.weather === 'RAIN') { if (move.type === 'WATER') dmg *= 1.5; if (move.type === 'FIRE') dmg *= 0.5; }
+    if (e.ability === 'TECHNICIAN' && power <= 60) power *= 1.5;
+    let dmg = gen3Damage({ level: e.level, power, atk, def, stab: e.types.includes(move.type), effect: eff, burned: e.status === 'BRN' && e.ability !== 'GUTS', physical, rand, crit });
+    if (e.ability === 'ADAPTABILITY' && e.types.includes(move.type)) dmg *= 4 / 3;
+    if (e.ability === 'TINTED_LENS' && eff < 1) dmg *= 2;
+    if (e.ability === 'RIVALRY' && tTypes.some(t => e.types.includes(t))) dmg *= 1.25;
+    if (e.ability === 'SNIPER' && crit) dmg *= 1.5;
+    if (es.flashFire && move.type === 'FIRE') dmg *= 1.5;
+    if (this.slowStart('enemy', e)) dmg *= 0.5;
+    const W = this.wx();
+    if (W === 'SUN') { if (move.type === 'FIRE') dmg *= 1.5; if (move.type === 'WATER') dmg *= 0.5; }
+    if (W === 'RAIN') { if (move.type === 'WATER') dmg *= 1.5; if (move.type === 'FIRE') dmg *= 0.5; }
     if (!crit && ((physical && ps.reflect) || (!physical && ps.lightScreen))) dmg *= 0.5;
     if (ps.mudSport && move.type === 'ELECTRIC') dmg *= 0.5;
     if (ps.waterSport && move.type === 'FIRE') dmg *= 0.5;
@@ -633,7 +782,7 @@ export class Battle {
     return info.dmgPreview ?? 0;
   }
 
-  effVsEnemy(type) { const e = this.enemy(); return e ? effectiveness(type, e.types, e.ability, this.sides.enemy.foresight) : 1; }
+  effVsEnemy(type, moveKey) { const e = this.enemy(); return e ? this.cardEff(type, e, moveKey) : 1; }
 
   // Everything besides the selection that can change a hand's preview during a turn (an X item, a switch, a
   // discard, a partner's heal...). The scenes cache simulate() on it; it used to be only the turn and the foe's HP,
@@ -708,12 +857,16 @@ export class Battle {
     const mon = this.run.party.find(m => m.uid === uid);
     if (!mon || isFainted(mon) || uid === this.leadUid) return [];
     if (!forced) {
+      const tax = this.faintSwitch ? 0 : this.switchTax();
+      if (tax && this.discardsLeft < tax + (this.freeSwitches > 0 || this.sides.player.anticipate === this.turn ? 0 : 1)) return [];
       if (this.faintSwitch) this.faintSwitch = false;
+      else if (this.sides.player.anticipate === this.turn) this.sides.player.anticipate = 0;
       else if (this.freeSwitches > 0) this.freeSwitches--;
       else if (this.discardsLeft > 0) this.discardsLeft--;
       else return [];
+      if (tax) { this.discardsLeft -= tax; this.msg(`The foe's ${this.enemy().ability.replace('_', ' ')} makes switching costly! (-${tax} discard)`); }
       const old = this.lead();
-      if (abilityOf(old) === 'NATURAL_CURE' && old.status) { old.status = null; }
+      if (this.pab(old) === 'NATURAL_CURE' && old.status) { old.status = null; }
     }
     // Volatile effects belong to the Pokémon that leaves (also when it fainted).
     const s = this.sides.player;
@@ -759,7 +912,10 @@ export class Battle {
         }
       }
     }
-    this.run.useConsumable(key);
+    const lead = this.lead();
+    if (lead && this.pab(lead) === 'UNBURDEN' && (!mon || mon === lead) && this.sides.player.unburden !== lead.uid) { this.sides.player.unburden = lead.uid; this.msg(`${monName(lead)} got lighter! (UNBURDEN: SPEED x2)`); }
+    if (mon && this.pab(mon) === 'STICKY_HOLD' && this.rng.chance(0.2)) this.msg(`${monName(mon)}'s STICKY HOLD kept the ${D.items[key]?.name || key}!`);
+    else this.run.useConsumable(key);
     this.emit({ t: 'item', key, uid: targetUid });
     this.emit({ t: 'partyUpdate' });
     this.updateIntentPreview();
@@ -878,7 +1034,13 @@ export class Battle {
           this.msg('The SUBSTITUTE took damage for it!');
           if (this.sides.enemy.subHp <= 0) { this.sides.enemy.substitute = false; this.msg("The foe's SUBSTITUTE faded!"); }
         }
-        if (dmg > 0) this.damageEnemy(dmg, 'hand', score.effLabel);
+        if (dmg > 0) {
+          this.damageEnemy(dmg, 'hand', score.effLabel);
+          if (e.hp > 0 && e.ability === 'COLOR_CHANGE' && score.lastHitType && !e.types.includes(score.lastHitType)) { e.types = [score.lastHitType]; this.msg(`${this.monName(e)}'s COLOR CHANGE made it the ${score.lastHitType} type!`); }
+          // AFTERMATH: knocked out by a contact move, it hurts your lead (DAMP stops it)
+          const l = this.lead();
+          if (e.hp === 0 && e.ability === 'AFTERMATH' && score.contact && l && !isFainted(l) && !this.dampOut()) { this.msg(`${this.monName(e)}'s AFTERMATH!`); this.damagePlayer(l, Math.max(1, Math.floor(maxHp(l) / 4))); this.checkLeadFaint(); }
+        }
       }
     }
     // Post-hand self effects (explosion faint etc.) after damage.
@@ -943,6 +1105,8 @@ export class Battle {
         anyHit = true;
         if (isStatus) {
           if (this.sides.enemy.magicCoat && move.target !== 'USER') { this.sides.enemy.magicCoat = false; this.msg('It bounced back!'); break; }
+          const sab = this.defAb('enemy', enemy, this.pab(owner));
+          if (SOUND_MOVES.has(move.key) && (sab === 'SOUNDPROOF' || sab === 'CACOPHONY')) { this.emit({ t: 'card', id: info.id, dmg: 0, label: 'SOUNDPROOF' }); break; }
           this.emit({ t: 'card', id: info.id, dmg: 0, label: move.name });
           (EFFECTS[move.effect] || EFFECTS.HIT)(ctx);
           break;
@@ -971,10 +1135,12 @@ export class Battle {
           dmg = r.dmg; eff = r.eff; srcs = r.srcs; label = r.label;
           if (ps.charge && type === 'ELECTRIC') ps.charge = false;
           // Critical hit
-          let cs = critStageOf(move) + (ps.focus ? 2 : 0) + (this.mods.critStage || 0);
+          const oab = this.pab(owner);
+          let cs = critStageOf(move) + (ps.focus ? 2 : 0) + (this.mods.critStage || 0) + (oab === 'SUPER_LUCK' ? 1 : 0);
           const always = this.relicHooks('critFor').some(([d]) => d.critFor.includes(owner.species));
           const critP = [1 / 16, 1 / 8, 1 / 4, 1 / 3, 1 / 2][Math.min(4, cs)];
-          if (always || (!this.dry && this.rng.chance(critP))) { dmg *= 2 + (this.mods.critMult || 0); label = 'CRITICAL'; this.run.stats.crits = (this.run.stats.crits || 0) + 1; }
+          const armored = ['BATTLE_ARMOR', 'SHELL_ARMOR'].includes(this.defAb('enemy', enemy, oab));
+          if (!armored && (always || (!this.dry && this.rng.chance(critP)))) { dmg *= 2 + (this.mods.critMult || 0) + (oab === 'SNIPER' ? 1 : 0); label = 'CRITICAL'; this.run.stats.crits = (this.run.stats.crits || 0) + 1; }
         }
         dmg = Math.max(0, Math.round(dmg));
         if (eff === 0) label = 'NO EFFECT';
@@ -984,10 +1150,16 @@ export class Battle {
         S.cardTotal += dmg;
         this.emit({ t: 'card', id: info.id, dmg, label, eff, total: S.cardTotal, hit: h, srcs });
         if (move.effect === 'FALSE_SWIPE') S.falseSwipe = true;
+        const eab = this.defAb('enemy', enemy, this.pab(owner));
         if (eff > 0) {
           // Secondary effect + contact abilities
-          if (enemy.ability !== 'SHIELD_DUST' || !move.chance) (EFFECTS[move.effect] || EFFECTS.HIT)(ctx);
-          if (move.flags?.includes('MAKES_CONTACT')) this.contactAbility('enemy', enemy, 'player', owner);
+          if (eab !== 'SHIELD_DUST' || !move.chance) (EFFECTS[move.effect] || EFFECTS.HIT)(ctx);
+          if (move.flags?.includes('MAKES_CONTACT')) { S.contact = true; this.contactAbility('enemy', enemy, 'player', owner); }
+          if (dmg > 0) S.lastHitType = type;
+        } else if (ABSORB[eab] && ABSORB[eab][0] === type && !S.absorbed) {
+          // VOLT / WATER ABSORB, FLASH FIRE, LIGHTNING ROD...: once per hand, after the hand lands
+          S.absorbed = true;
+          if (!this.dry) S.after.push(() => this.absorbHit('enemy', enemy, eab));
         }
         if (h === 0) { S.attackHits++; for (const [def, inst] of this.relicHooks('onCard')) def.onCard(S, { ...info, type }, inst.state); }
         this.chainBump(info);
@@ -995,6 +1167,10 @@ export class Battle {
       if (anyHit) this.sides.player.lastMove = move.key;
     }
     if (ps.helpingHand) { S.times(1.5, 'HELPING HAND'); ps.helpingHand = false; }
+    // STENCH: once per hand, 10% flinch if the hand hit
+    if (S.attackHits > 0 && this.pab(this.lead()) === 'STENCH' && !this.dry && this.rng.chance(0.1)) { this.msg(`${monName(this.lead())}'s STENCH!`); this.flinch('enemy'); }
+    // ANTICIPATION (foe): it braces for your first super-effective hand
+    if (bestEff > 1 && this.defAb('enemy', enemy, this.pab(this.lead())) === 'ANTICIPATION' && !es.braced) { es.braced = true; S.times(0.75, 'ANTICIPATION'); }
     for (const [def, inst] of this.relicHooks('onHand')) def.onHand(S, inst.state);
     if (this.bossRule?.onScore) this.bossRule.onScore(this, S);
     if (confusedPenalty) S.times(0.5, 'CONFUSED');
@@ -1035,20 +1211,24 @@ export class Battle {
     if (this.dry) return move.effect !== 'OHKO';
     if (move.effect === 'OHKO') return this.rng.next() < (30 + owner.level - enemy.level) / 100;
     if (!move.accuracy || move.effect === 'ALWAYS_HIT' || move.effect === 'VITAL_THROW' || this.sides.player.lockOn) return true;
-    if (move.effect === 'THUNDER' && this.weather === 'RAIN') return true;
+    const W = this.wx();
+    if (move.effect === 'THUNDER' && W === 'RAIN') return true;
     let acc = move.accuracy / 100;
-    const evaStage = this.sides.enemy.foresight ? Math.min(0, this.sides.enemy.stages.eva) : this.sides.enemy.stages.eva;
-    acc *= accStageMult(this.sides.player.stages.acc - evaStage);
-    if (abilityOf(owner) === 'COMPOUND_EYES') acc *= 1.3;
-    if (abilityOf(owner) === 'HUSTLE' && !isSpecialMove(move.key, move.type)) acc *= 0.8;
-    if (enemy.ability === 'SAND_VEIL' && this.weather === 'SAND') acc *= 0.8;
-    if (move.effect === 'THUNDER' && this.weather === 'SUN') acc = 0.5;
+    const oab = this.pab(owner), eab = this.defAb('enemy', enemy, oab);
+    const evaStage = oab === 'UNAWARE' ? 0 : this.sides.enemy.foresight ? Math.min(0, this.sides.enemy.stages.eva) : this.sides.enemy.stages.eva;
+    acc *= accStageMult((eab === 'UNAWARE' ? 0 : this.sides.player.stages.acc) - evaStage);
+    if (oab === 'COMPOUND_EYES') acc *= 1.3;
+    if (oab === 'HUSTLE' && !isSpecialMove(move.key, move.type)) acc *= 0.8;
+    if (eab === 'SAND_VEIL' && W === 'SAND') acc *= 0.8;
+    if (eab === 'SNOW_CLOAK' && W === 'HAIL') acc *= 0.8;
+    if (eab === 'TANGLED_FEET' && this.sides.enemy.confused > 0) acc *= 0.5;
+    if (move.effect === 'THUNDER' && W === 'SUN') acc = 0.5;
     if (move.effect === 'OHKO') acc = (30 + owner.level - enemy.level) / 100;
     return this.rng.next() < acc;
   }
 
   contactAbility(defSide, defMon, atkSide, atkMon) {
-    const ab = defSide === 'enemy' ? defMon.ability : abilityOf(defMon);
+    const ab = defSide === 'enemy' ? defMon.ability : this.pab(defMon);
     if (CONTACT_PUNISH[ab] && this.rng.chance(0.3)) {
       this.msg(`${this.monName(defMon)}'s ${ab.replace('_', ' ')}!`);
       this.inflictStatus(atkSide, CONTACT_PUNISH[ab], ab, false, atkMon);
@@ -1057,6 +1237,14 @@ export class Battle {
     } else if (ab === 'ROUGH_SKIN') {
       if (atkSide === 'player') this.damagePlayer(atkMon, Math.max(1, Math.floor(maxHp(atkMon) / 16)));
       else this.damageEnemy(Math.floor(atkMon.maxHp / 16), 'ROUGH_SKIN');
+    } else if (ab === 'CUTE_CHARM' && !this.dry) {
+      if (atkSide === 'player' && this.cuteHand === this.handsPlayed) return;
+      if (atkSide === 'player') this.cuteHand = this.handsPlayed;
+      const tough = atkSide === 'enemy' && (atkMon.isBoss || atkMon.isElite || atkMon.legendary);
+      if (!tough && !this.sides[atkSide].infatuated && this.abOf(atkSide, atkMon) !== 'OBLIVIOUS' && this.rng.chance(0.3)) {
+        this.sides[atkSide].infatuated = 3;
+        this.msg(`${this.monName(defMon)}'s CUTE CHARM! ${this.monName(atkMon)} fell in love!`);
+      }
     }
   }
 
@@ -1118,6 +1306,8 @@ export class Battle {
     if (isStatus) {
       if (!reach) { this.msg(`${monName(lead)} avoided the attack!`); return; }
       if (move.target !== 'USER' && move.accuracy && !this.rollEnemyAccuracy(move, e, lead)) { this.msg(`${this.monName(e)}'s attack missed!`); return; }
+      const sab = this.defAb('player', lead, e.ability);
+      if (SOUND_MOVES.has(move.key) && (sab === 'SOUNDPROOF' || sab === 'CACOPHONY')) { this.msg(`${monName(lead)}'s ${sab} blocks it!`); return; }
       if (ps.magicCoat && move.target !== 'USER') { this.msg(`${monName(lead)} bounced it back!`); ps.magicCoat = false; (EFFECTS[move.effect] || EFFECTS.HIT)({ ...ctx, user: lead, target: e, userSide: ps, targetSide: es, us: 'player', them: 'enemy' }); return; }
       if (ps.protect && move.target !== 'USER') { this.msg(`${monName(lead)} protected itself!`); return; }
       (EFFECTS[move.effect] || EFFECTS.HIT)(ctx);
@@ -1135,12 +1325,17 @@ export class Battle {
     const hits = hitCount(this, move);
     let total = 0, n = 0;
     for (let h = 0; h < hits; h++) {
-      const critP = [1 / 16, 1 / 8, 1 / 4, 1 / 3, 1 / 2][Math.min(4, critStageOf(move) + (es.focus ? 2 : 0))];
-      const crit = this.rng.chance(critP);
+      const critP = [1 / 16, 1 / 8, 1 / 4, 1 / 3, 1 / 2][Math.min(4, critStageOf(move) + (es.focus ? 2 : 0) + (e.ability === 'SUPER_LUCK' ? 1 : 0))];
+      const crit = this.rng.chance(critP) && !['BATTLE_ARMOR', 'SHELL_ARMOR'].includes(this.defAb('player', lead, e.ability));
       const rand = (85 + this.rng.int(0, 15)) / 100;
       let dmg = this.enemyDamage(move, e, lead, rand, crit);
       if (reach === 2) dmg *= 2; // SURF on a diver, EARTHQUAKE on a digger, GUST on a flier...
-      if (dmg === 0) { this.msg(`It doesn't affect ${monName(lead)}...`); break; }
+      if (dmg === 0) {
+        const tab = this.defAb('player', lead, e.ability);
+        if (ABSORB[tab] && ABSORB[tab][0] === move.type) this.absorbHit('player', lead, tab);
+        else this.msg(`It doesn't affect ${monName(lead)}...`);
+        break;
+      }
       if (crit) this.msg('A critical hit!');
       if (ps.substitute) {
         this.msg('The SUBSTITUTE took damage for it!');
@@ -1150,19 +1345,25 @@ export class Battle {
       if (dmg >= lead.hp) {
         if (ps.endure) { dmg = lead.hp - 1; this.msg(`${monName(lead)} endured the hit!`); }
         else if (this.mods.focusBand && !this.focusBandUsed) { dmg = lead.hp - 1; this.focusBandUsed = true; this.msg(`${monName(lead)} hung on using its FOCUS BAND!`); }
-        else if (abilityOf(lead) === 'STURDY' && lead.hp === maxHp(lead)) { dmg = lead.hp - 1; this.msg(`${monName(lead)} held on with STURDY!`); }
+        else if (this.pab(lead) === 'STURDY' && lead.hp === maxHp(lead)) { dmg = lead.hp - 1; this.msg(`${monName(lead)} held on with STURDY!`); }
 
       }
-      const eff = typeEffect(move.type, typesOf(lead));
+      const eff = typeEffect(move.type, this.ptypes(lead));
       this.damagePlayer(lead, dmg, eff);
       total += dmg; n++;
       ps.hitThisTurn = true;
-      if (move.flags?.includes('MAKES_CONTACT')) this.contactAbility('player', lead, 'enemy', e);
+      if (move.flags?.includes('MAKES_CONTACT')) {
+        this.contactAbility('player', lead, 'enemy', e);
+        // AFTERMATH: your lead knocked out by a contact move hurts the foe (bosses, elites, legendaries 1/10)
+        if (isFainted(lead) && this.pab(lead) === 'AFTERMATH' && !this.dampOut()) { this.msg(`${monName(lead)}'s AFTERMATH!`); this.damageEnemy(Math.floor(e.maxHp * (e.isBoss || e.isElite || e.legendary ? 0.1 : 0.25)), 'AFTERMATH'); }
+      }
       if (isFainted(lead)) break;
     }
     if (hits > 1 && n > 1) this.msg(`Hit ${n} times!`);
     ps.lastDamage = total;
-    if (total > 0 && !isFainted(lead) && !(abilityOf(lead) === 'SHIELD_DUST' && move.chance)) (EFFECTS[move.effect] || EFFECTS.HIT)(ctx);
+    if (total > 0 && !isFainted(lead) && !(this.defAb('player', lead, e.ability) === 'SHIELD_DUST' && move.chance)) (EFFECTS[move.effect] || EFFECTS.HIT)(ctx);
+    // COLOR CHANGE: your lead becomes the type of the attack that hit it
+    if (total > 0 && !isFainted(lead) && this.pab(lead) === 'COLOR_CHANGE' && move.type && !this.ptypes(lead).includes(move.type)) { ps.typeOverride = { uid: lead.uid, types: [move.type] }; this.msg(`${monName(lead)}'s COLOR CHANGE made it the ${move.type} type!`); }
     if (move.effect === 'EXPLOSION') this.damageEnemy(e.hp, 'explosion');
     if (move.effect === 'RECHARGE') this.ms(e.uid).recharge = 1;
     this.checkLeadFaint();
@@ -1171,11 +1372,15 @@ export class Battle {
 
   rollEnemyAccuracy(move, e, lead) {
     if (!move.accuracy || move.effect === 'ALWAYS_HIT' || this.sides.enemy.lockOn) return true;
-    let acc = move.accuracy / 100 * accStageMult(this.sides.enemy.stages.acc - this.sides.player.stages.eva);
+    const tab = this.defAb('player', lead, e.ability), W = this.wx();
+    let acc = move.accuracy / 100 * accStageMult((tab === 'UNAWARE' ? 0 : this.sides.enemy.stages.acc) - (e.ability === 'UNAWARE' ? 0 : this.sides.player.stages.eva));
     acc *= 1 + (this.mods.enemyAcc || 0);
-    if (abilityOf(lead) === 'SAND_VEIL' && this.weather === 'SAND') acc *= 0.8;
+    if (tab === 'SAND_VEIL' && W === 'SAND') acc *= 0.8;
+    if (tab === 'SNOW_CLOAK' && W === 'HAIL') acc *= 0.8;
+    if (tab === 'TANGLED_FEET' && this.sides.player.confused > 0) acc *= 0.5;
     if (e.ability === 'COMPOUND_EYES') acc *= 1.3;
-    if (move.effect === 'OHKO') { if (lead.level > e.level || abilityOf(lead) === 'STURDY') return false; acc = (30 + e.level - lead.level) / 100; }
+    if (e.ability === 'HUSTLE' && !isSpecialMove(move.key, move.type)) acc *= 0.8;
+    if (move.effect === 'OHKO') { if (lead.level > e.level || this.pab(lead) === 'STURDY') return false; acc = (30 + e.level - lead.level) / 100; }
     return this.rng.next() < acc;
   }
 
@@ -1257,11 +1462,12 @@ export class Battle {
   sleepBlock(side) {
     const mon = this.activeMon(side);
     if (!mon || isFainted2(mon)) return 'But it failed!';
-    const ab = side === 'enemy' ? mon.ability : abilityOf(mon);
+    const ab = side === 'enemy' ? mon.ability : this.pab(mon);
     if (mon.status) return `${this.monName(mon)} is already ${mon.status === 'SLP' ? 'asleep' : 'afflicted'}!`;
     if (this.sides[side].safeguard) return `${this.sideName(side)} is protected by SAFEGUARD!`;
     if (this.sides[side].substitute) return 'But it failed!';
     if (ab === 'INSOMNIA' || ab === 'VITAL_SPIRIT' || this.sides.player.uproar || this.sides.enemy.uproar) return `${this.monName(mon)} stayed awake!`;
+    if (ab === 'LEAF_GUARD' && this.wx() === 'SUN') return `${this.monName(mon)}'s LEAF GUARD protects it!`;
     if (side === 'player' && this.mods.pokeFlute) return `The POKé FLUTE keeps ${monName(mon)} awake!`;
     if (side === 'enemy' && mon.sleepImmune > 0) return `${this.monName(mon)} is too alert to fall asleep!`;
     return null;
@@ -1271,21 +1477,23 @@ export class Battle {
     const mon = specificMon || this.activeMon(side);
     if (!mon || isFainted2(mon)) return false;
     const types = this.typesOfMon(side, mon);
-    const ab = side === 'enemy' ? mon.ability : abilityOf(mon);
+    const ab = side === 'enemy' ? mon.ability : this.pab(mon);
     const fail = (why) => { if (announceFail) this.msg(why || 'But it failed!'); return false; };
     if (mon.status) return fail(`${this.monName(mon)} is already ${st === 'SLP' ? 'asleep' : 'afflicted'}!`);
+    if (ab === 'LEAF_GUARD' && this.wx() === 'SUN' && src !== 'REST') return fail(`${this.monName(mon)}'s LEAF GUARD protects it!`);
     if (this.sides[side].safeguard && src !== 'REST') return fail(`${this.sideName(side)} is protected by SAFEGUARD!`);
     if (this.sides[side].substitute && src !== 'REST' && specificMon === undefined) return fail();
     if ((st === 'PSN' || st === 'TOX') && (types.includes('POISON') || types.includes('STEEL') || ab === 'IMMUNITY')) return fail("It doesn't affect " + this.monName(mon) + '...');
     if (st === 'BRN' && (types.includes('FIRE') || ab === 'WATER_VEIL')) return fail("It doesn't affect " + this.monName(mon) + '...');
-    if (st === 'FRZ' && (types.includes('ICE') || ab === 'MAGMA_ARMOR' || this.weather === 'SUN')) return fail();
+    if (st === 'FRZ' && (types.includes('ICE') || ab === 'MAGMA_ARMOR' || this.wx() === 'SUN')) return fail();
     if (st === 'PAR' && (ab === 'LIMBER' || (src === 'THUNDER_WAVE' && types.includes('GROUND')))) return fail("It doesn't affect " + this.monName(mon) + '...');
     if (st === 'SLP' && (ab === 'INSOMNIA' || ab === 'VITAL_SPIRIT' || this.sides.player.uproar || this.sides.enemy.uproar) && src !== 'REST') return fail(`${this.monName(mon)} stayed awake!`);
     if (st === 'SLP' && side === 'player' && this.mods.pokeFlute && src !== 'REST') return fail(`The POKé FLUTE keeps ${monName(mon)} awake!`);
     if (st === 'SLP' && side === 'enemy' && mon.sleepImmune > 0) return fail(`${this.monName(mon)} is too alert to fall asleep!`);
     mon.status = st;
     if (st === 'SLP') {
-      const turns = sleepTurns ?? (side === 'enemy' ? (mon.isBoss ? this.rng.int(1, 2) : this.rng.int(1, 3)) : this.rng.int(1, 3));
+      let turns = sleepTurns ?? (side === 'enemy' ? (mon.isBoss ? this.rng.int(1, 2) : this.rng.int(1, 3)) : this.rng.int(1, 3));
+      if (ab === 'EARLY_BIRD' && src !== 'REST') turns = Math.ceil(turns / 2); // EARLY BIRD wakes up twice as fast
       if (side === 'enemy') mon.sleepTurns = turns; else this.ms(mon.uid).sleep = turns;
     }
     if (st === 'TOX') { if (side === 'enemy') mon.toxic = 1; else this.ms(mon.uid).toxic = 1; }
@@ -1301,7 +1509,7 @@ export class Battle {
 
   confuse(side, announce, self) {
     const mon = this.activeMon(side);
-    const ab = side === 'enemy' ? mon.ability : abilityOf(mon);
+    const ab = side === 'enemy' ? mon.ability : this.pab(mon);
     if (ab === 'OWN_TEMPO' || (side === 'player' && this.mods.noConfuse)) { if (announce) this.msg(`${this.monName(mon)} can't be confused!`); return; }
     if (this.sides[side].confused) { if (announce) this.msg(`${this.monName(mon)} is already confused!`); return; }
     if (this.sides[side].safeguard && !self) { if (announce) this.msg(`${this.sideName(side)} is protected by SAFEGUARD!`); return; }
@@ -1312,16 +1520,19 @@ export class Battle {
 
   flinch(side, always) {
     const mon = this.activeMon(side);
-    const ab = side === 'enemy' ? mon.ability : abilityOf(mon);
+    const ab = side === 'enemy' ? mon.ability : this.pab(mon);
     if (ab === 'INNER_FOCUS') return;
     // A flinch only matters if the target hasn't moved yet this turn.
     this.sides[side].flinch = true;
+    if (ab === 'STEADFAST') this.addStage(side, 'spe', 1, 'STEADFAST'); // (your POKéMON don't flinch here: they just speed up)
   }
 
   addStage(side, stat, n, src, fromFoe) {
     const s = this.sides[side];
     const mon = this.activeMon(side);
-    const ab = mon ? (side === 'enemy' ? mon.ability : abilityOf(mon)) : null;
+    const ab = mon ? (side === 'enemy' ? mon.ability : this.pab(mon)) : null;
+    if (src === 'INTIMIDATE' && (ab === 'OBLIVIOUS' || ab === 'INNER_FOCUS')) { this.msg(`${this.sideName(side)}'s ${ab.replace('_', ' ')} ignores the INTIMIDATE!`); return; }
+    if (ab === 'SIMPLE') n *= 2;
     if (n < 0 && fromFoe) {
       if (s.mist) { this.msg(`${this.sideName(side)} is protected by MIST!`); return; }
       if (ab === 'CLEAR_BODY' || ab === 'WHITE_SMOKE') { this.msg(`${this.sideName(side)}'s ${ab.replace('_', ' ')} prevents stat loss!`); return; }
@@ -1358,6 +1569,7 @@ export class Battle {
     const text = { SUN: 'The sunlight got bright!', RAIN: 'It started to rain!', SAND: 'A sandstorm brewed!', HAIL: 'It started to hail!' }[w];
     this.msg(text);
     this.emit({ t: 'weather', weather: w });
+    this.syncEnemyTypes();
   }
 
   tryEscape(side, roar) {
@@ -1430,7 +1642,7 @@ export class Battle {
         this.weatherDamage(true, true);
         this.msg(this.weather === 'SAND' ? 'The sandstorm rages.' : 'Hail continues to fall.');
       }
-      if (--this.weatherTurns <= 0) { this.msg('The weather returned to normal.'); this.weather = null; this.emit({ t: 'weather', weather: null }); }
+      if (--this.weatherTurns <= 0) { this.msg('The weather returned to normal.'); this.weather = null; this.emit({ t: 'weather', weather: null }); this.syncEnemyTypes(); }
     }
     if (this.enemyResiduals()) return;
     this.leadResiduals();
@@ -1443,9 +1655,10 @@ export class Battle {
   // Sandstorm / hail chip damage on the foe and/or the lead (co-op calls these per Pokémon).
   weatherDamage(onEnemy, onLead) {
     const e = this.enemy(), lead = this.lead();
+    if (!this.wx()) return; // CLOUD NINE / AIR LOCK
     const immune = t => this.weather === 'SAND' ? t.some(x => ['ROCK', 'GROUND', 'STEEL'].includes(x)) : t.includes('ICE');
     if (onEnemy && !immune(e.types)) { this.damageEnemy(Math.floor(e.maxHp / 16), 'weather'); }
-    if (onLead && lead && !immune(typesOf(lead)) && !this.relicHooks('onHand').some(([d]) => d.key === 'GO_GOGGLES')) this.damagePlayer(lead, Math.max(1, Math.floor(maxHp(lead) / 16)));
+    if (onLead && lead && !immune(this.ptypes(lead)) && !this.relicHooks('onHand').some(([d]) => d.key === 'GO_GOGGLES')) this.damagePlayer(lead, Math.max(1, Math.floor(maxHp(lead) / 16)));
   }
 
   // Enemy residuals (scaled HP => fractions slightly gentler than the games). Returns true if the battle ended.
@@ -1456,8 +1669,12 @@ export class Battle {
       const tough = e.isBoss || e.isElite || e.legendary; // % damage is capped on big HP pools
       if (e.status === 'PSN') { this.damageEnemy(Math.floor(e.maxHp / (tough ? 20 : 10)), 'PSN'); this.msg(`${this.monName(e)} is hurt by poison!`); }
       if (e.status === 'TOX') { this.damageEnemy(Math.floor(tough ? e.maxHp * Math.min(2, e.toxic) / 24 : e.maxHp * Math.min(15, e.toxic) / 16), 'PSN'); e.toxic++; this.msg(`${this.monName(e)} is hurt by poison!`); }
-      if (e.status === 'BRN') { this.damageEnemy(Math.floor(e.maxHp / (tough ? 20 : 10)), 'BRN'); this.msg(`${this.monName(e)} is hurt by its burn!`); }
-      if (es.seeded && e.hp > 0) { this.damageEnemy(Math.floor(e.maxHp / (tough ? 20 : 10)), 'SEED'); this.msg(`${this.monName(e)}'s health is sapped by LEECH SEED!`); if (lead) this.healSide('player', lead, 1 / 8, null, true); }
+      if (e.status === 'BRN') { this.damageEnemy(Math.floor(e.maxHp / (tough ? 20 : 10) * (e.ability === 'HEATPROOF' ? 0.5 : 1)), 'BRN'); this.msg(`${this.monName(e)} is hurt by its burn!`); }
+      if (es.seeded && e.hp > 0) {
+        this.damageEnemy(Math.floor(e.maxHp / (tough ? 20 : 10)), 'SEED'); this.msg(`${this.monName(e)}'s health is sapped by LEECH SEED!`);
+        if (lead && e.ability === 'LIQUID_OOZE') { this.msg(`${monName(lead)} sucked up the LIQUID OOZE!`); this.damagePlayer(lead, Math.max(1, Math.floor(maxHp(lead) / 8))); }
+        else if (lead) this.healSide('player', lead, 1 / 8, null, true);
+      }
       if (es.trapped > 0 && e.hp > 0) { es.trapped--; this.damageEnemy(Math.floor(e.maxHp / 16), 'TRAP'); this.msg(`${this.monName(e)} is hurt by the trap!`); }
       if (es.nightmare && e.status === 'SLP') { this.damageEnemy(Math.floor(e.maxHp / (tough ? 12 : 6)), 'NIGHTMARE'); this.msg(`${this.monName(e)} is locked in a NIGHTMARE!`); }
       if (es.cursed) { this.damageEnemy(Math.floor(e.maxHp / (tough ? 12 : 6)), 'CURSE'); this.msg(`${this.monName(e)} is afflicted by the CURSE!`); }
@@ -1468,7 +1685,13 @@ export class Battle {
       if (e.sleepImmune > 0) e.sleepImmune--;
       if (e.ability === 'SPEED_BOOST') this.addStage('enemy', 'spe', 1, 'SPEED_BOOST');
       if (e.ability === 'SHED_SKIN' && e.status && this.rng.chance(0.3)) { e.status = null; this.emit({ t: 'status', side: 'enemy', status: null }); this.msg(`${this.monName(e)} shed its skin!`); }
-      if (e.ability === 'RAIN_DISH' && this.weather === 'RAIN') this.healEnemy(1 / 16);
+      const W = this.wx();
+      if (e.ability === 'RAIN_DISH' && W === 'RAIN') this.healEnemy(1 / 16);
+      if (e.ability === 'DRY_SKIN' && W === 'RAIN') this.healEnemy(1 / 8);
+      if (e.ability === 'DRY_SKIN' && W === 'SUN' && e.hp > 0) this.damageEnemy(Math.floor(e.maxHp / (tough ? 16 : 8)), 'DRY_SKIN');
+      if (e.ability === 'HYDRATION' && W === 'RAIN' && e.status) { e.status = null; this.emit({ t: 'status', side: 'enemy', status: null }); this.msg(`${this.monName(e)}'s HYDRATION cured it!`); }
+      if (lead && this.pab(lead) === 'BAD_DREAMS' && e.status === 'SLP' && e.hp > 0) { this.damageEnemy(Math.floor(e.maxHp / (tough ? 12 : 8)), 'BAD_DREAMS'); this.msg(`${this.monName(e)} is tormented by BAD DREAMS!`); }
+      if (e.ability === 'UNBURDEN' && !es.unburden && e.hp > 0 && e.hp <= e.maxHp / 2) { es.unburden = true; this.msg(`${this.monName(e)} got lighter! (UNBURDEN)`); }
       if (this.bossRule?.onTurnEnd) this.bossRule.onTurnEnd(this);
       for (const k of ['reflect', 'lightScreen', 'safeguard', 'mist', 'taunt', 'uproar']) if (es[k] > 0) es[k]--;
       this.checkEnemyFaint(false);
@@ -1485,17 +1708,27 @@ export class Battle {
       const mx = maxHp(lead);
       if (lead.status === 'PSN') { this.damagePlayer(lead, Math.max(1, Math.floor(mx / 8))); this.msg(`${monName(lead)} is hurt by poison!`); }
       if (lead.status === 'TOX') { const st = this.ms(lead.uid); st.toxic = st.toxic || 1; this.damagePlayer(lead, Math.max(1, Math.floor(mx * Math.min(15, st.toxic) / 16))); st.toxic++; this.msg(`${monName(lead)} is hurt by poison!`); }
-      if (lead.status === 'BRN') { this.damagePlayer(lead, Math.max(1, Math.floor(mx / 8))); this.msg(`${monName(lead)} is hurt by its burn!`); }
-      if (ps.seeded && !isFainted(lead)) { this.damagePlayer(lead, Math.max(1, Math.floor(mx / 8))); this.healEnemy(1 / 10); this.msg(`${monName(lead)}'s health is sapped by LEECH SEED!`); }
+      if (lead.status === 'BRN') { this.damagePlayer(lead, Math.max(1, Math.floor(mx / (this.pab(lead) === 'HEATPROOF' ? 16 : 8)))); this.msg(`${monName(lead)} is hurt by its burn!`); }
+      if (ps.seeded && !isFainted(lead)) {
+        this.damagePlayer(lead, Math.max(1, Math.floor(mx / 8))); this.msg(`${monName(lead)}'s health is sapped by LEECH SEED!`);
+        const e = this.enemy();
+        if (this.pab(lead) === 'LIQUID_OOZE' && e) { this.msg(`${this.monName(e)} sucked up the LIQUID OOZE!`); this.damageEnemy(Math.floor(e.maxHp / 10), 'LIQUID_OOZE'); }
+        else this.healEnemy(1 / 10);
+      }
       if (ps.trapped > 0 && !isFainted(lead)) { ps.trapped--; this.damagePlayer(lead, Math.max(1, Math.floor(mx / 16))); }
       if (ps.cursed && !isFainted(lead)) this.damagePlayer(lead, Math.max(1, Math.floor(mx / 4)));
       if (ps.ingrain) this.healSide('player', lead, 1 / 16, 'INGRAIN', true);
       if (ps.wish > 0 && --ps.wish === 0) this.healSide('player', lead, 0.5, 'WISH');
       if (ps.yawn > 0 && --ps.yawn === 0) this.inflictStatus('player', 'SLP', 'YAWN', true);
       if (ps.perish > 0 && --ps.perish === 0) this.damagePlayer(lead, lead.hp);
-      if (abilityOf(lead) === 'SPEED_BOOST') this.addStage('player', 'spe', 1, 'SPEED_BOOST');
-      if (abilityOf(lead) === 'SHED_SKIN' && lead.status && this.rng.chance(0.3)) { lead.status = null; this.msg(`${monName(lead)} shed its skin!`); }
-      if (abilityOf(lead) === 'RAIN_DISH' && this.weather === 'RAIN') this.healSide('player', lead, 1 / 16, 'RAIN_DISH', true);
+      if (this.pab(lead) === 'SPEED_BOOST') this.addStage('player', 'spe', 1, 'SPEED_BOOST');
+      if (this.pab(lead) === 'SHED_SKIN' && lead.status && this.rng.chance(0.3)) { lead.status = null; this.msg(`${monName(lead)} shed its skin!`); }
+      const W = this.wx(), lab = this.pab(lead), e = this.enemy();
+      if (lab === 'RAIN_DISH' && W === 'RAIN') this.healSide('player', lead, 1 / 16, 'RAIN_DISH', true);
+      if (lab === 'DRY_SKIN' && W === 'RAIN') this.healSide('player', lead, 1 / 8, 'DRY_SKIN', true);
+      if (lab === 'DRY_SKIN' && W === 'SUN' && !isFainted(lead)) this.damagePlayer(lead, Math.max(1, Math.floor(mx / 8)));
+      if (lab === 'HYDRATION' && W === 'RAIN' && lead.status) { lead.status = null; this.ms(lead.uid).sleep = 0; this.msg(`${monName(lead)}'s HYDRATION cured it!`); }
+      if (e && e.hp > 0 && e.ability === 'BAD_DREAMS' && lead.status === 'SLP' && !isFainted(lead)) { this.damagePlayer(lead, Math.max(1, Math.floor(mx / 8))); this.msg(`${monName(lead)} is tormented by BAD DREAMS!`); }
       for (const [def, inst] of this.relicHooks('onTurnEnd')) def.onTurnEnd(this, inst.state);
     }
   }
@@ -1538,7 +1771,7 @@ export class Battle {
     this.ballsThrown++;
     const e = this.enemy();
     this.msg(`You threw a ${D.items[ballKey]?.name || 'BALL'}!`);
-    const rate = (D.species[e.species].catchRate || 45) * (this.cfg.catchMult || 1);
+    const rate = (D.species[e.species].catchRate || 45) * (this.cfg.catchMult || 1) * this.trapCatch(e);
     const bonus = ballBonus(ballKey, e, this);
     const statusB = e.status === 'SLP' || e.status === 'FRZ' ? 2 : e.status ? 1.5 : 1;
     const a = Math.floor(((3 * e.maxHp - 2 * e.hp) * rate * bonus) / (3 * e.maxHp) * statusB * (1 + (this.mods.catchBonus || 0)));
@@ -1566,7 +1799,7 @@ export class Battle {
     const e = this.enemy();
     if (!e || !ballKey) return 0;
     if (ballKey === 'MASTER_BALL') return 1;
-    const rate = (D.species[e.species].catchRate || 45) * (this.cfg.catchMult || 1);
+    const rate = (D.species[e.species].catchRate || 45) * (this.cfg.catchMult || 1) * this.trapCatch(e);
     const statusB = e.status === 'SLP' || e.status === 'FRZ' ? 2 : e.status ? 1.5 : 1;
     const a = Math.floor(((3 * e.maxHp - 2 * e.hp) * rate * ballBonus(ballKey, e, this)) / (3 * e.maxHp) * statusB * (1 + (this.mods.catchBonus || 0)));
     if (a >= 255) return 1;
@@ -1580,10 +1813,11 @@ export class Battle {
     if (!this.canFlee() || this.result) return [];
     const lead = this.lead(), e = this.enemy();
     this.fleeAttempts++;
-    const ok = this.mods.canFlee || abilityOf(lead) === 'RUN_AWAY' ||
+    const ok = this.mods.canFlee || this.pab(lead) === 'RUN_AWAY' ||
       ((this.speedOf('player') * 128 / Math.max(1, this.speedOf('enemy')) + 30 * this.fleeAttempts) % 256) > this.rng.int(0, 255) ||
       this.speedOf('player') >= this.speedOf('enemy');
-    if (ok && !this.sides.player.meanLook && e.ability !== 'ARENA_TRAP' && e.ability !== 'SHADOW_TAG') {
+    const steelTrap = e.ability === 'MAGNET_PULL' && this.ptypes(lead).includes('STEEL');
+    if (ok && !this.sides.player.meanLook && e.ability !== 'ARENA_TRAP' && e.ability !== 'SHADOW_TAG' && !steelTrap) {
       this.msg('Got away safely!');
       this.end('fled');
       return this.takeEvents();

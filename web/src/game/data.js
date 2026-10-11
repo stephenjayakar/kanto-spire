@@ -5,6 +5,7 @@ import { HOENN_PARTIES, HOENN_TRAINER_INFO, HOENN_TRAINERS } from './hoenn.js';
 import { JOHTO_TRAINERS } from './johto.js';
 import { SPECIAL_MOVES, PHYSICAL_MOVES } from './move_categories.js';
 import { MOVE_DESC, ABILITY_DESC } from './text_overrides.js';
+import { ABILITY_TEXT, GEN4_ABILITIES } from './abilities.js';
 import { applyGen4Moves } from './gen4_moves.js';
 import { RELICS, BALLS, CONSUMABLES } from './items.js';
 import * as GEN4_DATA from './gen4_data.js';
@@ -60,6 +61,9 @@ function indexData() {
   // Text rewritten for what moves and abilities actually do in this game (text_overrides.js).
   for (const [k, d] of Object.entries(MOVE_DESC)) if (D.moves[k]) D.moves[k].desc = d;
   for (const [k, d] of Object.entries(ABILITY_DESC)) if (D.abilities[k]) D.abilities[k].desc = d;
+  // (abilities prototype) every ability's text as it works here, and the Gen 4 abilities
+  for (const [k, name] of Object.entries(GEN4_ABILITIES)) if (!D.abilities[k]) D.abilities[k] = { name, desc: '', gen4: true };
+  for (const [k, d] of Object.entries(ABILITY_TEXT)) if (D.abilities[k]) D.abilities[k].desc = d;
   // Combo upgrades are named after the combo they level up.
   const COMBO_ITEM_NAMES = { RED_SHARD: 'SINGLE UP', HP_UP: 'PAIR UP', PROTEIN: 'TWO PAIR UP', YELLOW_SHARD: 'TWO PAIR UP', IRON: 'TRIPLE UP',
     BLUE_SHARD: 'COVERAGE UP', CALCIUM: 'FULL HOUSE UP', ZINC: 'QUAD UP', CARBOS: 'PENTA UP' };

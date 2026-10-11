@@ -26,13 +26,16 @@ import { RNG } from '../rng.js';
 // Gen 4: its 107 species in the wild pools, their evolutions (and the Gen 1-3 lines' new ones), the new stones, the
 // Gen 4 legendaries as rare legendary elites. (Worked on as 'v0325', which never shipped: nothing to freeze for it.)
 // (Further logic changes for the same release fold into this id; once it ships, the next change needs a new one.)
-export const LOGIC_ID = 'v040';
+// v0.5.0 (abilities prototype, branch 'abilities') does: every ability does something (docs/ABILITIES_PROPOSAL.md), the Gen 4
+// species use their HGSS abilities; v0.4.0-v0.4.6 is frozen as 'v040'.
+export const LOGIC_ID = 'v050';
 // Actions from before v0.3.6 carry no stamp: they were played on v0.3.5 (or, for older rooms, earlier; the
 // replay checks the clients' logged checksums and tries every frozen engine, see resume.js).
 export const UNSTAMPED = 'v035';
 // Frozen copies, newest first: id -> the versions it covers and its loader (dynamic import: only fetched when a
 // room needs it).
 export const FROZEN = {
+  v040: { versions: 'v0.4.0-v0.4.6', load: () => import('../../legacy/v040/engine.js') },
   v0323: { versions: 'v0.3.23-v0.3.24', load: () => import('../../legacy/v0323/engine.js') },
   v0319: { versions: 'v0.3.19-v0.3.22', load: () => import('../../legacy/v0319/engine.js') },
   v0311: { versions: 'v0.3.14-v0.3.18', load: () => import('../../legacy/v0311/engine.js') },

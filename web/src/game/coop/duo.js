@@ -108,7 +108,8 @@ export class SubBattle extends Battle {
   onLeadEnter() {
     if (!this.duo || this.dry) return super.onLeadEnter();
     const lead = this.lead();
-    const abil = lead ? abilityOfMon(lead) : null;
+    this.leadAbilityEnter(lead);
+    const abil = lead ? this.pab(lead) : null;
     if (abil === 'INTIMIDATE') {
       this.msg(`${monName(lead)}'s INTIMIDATE cuts the foes' ATTACK!`);
       for (const ri of this.duo.liveField()) this.withFocus(ri, () => this.addStage('enemy', 'atk', -1, 'INTIMIDATE', true));
@@ -116,6 +117,7 @@ export class SubBattle extends Battle {
     if (abil === 'DRIZZLE') this.setWeather('RAIN', true);
     if (abil === 'DROUGHT') this.setWeather('SUN', true);
     if (abil === 'SAND_STREAM') this.setWeather('SAND', true);
+    if (abil === 'SNOW_WARNING') this.setWeather('HAIL', true);
     if (this.bossRule?.onLeadEnter) this.bossRule.onLeadEnter(this, lead);
   }
 
@@ -317,6 +319,9 @@ export class DuoBattle {
       if (ab === 'DRIZZLE') h.setWeather('RAIN', true);
       if (ab === 'DROUGHT') h.setWeather('SUN', true);
       if (ab === 'SAND_STREAM') h.setWeather('SAND', true);
+      if (ab === 'SNOW_WARNING') h.setWeather('HAIL', true);
+      h.sides.enemy.inTurn = Math.max(1, this.turn || 0);
+      h.syncEnemyTypes();
     });
     // An enemy's INTIMIDATE hits both players.
     if (e.ability === 'INTIMIDATE') {

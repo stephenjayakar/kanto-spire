@@ -6,7 +6,8 @@ import { LEGENDS, STARTERS, rivalKey, BIRDS, RIVAL_INTROS, counterStarter, rival
 import { actsForRun, regionOf, drawSpire, rivalFor, validSpire, spireCode, SPIRE, timeOfDay, areaPool, withFinds } from './regions.js';
 import { HOENN_TRAINER_CLASSES } from './hoenn.js';
 import { generateMap } from './map.js';
-import { makeEnemy } from './battle.js';
+import { makeEnemy, abilityOf } from './battle.js';
+import { partyAbilityMods, LEGACY_GEN4_ABILITIES } from './abilities.js';
 import { RELICS, BADGES, CONSUMABLES, BALLS, RELIC_PRICE, VITAMIN_COMBO, tmMove, friendCopy } from './items.js';
 import { CHAMPION_RULE_POOL, ELITE_RULE_POOL } from './bosses.js';
 import { VERSION } from './version.js';
@@ -99,6 +100,7 @@ export class Run {
   // champ: the player has beaten a CHAMPION in an earlier run (meta.unlocks.win): CERULEAN CAVE's MEWTWO can show up.
   static create({ starter = 'CHARMANDER', ascension = 0, seed = null, world = 'kanto', shiny = false, coop = false, pool = null, regions = null, rival = null, champ = false } = {}) {
     const r = new Run();
+    r.abilityRules = 1; // (abilities prototype: Gen 4 mons use the HGSS ability lists)
     r.seed = seed || randomSeedString();
     r.rng = new RNG(r.seed);
     r.ascension = ascension;
@@ -172,6 +174,7 @@ export class Run {
     for (const r of this.relics) add(RELICS[r.key]?.mods);
     for (const b of this.badges) add(BADGES[b]?.mods);
     if (this.ascension >= 10 && this.actIndex >= 1) m.dmgTaken = (m.dmgTaken || 0) + 0.15;
+    add(partyAbilityMods(this.party, abilityOf)); // PICKUP, HONEY GATHER, ILLUMINATE, MAGNET PULL
     return m;
   }
   hasRelic(key) { return this.relics.some(r => r.key === key); }
@@ -449,7 +452,9 @@ export class Run {
       let pool = fresh(speciesOf(area));
       if (!pool.length) pool = fresh(open.flatMap(speciesOf));
       if (!pool.length) pool = speciesOf(area);
-      const e = rng.weighted(pool, e => e.rate || 1);
+      // ILLUMINATE: rare finds x2; MAGNET PULL: STEEL species x3
+      const am = this.mods(), rf = am.rareFindMult || 1, sl = am.steelLure || 1;
+      const e = rng.weighted(pool, e => (e.rate || 1) * (e.rare ? rf : 1) * (sl > 1 && D.species[e.species]?.types?.includes('STEEL') ? sl : 1));
       pick = e.species;
       rareFind = !!e.rare;
     }
@@ -1028,6 +1033,14 @@ export class Run {
     const def = (k, v) => { if (o[k] === undefined || o[k] === null && v !== null && typeof v === 'object') o[k] = v; };
     def('ascension', 0);
     def('world', 'kanto');
+    // (abilities prototype) a save from before the Gen 4 ability lists changed: its Gen 4 mons keep the ability they had
+    if (!o.abilityRules) {
+      for (const m of o.party || []) {
+        const old = m && !m.ability && LEGACY_GEN4_ABILITIES[m.species];
+        if (old) m.ability = old[(m.ivs?.spe ?? 0) % old.length];
+      }
+      o.abilityRules = 1;
+    }
     def('actIndex', 0);
     def('party', []);
     def('relics', []);
