@@ -7,7 +7,7 @@ import { loadMeta, G, saveKeys, setSaveScope } from './game/state.js';
 import { GFX } from './scenes/common.js';
 import { Sound } from './audio/sound.js';
 import { EM, hoennSong } from './audio/emerald.js';
-import { retroSong, RETRO_NEXT } from './audio/retro.js';
+import { retroSong, RETRO_NEXT, savedRetroMix } from './audio/retro.js';
 import { TitleScene } from './scenes/title.js';
 import { initCloud, Cloud, signedIn, signIn, authToken, packManifest, dropAuth, pendingInvite } from './net/cloud.js';
 import { loadPacks } from './net/assetpack.js';
@@ -75,6 +75,7 @@ async function boot() {
       const song = retroSong(act, name, ctx, { tod });
       return song ? { song, next: RETRO_NEXT[song] || null } : null;
     });
+    Sound.setRetroMix(savedRetroMix()); // (RETRO MIX: the saved pick while the picker is on, else the shipped mix)
     if (s.audioQuality === 'retro') Sound.setQuality('retro');
   }).catch(e => console.warn('audio init failed', e));
   await Promise.all([

@@ -5,6 +5,7 @@ import { text } from '../engine/font.js';
 import { swirlBackground, BG_THEMES, button, panel, rect, drawTips, tip, THEME, scrollArea } from '../engine/ui.js';
 import { G, hasSavedRun, loadRun, saveMeta } from '../game/state.js';
 import { Sound } from '../audio/sound.js';
+import { RETRO_MIX_PICKER, RETRO_MIX_OPTIONS, savedRetroMix, saveRetroMix } from '../audio/retro.js';
 import { ChoiceModal, Modal } from './common.js';
 import { StarterScene } from './starter.js';
 import { goToMap, continueRun } from './flow.js';
@@ -142,7 +143,9 @@ export class SettingsModal extends Modal {
   draw(ctx) {
     this.dim(ctx);
     const s = G.meta.settings;
-    const w = 280, h = 268, x = (W - w) / 2, y = (H - h) / 2;
+    // (RETRO MIX adds a row at the bottom while RETRO is picked: the panel grows downward, the rows stay put)
+    const mixRow = RETRO_MIX_PICKER && s.audioQuality === 'retro';
+    const w = 280, h = 268 + (mixRow ? 24 : 0), x = (W - w) / 2, y = (H - 268) / 2;
     panel(ctx, x, y, w, h);
     text(ctx, 'SETTINGS', W / 2, y + 8, { align: 'center', color: 'white' });
     const row = (label, val, cy, set) => {
@@ -188,6 +191,18 @@ export class SettingsModal extends Modal {
       s.display = setDisplayMode(DISPLAY_MODES[(DISPLAY_MODES.indexOf(disp) + 1) % DISPLAY_MODES.length]); saveMeta();
     }
     if (hover(x + 10, y + 202, w - 20, 24)) tip('SCREEN', 'How the game is scaled to your window.\nFILL (default): always as big as fits, smoothly scaled so the pixels stay even.\nPIXEL: always a whole-number scale, every pixel the same size (borders around it).\nAUTO: whole-number scale, stretched when that would leave big borders.', { width: 230 });
+    // RETRO MIX (audio/retro.js RETRO_MIX_PICKER): how the Game Boy music sounds; saved in this browser only
+    if (mixRow) {
+      const cur = savedRetroMix();
+      text(ctx, 'RETRO MIX', x + 14, y + 232, { color: 'white' });
+      let mx = x + 110;
+      for (const [k, name, body] of RETRO_MIX_OPTIONS) {
+        if (button(ctx, k, mx, y + 228, 34, 20, { color: k === cur ? THEME.green : '#506080' }) && k !== cur) { saveRetroMix(k); Sound.setRetroMix(k); }
+        if (hover(mx, y + 226, 34, 24)) tip(`${k}: ${name}`, body);
+        mx += 37;
+      }
+      if (hover(x + 10, y + 226, 98, 24)) tip('RETRO MIX', 'How the Game Boy music sounds (the same songs and notes in every mix).\n' + RETRO_MIX_OPTIONS.map(([k, n, b]) => `${k} ${n}: ${b}`).join('\n'), { width: 230 });
+    }
     if (button(ctx, 'CLOSE', W / 2 - 40, y + h - 30, 80, 22, { color: '#506080' })) this.close();
     this.closeOnTapOutside(x, y, w, h);
     drawTips(ctx);

@@ -8,8 +8,15 @@
 //     sound registers, quirks and all (vibrato on the low byte only, the pitch-slide borrow bug, drums dropped
 //     while the previous drum still plays...).
 //   - Apu: the DMG sound hardware those registers drive (2 pulse channels with sweep/envelope, the 4-bit wave
-//     channel, the LFSR noise channel, NR50/NR51 mixing and the output high-pass), synthesized with band-limited
-//     steps so high notes don't alias.
+//     channel, the LFSR noise channel, NR50/NR51 mixing). Everything the registers mean (pitch, duty, envelope,
+//     sweep, length, panning) is emulated exactly; only the output stage differs between two renders:
+//       'hq' (the game's): a cleaner synth driven by that state. Envelopes glide between the hardware's 16 steps,
+//          notes start and stop with ~1-4 ms ramps instead of clicks, PolyBLEP pulses, the wave channel's 32 4-bit
+//          samples resynthesized as a band-limited waveform (no stair-step images), the LFSR noise box-filtered and
+//          rounded off, channels panned softly instead of hard L/R; then one of three mixes (RETRO_MIXES: A clean,
+//          B + warmth and a small room, C + a light detuned chorus). Same notes, timing and vibrato as the console.
+//       'dmg': the console's own output (band-limited steps plus the DMG output high-pass), kept as the reference
+//          the tests and tools/retro_hq_compare.mjs measure the HQ render against.
 // Player ties them together: one BGM song, an optional fanfare that pauses it, fades, and 'end' events.
 
 export const CPU_HZ = 4194304;
@@ -58,8 +65,9 @@ const NOISE_DIV = [8, 16, 32, 48, 64, 80, 96, 112];
 
 // ---------------------------------------------------------------------------------------------------------------
 export class Apu {
-  constructor(sampleRate) {
+  constructor(sampleRate, opts = {}) {
     this.sr = sampleRate;
+    this.hq = (opts.render || RETRO_RENDER) !== 'dmg';
     this.cyc2smp = sampleRate / CPU_HZ;
     const maxFrame = Math.ceil(FRAME_CYCLES * this.cyc2smp) + 8;
     this.bl = new Blip(maxFrame); this.br = new Blip(maxFrame);
@@ -75,6 +83,7 @@ export class Apu {
       sweepT: 0, sweepOn: false, shadow: 0, lfsr: 0x7fff, shift: 4,
     }));
     this.fsT = FS_PERIOD; this.fsStep = 0;
+    if (this.hq) hqInit(this, maxFrame, opts.mix);
     this.reset();
   }
   reset() {
@@ -89,7 +98,7 @@ export class Apu {
     v &= 0xff;
     const r = a - 0xff10;
     this.reg[r] = v;
-    if (r >= 0x20) return;           // wave RAM: read live by the wave channel
+    if (r >= 0x20) { this.waveDirty = true; return; } // wave RAM: read live by the wave channel
     if (r === 0x14 || r === 0x15) { for (const c of this.ch) this.level(c, t); return; }
     if (r === 0x16) { if (!(v & 0x80)) { for (const c of this.ch) { c.on = false; this.level(c, t); } } return; }
     const ci = r < 5 ? 0 : r < 10 ? 1 : r < 15 ? 2 : 3, n = r - ci * 5, c = this.ch[ci];
@@ -100,7 +109,7 @@ export class Apu {
       else if (n === 3) c.freq = (c.freq & 0x700) | v;
       else if (n === 4) {
         c.freq = (c.freq & 0xff) | ((v & 7) << 8); c.lenOn = !!(v & 0x40);
-        if (v & 0x80) { c.on = c.dac; if (c.len === 0) c.len = 256; c.pos = 0; c.timer = (2048 - c.freq) * 2 + 6; }
+        if (v & 0x80) { c.on = c.dac; if (c.len === 0) c.len = 256; c.pos = 0; c.timer = (2048 - c.freq) * 2 + 6; c.trig = true; }
       }
       this.waveOut(c); this.level(c, t); return;
     }
@@ -122,6 +131,7 @@ export class Apu {
     c.on = c.dac;
     if (c.len === 0) c.len = 64;
     c.vol = env >> 4; c.envDir = env & 8 ? 1 : -1; c.envPer = env & 7; c.envT = c.envPer || 8;
+    c.trig = true; c.envLen = Math.max(1, this.envRem(c));
     if (c.i === 3) { c.lfsr = 0x7fff; c.timer = this.noisePeriod(); return; }
     c.timer = (2048 - c.freq) * 4;
     if (c.i === 0) {
@@ -146,6 +156,7 @@ export class Apu {
   noiseOut(c) { c.out = c.on && !(c.lfsr & 1) ? c.vol : 0; }
   // Emits the change of a channel's contribution to the left/right mix at cycle t of the frame.
   level(c, t) {
+    if (this.hq) return;             // (the HQ render reads the channel state directly: hqSegment)
     const nr51 = this.reg[0x15], nr50 = this.reg[0x14];
     const o = c.muted ? 0 : c.out;
     const L = (nr51 >> (4 + c.i)) & 1 ? o * ((nr50 >> 4 & 7) + 1) : 0;
@@ -156,8 +167,11 @@ export class Apu {
       if (R !== c.lastR) { this.br.add(pos, R - c.lastR); c.lastR = R; }
     }
   }
+  // Cycles from now (the start of the current stretch of the frame) to the channel's next envelope step.
+  envRem(c) { return this.fsT + ((7 - this.fsStep) & 7) * FS_PERIOD + (c.envT - 1) * 8 * FS_PERIOD; }
   // ---- run one frame's worth of cycles, then hand out the samples ----
   runFrame() {
+    if (this.hq) return hqRunFrame(this);
     let t = 0;
     while (t < FRAME_CYCLES) {
       const end = Math.min(FRAME_CYCLES, t + this.fsT);
@@ -219,7 +233,7 @@ export class Apu {
           c.envT = c.envPer;
           const v = c.vol + c.envDir;
           if (v >= 0 && v <= 15) {
-            c.vol = v;
+            c.vol = v; c.envLen = c.envPer * 8 * FS_PERIOD;
             if (c.i === 3) this.noiseOut(c); else this.pulseOut(c);
             this.level(c, t);
           }
@@ -229,6 +243,7 @@ export class Apu {
   }
   // n samples of the frame just run -> L/R (high-passed, scaled to about +-1 at full volume)
   read(L, R, n, off, gain) {
+    if (this.hq) { hqRead(this, L, R, n, off, gain); return; }
     this.bl.read(L, n, off); this.br.read(R, n, off);
     const k = this.hpK, g = gain / 480;
     let hl = this.hpL, hr = this.hpR, il = this.hpInL, ir = this.hpInR;
@@ -240,6 +255,285 @@ export class Apu {
     }
     this.hpL = hl; this.hpR = hr; this.hpInL = il; this.hpInR = ir;
   }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// The HQ output stage: the same channel state (Apu above), rendered by a cleaner synth. Picked per Apu ('hq' unless
+// opts.render === 'dmg'); the mix (A/B/C) can change while playing (GbPlayer option message).
+export const RETRO_RENDER = 'hq';
+export const RETRO_MIXES = ['A', 'B', 'C'];
+export const RETRO_MIX_DEFAULT = 'A';
+// lp: the output low-pass (Hz, 2-pole Butterworth); room: wet level of the small room; comp: the gentle bus compressor;
+// detune: cents of the two extra pulse voices (0 = none); trim: loudness match with the console render (and so with
+// the GBA music: tests/retro_audio.mjs, tools/retro_hq_compare.mjs).
+const MIXES = {
+  A: { lp: 11000, room: 0, comp: false, detune: 0, trim: 1.06 },
+  B: { lp: 8000, room: 0.12, comp: true, detune: 0, trim: 1.19 },
+  C: { lp: 9000, room: 0.1, comp: true, detune: 7, trim: 1.165 },
+};
+const PULSE_W = [0.125, 0.25, 0.5, 0.75];
+const PAN_NEAR = 0.9, PAN_FAR = 0.35;      // a channel the song sends to one side only: mostly there, not hard-panned
+const ATTACK_S = 0.0008, RELEASE_S = 0.004; // the shortest note-on / note-off ramps (no clicks)
+const GLIDE_S = 0.005;                      // pitch changes without a new note (vibrato, slides) glide this fast
+const NOISE_FC_RATIO = 0.6, NOISE_FC_MAX = 10000, NOISE_TRIM = 1.6;
+const WAVE_TBL = 512;
+const DET_MIX = 0.45;
+// the small room: a 4-line feedback delay network (ms) with damping, after a short pre-delay
+const ROOM_MS = [29.7, 37.1, 41.1, 43.7], ROOM_FB = 0.62, ROOM_DAMP_HZ = 4500, ROOM_PRE_MS = 9;
+
+function hqInit(apu, maxFrame, mix) {
+  const sr = apu.sr;
+  apu.hqL = new Float32Array(maxFrame + 4); apu.hqR = new Float32Array(maxFrame + 4);
+  apu.up = 1 / (ATTACK_S * sr); apu.dn = 1 / (RELEASE_S * sr);
+  apu.glide = 1 - Math.exp(-1 / (GLIDE_S * sr));
+  apu.waveDirty = true; apu.waveKey = ''; apu.waveTables = new Map();
+  apu.noiseG = new Float32Array(256);
+  for (let v = 0; v < 256; v++) {
+    const clock = CPU_HZ / (NOISE_DIV[v & 7] << (v >> 4));
+    const fc = Math.min(NOISE_FC_RATIO * clock, NOISE_FC_MAX, 0.45 * sr);
+    apu.noiseG[v] = 1 - Math.exp(-2 * Math.PI * fc / sr);
+  }
+  for (const c of apu.ch) {
+    c.trig = false; c.envLen = 1; c.gl = 0; c.gr = 0; c.hf = 0; c.ph = (0.37 * c.i) % 1; c.hw = 0.5;
+    c.phA = 0.21 + 0.29 * c.i / 4; c.phB = 0.68 - 0.17 * c.i / 4; c.n1 = 0; c.n2 = 0; // (fixed: renders repeat exactly)
+  }
+  // master: DC blocker (like the DMG's), low-pass, room, compressor, gain ramp
+  apu.hp = { l: 0, r: 0, il: 0, ir: 0 };
+  apu.lp = [0, 0, 0, 0, 0, 0, 0, 0];
+  apu.room = {
+    lines: ROOM_MS.map((ms) => new Float32Array(Math.round(ms * sr / 1000))), pos: [0, 0, 0, 0], damp: [0, 0, 0, 0],
+    pre: new Float32Array(Math.round(ROOM_PRE_MS * sr / 1000)), prePos: 0,
+    dk: 1 - Math.exp(-2 * Math.PI * ROOM_DAMP_HZ / sr),
+  };
+  apu.comp = { env: 0, gain: 1, att: 1 - Math.exp(-1 / (0.005 * sr)), rel: 1 - Math.exp(-1 / (0.15 * sr)) };
+  apu.gPrev = 0;
+  hqSetMix(apu, mix || RETRO_MIX_DEFAULT);
+}
+export function hqSetMix(apu, mix) {
+  if (!apu.hq) return;
+  apu.mix = MIXES[mix] ? mix : RETRO_MIX_DEFAULT;
+  const m = MIXES[apu.mix], sr = apu.sr;
+  // RBJ Butterworth low-pass
+  const w = 2 * Math.PI * Math.min(m.lp, 0.45 * sr) / sr, al = Math.sin(w) / Math.SQRT2, cw = Math.cos(w), a0 = 1 + al;
+  apu.lpK = [(1 - cw) / 2 / a0, (1 - cw) / a0, (1 - cw) / 2 / a0, -2 * cw / a0, (1 - al) / a0];
+  apu.det = m.detune ? [Math.pow(2, m.detune / 1200), Math.pow(2, -m.detune / 1200)] : null;
+}
+
+function hqRunFrame(apu) {
+  const tEnd = apu.t0 + FRAME_CYCLES * apu.cyc2smp, n = tEnd | 0;
+  apu.hqL.fill(0, 0, n + 1); apu.hqR.fill(0, 0, n + 1);
+  let t = 0, s0 = 0;
+  while (t < FRAME_CYCLES) {
+    const end = Math.min(FRAME_CYCLES, t + apu.fsT);
+    const s1 = end === FRAME_CYCLES ? n : Math.min(n, Math.round(apu.t0 + end * apu.cyc2smp));
+    if (s1 > s0) hqSegment(apu, s0, s1, t, end);
+    s0 = Math.max(s0, s1);
+    apu.fsT -= end - t;
+    t = end;
+    if (apu.fsT <= 0) { apu.fsT += FS_PERIOD; apu.frameSeq(t); }
+  }
+  apu.t0 = tEnd - n;
+  return n;
+}
+
+// the envelope's level (0..15) rem cycles before its next step: a straight line between the hardware's steps
+function envLevel(c, rem) {
+  const v = c.vol;
+  if (!c.envPer || (c.envDir > 0 ? v >= 15 : v <= 0)) return v;
+  let k = 1 - rem / c.envLen;
+  if (k < 0) k = 0; else if (k > 1) k = 1;
+  return v + c.envDir * k;
+}
+
+// Samples a..b of the frame buffers, cycles t..end of the frame (no register writes or frame-sequencer steps inside).
+function hqSegment(apu, a, b, t, end) {
+  const reg = apu.reg, nr51 = reg[0x15], nr50 = reg[0x14];
+  const vl = (((nr50 >> 4) & 7) + 1) / 8, vr = ((nr50 & 7) + 1) / 8;
+  const span = end - t, cnt = b - a;
+  for (const c of apu.ch) {
+    const i = c.i, onL = (nr51 >> (4 + i)) & 1, onR = (nr51 >> i) & 1;
+    const pl = onL ? (onR ? 1 : PAN_NEAR) : (onR ? PAN_FAR : 0), pr = onR ? (onL ? 1 : PAN_NEAR) : (onL ? PAN_FAR : 0);
+    let l0 = 0, l1 = 0;
+    if (c.on && c.dac && !c.muted && (pl || pr)) {
+      if (i === 2) l0 = l1 = c.shift === 4 ? 0 : 1 / (1 << c.shift);
+      else { const rem = apu.envRem(c); l0 = envLevel(c, rem) / 15; l1 = envLevel(c, rem - span) / 15; }
+    }
+    const tl0 = l0 * pl * vl, tl1 = l1 * pl * vl, tr0 = l0 * pr * vr, tr1 = l1 * pr * vr;
+    if (!tl0 && !tl1 && !tr0 && !tr1 && !c.gl && !c.gr) { c.trig = false; continue; }
+    if (i === 3) hqNoise(apu, c, a, b, tl0, (tl1 - tl0) / cnt, tr0, (tr1 - tr0) / cnt);
+    else hqTone(apu, c, a, b, tl0, (tl1 - tl0) / cnt, tr0, (tr1 - tr0) / cnt);
+    c.trig = false;
+  }
+}
+
+// PolyBLEP residual for a unit step at phase 0 (x = phase, dt = phase increment)
+function blep(x, dt) {
+  if (x < dt) { x /= dt; return x + x - x * x - 1; }
+  if (x > 1 - dt) { x = (x - 1) / dt; return x * x + x + x + 1; }
+  return 0;
+}
+function pulse(ph, w, dt) {
+  let p2 = ph - w; if (p2 < 0) p2 += 1;
+  return (ph < w ? 1 - w : -w) + 0.5 * (blep(ph, dt) - blep(p2, dt));
+}
+
+function waveTable(apu, kmax) {
+  if (apu.waveDirty) {
+    let k = '';
+    for (let j = 0x20; j < 0x30; j++) k += String.fromCharCode(65 + (apu.reg[j] >> 4), 65 + (apu.reg[j] & 15));
+    apu.waveKey = k; apu.waveDirty = false;
+  }
+  const key = apu.waveKey + kmax;
+  let tb = apu.waveTables.get(key);
+  if (tb) return tb;
+  if (apu.waveTables.size > 64) apu.waveTables.clear();
+  // the staircase the DMG plays (32 held 4-bit samples), as its Fourier series cut at kmax harmonics: the same
+  // waveform without the step images above the 16th harmonic
+  const s = new Float64Array(32);
+  for (let j = 0; j < 32; j++) { const v = apu.reg[0x20 + (j >> 1)]; s[j] = j & 1 ? v & 15 : v >> 4; }
+  tb = new Float32Array(WAVE_TBL + 1);
+  for (let k = 1; k <= kmax; k++) {
+    let re = 0, im = 0;
+    for (let j = 0; j < 32; j++) { const ang = 2 * Math.PI * k * (j + 0.5) / 32; re += s[j] * Math.cos(ang); im += s[j] * Math.sin(ang); }
+    const x = Math.PI * k / 32, zoh = Math.sin(x) / x, sc = (k === 16 ? 1 : 2) / 32 * zoh / 15;
+    re *= sc; im *= sc;
+    for (let q = 0; q < WAVE_TBL; q++) { const ang = 2 * Math.PI * k * q / WAVE_TBL; tb[q] += re * Math.cos(ang) + im * Math.sin(ang); }
+  }
+  tb[WAVE_TBL] = tb[0];
+  apu.waveTables.set(key, tb);
+  return tb;
+}
+
+// pulse channels (0, 1) and the wave channel (2)
+function hqTone(apu, c, a, b, tl, dl, tr, dr) {
+  const L = apu.hqL, R = apu.hqR, isr = 1 / apu.sr, up = apu.up, dn = apu.dn, kg = apu.glide;
+  const wave = c.i === 2;
+  const fT = wave ? 65536 / (2048 - c.freq) : 131072 / (2048 - c.freq);
+  let f = c.hf;
+  if (c.trig || !(c.gl || c.gr) || !(f > 0) || fT > f * 1.123 || fT < f * 0.89) f = fT; // a new note: no glide
+  let gl = c.gl, gr = c.gr, ph = c.ph;
+  if (fT > 0.45 * apu.sr) {          // ultrasonic (songs park a channel at the top frequency): silent, just ramp down
+    for (let i = a; i < b; i++) { gl = Math.max(0, gl - dn); gr = Math.max(0, gr - dn); }
+    c.gl = gl; c.gr = gr; c.hf = fT; return;
+  }
+  if (wave) {
+    const tb = waveTable(apu, Math.max(1, Math.min(16, Math.floor(0.45 * apu.sr / fT))));
+    for (let i = a; i < b; i++) {
+      f += (fT - f) * kg;
+      ph += f * isr; if (ph >= 1) ph -= 1;
+      const x = ph * WAVE_TBL, j = x | 0, v = tb[j] + (tb[j + 1] - tb[j]) * (x - j);
+      tl += dl; tr += dr;
+      let d = tl - gl; gl += d > up ? up : d < -dn ? -dn : d;
+      d = tr - gr; gr += d > up ? up : d < -dn ? -dn : d;
+      L[i] += v * gl; R[i] += v * gr;
+    }
+  } else {
+    let w = c.hw;
+    const det = apu.det;
+    if (!(c.gl || c.gr)) w = PULSE_W[c.duty];
+    if (det) {                         // mix C: two extra voices a few cents sharp/flat, one per side
+      let pa = c.phA, pb = c.phB;
+      const ka = det[0], kb = det[1];
+      for (let i = a; i < b; i++) {
+        f += (fT - f) * kg;
+        const dt = f * isr;
+        ph += dt; if (ph >= 1) { ph -= 1; w = PULSE_W[c.duty]; }
+        const da = dt * ka, db = dt * kb;
+        pa += da; if (pa >= 1) pa -= 1;
+        pb += db; if (pb >= 1) pb -= 1;
+        const v = pulse(ph, w, dt);
+        tl += dl; tr += dr;
+        let d = tl - gl; gl += d > up ? up : d < -dn ? -dn : d;
+        d = tr - gr; gr += d > up ? up : d < -dn ? -dn : d;
+        L[i] += (v + DET_MIX * pulse(pa, w, da)) * gl; R[i] += (v + DET_MIX * pulse(pb, w, db)) * gr;
+      }
+      c.phA = pa; c.phB = pb;
+    } else {
+      for (let i = a; i < b; i++) {
+        f += (fT - f) * kg;
+        const dt = f * isr;
+        ph += dt; if (ph >= 1) { ph -= 1; w = PULSE_W[c.duty]; }
+        const v = pulse(ph, w, dt);
+        tl += dl; tr += dr;
+        let d = tl - gl; gl += d > up ? up : d < -dn ? -dn : d;
+        d = tr - gr; gr += d > up ? up : d < -dn ? -dn : d;
+        L[i] += v * gl; R[i] += v * gr;
+      }
+    }
+    c.hw = w;
+  }
+  c.gl = gl; c.gr = gr; c.ph = ph; c.hf = f;
+}
+
+// the noise channel: the real LFSR, each output sample the average of its bits over that sample (box filter), then
+// a 2-pole low-pass that follows the clock rate (rounds off the hiss and the step grit above it)
+function hqNoise(apu, c, a, b, tl, dl, tr, dr) {
+  const L = apu.hqL, R = apu.hqR, up = apu.up, dn = apu.dn;
+  const nr43 = apu.reg[0x12], per = apu.noisePeriod(), narrow = nr43 & 8, g = apu.noiseG[nr43];
+  const D = 1 / apu.cyc2smp, invD = NOISE_TRIM / D;
+  let gl = c.gl, gr = c.gr, lfsr = c.lfsr, timer = c.timer, n1 = c.n1, n2 = c.n2;
+  for (let i = a; i < b; i++) {
+    let rem = D, acc = 0, bit = lfsr & 1 ? 0 : 1;
+    while (timer <= rem) {
+      acc += bit * timer; rem -= timer; timer = per;
+      const x = (lfsr ^ (lfsr >> 1)) & 1;
+      lfsr = (lfsr >> 1) | (x << 14);
+      if (narrow) lfsr = (lfsr & ~0x40) | (x << 6);
+      bit = lfsr & 1 ? 0 : 1;
+    }
+    acc += bit * rem; timer -= rem;
+    n1 += g * (acc * invD - 0.5 * NOISE_TRIM - n1); n2 += g * (n1 - n2);
+    tl += dl; tr += dr;
+    let d = tl - gl; gl += d > up ? up : d < -dn ? -dn : d;
+    d = tr - gr; gr += d > up ? up : d < -dn ? -dn : d;
+    L[i] += n2 * gl; R[i] += n2 * gr;
+  }
+  c.gl = gl; c.gr = gr; c.lfsr = lfsr; c.timer = timer; c.n1 = n1; c.n2 = n2;
+}
+
+// the frame's mixed channels -> L/R: DC blocker, low-pass, (room), (compressor), gain ramp, soft safety limit
+function hqRead(apu, L, R, n, off, gain) {
+  const m = MIXES[apu.mix], hqL = apu.hqL, hqR = apu.hqR, k = apu.hpK, hp = apu.hp;
+  const [b0, b1, b2, a1, a2] = apu.lpK, z = apu.lp;
+  let hl = hp.l, hr = hp.r, il = hp.il, ir = hp.ir;
+  let xl1 = z[0], xl2 = z[1], yl1 = z[2], yl2 = z[3], xr1 = z[4], xr2 = z[5], yr1 = z[6], yr2 = z[7];
+  const g1 = gain / 4 * m.trim, g0 = apu.gPrev, dg = (g1 - g0) / n;
+  const room = m.room ? apu.room : null, wet = m.room;
+  const cp = m.comp ? apu.comp : null;
+  for (let i = 0; i < n; i++) {
+    let xl = hqL[i], xr = hqR[i];
+    hl = k * hl + xl - il; il = xl;
+    hr = k * hr + xr - ir; ir = xr;
+    if (apu.mono) { const mm = (hl + hr) * 0.5; xl = mm; xr = mm; } else { xl = hl; xr = hr; }
+    let yl = b0 * xl + b1 * xl1 + b2 * xl2 - a1 * yl1 - a2 * yl2; xl2 = xl1; xl1 = xl; yl2 = yl1; yl1 = yl;
+    let yr = b0 * xr + b1 * xr1 + b2 * xr2 - a1 * yr1 - a2 * yr2; xr2 = xr1; xr1 = xr; yr2 = yr1; yr1 = yr;
+    if (room) {
+      const pre = room.pre, pp = room.prePos, inp = pre[pp];
+      pre[pp] = (yl + yr) * 0.5; room.prePos = pp + 1 === pre.length ? 0 : pp + 1;
+      const ln = room.lines, ps = room.pos, dp = room.damp, dk = room.dk;
+      const o0 = ln[0][ps[0]], o1 = ln[1][ps[1]], o2 = ln[2][ps[2]], o3 = ln[3][ps[3]];
+      dp[0] += dk * (o0 - dp[0]); dp[1] += dk * (o1 - dp[1]); dp[2] += dk * (o2 - dp[2]); dp[3] += dk * (o3 - dp[3]);
+      const s = (dp[0] + dp[1] + dp[2] + dp[3]) * 0.5;           // Householder feedback matrix
+      ln[0][ps[0]] = inp + ROOM_FB * (dp[0] - s); ln[1][ps[1]] = inp + ROOM_FB * (dp[1] - s);
+      ln[2][ps[2]] = inp + ROOM_FB * (dp[2] - s); ln[3][ps[3]] = inp + ROOM_FB * (dp[3] - s);
+      for (let q = 0; q < 4; q++) if (++ps[q] === ln[q].length) ps[q] = 0;
+      yl += wet * (o0 + o2 - o1 * 0.5); yr += wet * (o1 + o3 - o2 * 0.5);
+    }
+    let g = g0 + dg * i;
+    if (cp) {                          // gentle bus compressor: 2:1 above ~-14 dBFS (after gain), stereo-linked
+      const lev = Math.max(Math.abs(yl), Math.abs(yr)) * g;
+      cp.env += (lev > cp.env ? cp.att : cp.rel) * (lev - cp.env);
+      if ((i & 15) === 0) cp.gain = cp.env > 0.2 ? Math.sqrt(0.2 / cp.env) : 1;
+      g *= cp.gain;
+    }
+    yl *= g; yr *= g;
+    if (yl > 0.9 || yl < -0.9) yl = Math.sign(yl) * (0.9 + 0.1 * Math.tanh((Math.abs(yl) - 0.9) / 0.1));
+    if (yr > 0.9 || yr < -0.9) yr = Math.sign(yr) * (0.9 + 0.1 * Math.tanh((Math.abs(yr) - 0.9) / 0.1));
+    L[off + i] = yl; R[off + i] = yr;
+  }
+  hp.l = hl; hp.r = hr; hp.il = il; hp.ir = ir;
+  z[0] = xl1; z[1] = xl2; z[2] = yl1; z[3] = yl2; z[4] = xr1; z[5] = xr2; z[6] = yr1; z[7] = yr2;
+  apu.gPrev = g1;
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -851,9 +1145,10 @@ export class GscEngine {
 // ---------------------------------------------------------------------------------------------------------------
 // The player: one BGM song plus an optional fanfare that pauses it (like m4a's PlayFanfare), fades, end events.
 // songs: retro.json's song table; games: { red: {banks: {2: Uint8Array, ...}, tables}, silver: {...} }.
+// opts: { render: 'hq' (default) | 'dmg', mix: 'A' | 'B' | 'C' } (Apu, hqSetMix; the mix can change later: 'option')
 export class GbPlayer {
-  constructor(sampleRate, emit = () => {}) {
-    this.apu = new Apu(sampleRate);
+  constructor(sampleRate, emit = () => {}, opts = {}) {
+    this.apu = new Apu(sampleRate, opts);
     this.emit = emit;
     this.games = null; this.songs = null;
     this.bgm = null; this.fan = null; this.paused = false; this.stereo = true;
@@ -963,7 +1258,10 @@ export class GbPlayer {
       case 'pause': this.paused = true; break;
       case 'resume': this.paused = false; break;
       case 'fadeOut': this.fadeOut(m.frames || 60); break;
-      case 'option': if (m.stereo !== undefined) { this.stereo = !!m.stereo; this.apu.mono = !m.stereo; } break;
+      case 'option':
+        if (m.stereo !== undefined) { this.stereo = !!m.stereo; this.apu.mono = !m.stereo; }
+        if (m.mix !== undefined) hqSetMix(this.apu, m.mix);
+        break;
       default: break;
     }
   }

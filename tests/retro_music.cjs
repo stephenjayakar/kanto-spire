@@ -6,7 +6,9 @@
 //  - songs resolve by context (a KANTO wild battle -> red:WildBattle, a JOHTO act's map -> Silver's Route 29, an
 //    unmapped song -> back on m4a), fanfares end, and the engine really outputs sound (AnalyserNode on the master);
 //  - HQ switches back to the GBA soundtrack; a reload with RETRO saved boots straight into RETRO (Red's title theme);
-//  - no page errors. Screenshot: tests/out/retro/settings_audio_style.png (RETRO's tooltip showing).
+//  - RETRO MIX (while audio/retro.js RETRO_MIX_PICKER is on): A by default, B switches live, saved across a reload;
+//  - no page errors. Screenshots: tests/out/retro/settings_audio_style.png (RETRO's tooltip showing),
+//    settings_retro_mix.png (the RETRO MIX row).
 const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
@@ -66,6 +68,19 @@ fs.mkdirSync(OUT, { recursive: true });
   await move(BTN.retro, by);
   await page.screenshot({ path: path.join(OUT, 'settings_audio_style.png') });
 
+  // RETRO MIX (staging picker, audio/retro.js RETRO_MIX_PICKER): A by default, B switches live and is saved locally
+  const picker = await page.evaluate(async () => (await import('/src/audio/retro.js')).RETRO_MIX_PICKER);
+  const MIX = { A: x + 110 + 17, B: x + 147 + 17, C: x + 184 + 17 }, my = y + 238;
+  if (picker) {
+    check(r1.retro.mix === 'A', 'RETRO MIX defaults to A', String(r1.retro.mix));
+    await click(MIX.B, my);
+    await page.waitForTimeout(300);
+    const m1 = await page.evaluate(() => ({ mix: __sound.retro.mix, saved: localStorage.getItem('kantospire.retroMix'), level: __level() }));
+    check(m1.mix === 'B' && m1.saved === 'B' && m1.level > 0.003, 'RETRO MIX B picked live, saved locally, still playing', JSON.stringify(m1));
+    await move(MIX.C, my);
+    await page.screenshot({ path: path.join(OUT, 'settings_retro_mix.png') });
+  } else console.log('     (RETRO MIX picker off: skipped)');
+
   // context mapping and fanfares
   const r2 = await page.evaluate(async () => {
     const out = {};
@@ -105,6 +120,7 @@ fs.mkdirSync(OUT, { recursive: true });
   await page.waitForTimeout(300);
   const r5 = await page.evaluate(() => ({ quality: __sound.quality, retro: __sound.retro }));
   check(r5.quality === 'retro' && r5.retro.song === 'red:TitleScreen', 'reload keeps RETRO; title = Red\'s title theme', JSON.stringify(r5));
+  if (picker) check(r5.retro.mix === 'B', 'reload keeps RETRO MIX B', String(r5.retro.mix));
 
   check(errors.length === 0, 'no page errors', errors.join(' | '));
   const ok = checks.every(Boolean);

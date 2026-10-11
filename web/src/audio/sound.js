@@ -18,7 +18,8 @@
 // (BGM and fanfares) on a second engine, the Game Boy one (gb-core.js in gb-worklet.js: Pokemon Red's and Silver's
 // own songs, the lazy 'retro' asset pack), picked per request by Sound.setRetroResolver (audio/retro.js). SFX and
 // cries stay on m4a. A song RETRO has no match for, or any song while the Game Boy bank is still loading, plays on
-// m4a as usual; switching modes restarts the current song in the new style.
+// m4a as usual; switching modes restarts the current song in the new style. The Game Boy engine renders its music
+// through a cleaned-up output stage (gb-core.js 'hq'), in one of its mixes (Sound.setRetroMix).
 
 const PLAYER_BGM = 0;
 const SE_PLAYERS = [1, 2, 3];
@@ -43,6 +44,7 @@ const state = {
 const gb = {
   on: false, ready: null, loaded: false, port: null, node: null, gain: null, backend: null, meta: null,
   resolver: null, current: null, ducks: 0, pausedM4a: new Set(), baseUrl: 'assets/retro/',
+  mix: null, // the HQ render's mix ('A' / 'B' / 'C': gb-core.js RETRO_MIXES); null = the engine's default
 };
 // Cries that aren't in the m4a bank (v0.4.0: the Gen 4 species' HGSS samples, sound/gen4/cries/*.wav) play as plain
 // WebAudio buffers through the same master volume and SFX level, ducking the music like a bank cry does.
@@ -208,7 +210,7 @@ function ensureGb() {
     }
     gb.port.postMessage({ type: 'load', meta, binaries: { red, silver } }, [red, silver]);
     if (!(await ready)) return false;
-    gbPost({ type: 'option', stereo: state.stereo !== false });
+    gbPost({ type: 'option', stereo: state.stereo !== false, ...(gb.mix ? { mix: gb.mix } : {}) });
     gb.loaded = true;
     return true;
   })().catch((err) => { console.warn('[sound] retro', err); return false; });
@@ -525,8 +527,10 @@ export const Sound = {
   setRetroResolver(fn) { gb.resolver = fn || null; },
   /** Where the Game Boy bank is (default 'assets/retro/'). */
   setRetroBase(url) { gb.baseUrl = url; },
+  /** How RETRO sounds: the Game Boy engine's mix 'A' / 'B' / 'C' (gb-core.js RETRO_MIXES). Switches live. */
+  setRetroMix(mix) { gb.mix = mix || null; if (gb.mix && gb.loaded) gbPost({ type: 'option', mix: gb.mix }); },
   /** RETRO state, for tests and debugging. */
-  get retro() { return { on: gb.on, loaded: gb.loaded, backend: gb.backend, song: gb.current ? gb.current.song : null }; },
+  get retro() { return { on: gb.on, loaded: gb.loaded, backend: gb.backend, song: gb.current ? gb.current.song : null, mix: gb.mix }; },
 };
 
 for (const k of ['playBGM', 'fadeOutBGM', 'stopBGM', 'pauseBGM', 'resumeBGM', 'playSE', 'stopSE', 'playFanfare',
