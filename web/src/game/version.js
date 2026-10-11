@@ -2,9 +2,17 @@
 // Game version and patch notes (shown from the title screen). Versions are major.minor.patch: every production
 // deploy that changes the game bumps the patch (v0.2.0 -> v0.2.1); the owner calls minor bumps (v0.1.x -> v0.2.0);
 // no major bumps yet. Each one gets a new top PATCH_NOTES entry; see AGENTS.md.
-export const VERSION = 'v0.4.5';
+export const VERSION = 'v0.4.6';
 
 export const PATCH_NOTES = [
+  {
+    v: 'v0.4.6',
+    sections: [
+      ['NEW', [
+        'RETRO now plays HOENN’s own music: every Emerald song in a HOENN act, remade as a Game Boy chiptune in the style of Pokémon Silver, instead of a Red or Silver song picked by mood',
+      ]],
+    ],
+  },
   {
     v: 'v0.4.5',
     sections: [

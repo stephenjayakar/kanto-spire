@@ -5,12 +5,14 @@
 // for the place), then map here like everything else. Rules:
 //   - KANTO (and the title/menus outside a run): Pokemon Red, nearly 1:1 since FireRed remakes it;
 //   - JOHTO: Pokemon Silver, with the map music following the act's real places (GSC's map table);
-//   - HOENN: the closest Silver (or Red) song by mood;
+//   - HOENN: Emerald's own song as a Game Boy song ('hoenn:mus_route101': tools/hoenn_chip converts Emerald's
+//     sequences into Gold/Silver-format songs, the retro bank's 'hoenn' game); with a bank that lacks them, the
+//     closest Silver (or Red) song by mood (EMERALD below);
 //   - a song with no sensible match returns null: the normal GBA song plays.
 // Song ids are '<game>:<pret label>' ('red:Routes1', 'silver:Route29'); SFX_* are the games' jingles.
 //
 // Pure module (no game imports besides the Emerald table): main.js passes the act, tests read the tables.
-import { hoennSong } from './emerald.js';
+import { hoennSong, HOENN_SONG_SET } from './emerald.js';
 
 // ---- Pokemon Red, by FireRed song ------------------------------------------------------------------------------------
 export const RED = {
@@ -101,7 +103,9 @@ export const JOHTO_CLASS_LOOK = {
   'SAGE': LOOK.SAGE, 'MEDIUM': LOOK.SAGE, 'KIMONO GIRL': LOOK.KIMONO, 'OFFICER': LOOK.OFFICER,
 };
 
-// Emerald song (audio/emerald.js) -> Game Boy song, for HOENN acts
+// Emerald song (audio/emerald.js) -> its Game Boy conversion (the retro bank's 'hoenn' game), for HOENN acts
+export const hoennRetro = (em) => 'hoenn:' + em;
+// ... and the stand-in when the bank has no conversions: the closest Silver / Red song by mood
 export const EMERALD = {
   mus_route101: 'silver:Route29', mus_route104: 'silver:Route30', mus_petalburg_woods: 'silver:UnionCave',
   mus_route110: 'silver:Route36', mus_route111: 'silver:Route37', mus_route113: 'silver:Route26', mus_cave_of_origin: 'silver:DarkCave',
@@ -129,7 +133,8 @@ const pick = (list, prog) => list[Math.min(list.length - 1, Math.floor(Math.max(
 
 // The Game Boy song for FireRed song `name` (or null: play the GBA one).
 // act: the current act (null outside a run); ctx: what the scene passed to playBGM/playFanfare (the battle config,
-// { map: progress }, { event: id }); env: { tod: 'morn' | 'day' | 'nite' | null } (JOHTO's time of day).
+// { map: progress }, { event: id }); env: { tod: 'morn' | 'day' | 'nite' | null (JOHTO's time of day),
+// has: name -> whether the loaded bank has that song (absent: assume the HOENN conversions are there) }.
 export function retroSong(act, name, ctx = null, env = {}) {
   if (!name) return null;
   if (ANY[name]) return ANY[name];
@@ -144,6 +149,7 @@ export function retroSong(act, name, ctx = null, env = {}) {
 
   if (region === 'hoenn') {
     const em = hoennSong(act, name, ctx);
+    if (em && (!env.has || env.has(hoennRetro(em)))) return hoennRetro(em);
     if (em && EMERALD[em]) return EMERALD[em];
   }
   const kanto = region === 'kanto';
@@ -177,6 +183,7 @@ export const RETRO_SONG_SET = new Set([
   ...Object.values(JOHTO_MAP_MUSIC).flat().map((s) => 'silver:' + s), ...Object.values(JOHTO_TOWN_MUSIC).map((s) => 'silver:' + s),
   ...Object.values(KANTO_MAP_MUSIC).flat().map((s) => 'red:' + s), ...Object.values(RETRO_EVENT),
   ...Object.values(JOHTO_CLASS_LOOK).map((s) => 'silver:' + s), ...Object.values(EMERALD), ...Object.keys(RETRO_NEXT), ...Object.values(RETRO_NEXT),
+  ...[...HOENN_SONG_SET].map(hoennRetro),
   'silver:RivalBattle', 'silver:RocketBattle', 'silver:JohtoWildBattleNight', 'silver:ChampionBattle',
 ]);
 

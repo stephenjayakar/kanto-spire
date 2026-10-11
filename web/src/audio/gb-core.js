@@ -1144,7 +1144,9 @@ export class GscEngine {
 
 // ---------------------------------------------------------------------------------------------------------------
 // The player: one BGM song plus an optional fanfare that pauses it (like m4a's PlayFanfare), fades, end events.
-// songs: retro.json's song table; games: { red: {banks: {2: Uint8Array, ...}, tables}, silver: {...} }.
+// songs: retro.json's song table; games: { red: {banks: {2: Uint8Array, ...}, tables}, silver: {...}, hoenn: {...} }.
+// A game with `base` (hoenn: our Game Boy conversions of Emerald's songs, tools/hoenn_chip) has only song banks of its
+// own and plays on the base game's engine bank (Silver's frequency table, wave samples and drum kits).
 // opts: { render: 'hq' (default) | 'dmg', mix: 'A' | 'B' | 'C' } (Apu, hqSetMix; the mix can change later: 'option')
 export class GbPlayer {
   constructor(sampleRate, emit = () => {}, opts = {}) {
@@ -1160,10 +1162,12 @@ export class GbPlayer {
   load(meta, binaries) {
     this.songs = meta.songs;
     this.games = {};
-    for (const [key, g] of Object.entries(meta.games)) {
+    const order = Object.entries(meta.games).sort(([, a], [, b]) => (a.base ? 1 : 0) - (b.base ? 1 : 0));
+    for (const [key, g] of order) {
       const bin = binaries[key];
       if (!bin) continue;
-      const banks = {};
+      if (g.base && !this.games[g.base]) continue;
+      const banks = g.base ? { ...this.games[g.base].banks } : {};
       g.banks.forEach((b, i) => { banks[b] = new Uint8Array(bin, i * 0x4000, 0x4000); });
       this.games[key] = { engine: g.engine, banks, tables: g.tables };
     }

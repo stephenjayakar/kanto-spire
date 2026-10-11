@@ -136,7 +136,7 @@ function newRun() {
 export const AUDIO_STYLES = [
   ['hq', 'HQ', 'The GBA soundtrack played at full quality: clean and smooth. (Default)'],
   ['gba', 'GBA', 'Sounds like a real Game Boy Advance: lower sample rate and a bit of crunch.'],
-  ['retro', 'RETRO', 'The original Game Boy chiptunes from Pokémon Red and Silver.'],
+  ['retro', 'RETRO', 'Game Boy chiptunes: the originals from Pokémon Red and Silver, and HOENN’s music remade in the same style.'],
 ];
 
 export class SettingsModal extends Modal {

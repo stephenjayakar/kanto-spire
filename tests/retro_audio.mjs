@@ -9,6 +9,9 @@
 //  4. loudness: RETRO's level next to the GBA music's and the console render's;
 //  5. renders listening samples to tests/out/retro/ (RETRO songs, and one song in all three AUDIO modes);
 //  6. the AudioWorklet wrapper;
+//  1b. HOENN: every Emerald song the game asks for resolves to its Game Boy conversion (retro bank's 'hoenn' game,
+//     tools/hoenn_chip/build_bank.mjs), which loops at Emerald's loop length (the jingles end with it); a bank
+//     without the conversions falls back to the Red / Silver stand-ins;
 //  7. the HQ render (the game's) against the console's own output stage ('dmg'): the same note timing per channel,
 //     the same pitch (section 3 measures both), the same loop and no click where it jumps back, all three mixes
 //     (A/B/C) at matched loudness, the mix switching while playing, CPU per second of audio.
@@ -18,8 +21,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { GbPlayer, RedEngine, GscEngine, RETRO_MIXES } from '../web/src/audio/gb-core.js';
 import { EngineHost } from '../web/src/audio/m4a-core.js';
-import { RETRO_SONG_SET, EMERALD, retroSong } from '../web/src/audio/retro.js';
-import { HOENN_SONG_SET } from '../web/src/audio/emerald.js';
+import { RETRO_SONG_SET, EMERALD, retroSong, hoennRetro } from '../web/src/audio/retro.js';
+import { HOENN_SONG_SET, HOENN_MAP_MUSIC, HOENN_TOWN_MUSIC } from '../web/src/audio/emerald.js';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = path.join(ROOT, 'tests/out/retro');
@@ -31,7 +34,7 @@ fs.mkdirSync(OUT, { recursive: true });
 const dir = path.join(ROOT, 'web/assets/retro');
 const meta = JSON.parse(fs.readFileSync(path.join(dir, 'retro.json'), 'utf8'));
 const bin = (f) => { const b = fs.readFileSync(path.join(dir, f)); return b.buffer.slice(b.byteOffset, b.byteOffset + b.length); };
-const binaries = { red: bin('red.bin'), silver: bin('silver.bin') };
+const binaries = { red: bin('red.bin'), silver: bin('silver.bin'), ...(fs.existsSync(path.join(dir, 'hoenn.bin')) ? { hoenn: bin('hoenn.bin') } : {}) };
 let failures = 0;
 const fail = (m) => { console.log('  FAIL ' + m); failures++; };
 
@@ -90,6 +93,54 @@ console.log('1. every song in the bank');
   }
   if (missing.length) fail('no Game Boy song for ' + missing.join(', '));
   else console.log(`  all ${names.size} song names in the game's code have a Game Boy song in KANTO, JOHTO and HOENN acts`);
+}
+
+// ---- 1b. HOENN conversions --------------------------------------------------------------------------------------
+console.log('1b. HOENN: Game Boy conversions of the Emerald songs');
+if (!meta.games.hoenn || !binaries.hoenn) fail('the retro bank has no HOENN conversions (tools/hoenn_chip/build_bank.mjs)');
+else {
+  const has = (n) => !!meta.songs[n];
+  // the resolver: map music by progress, town music, battles, encounters, victories, legends
+  const got = new Set(), wrong = [];
+  const want = (what, r, em) => { if (r !== hoennRetro(em)) wrong.push(`${what}: ${r} (want ${hoennRetro(em)})`); else got.add(em); };
+  for (const [id, list] of Object.entries(HOENN_MAP_MUSIC)) {
+    const act = { id: +id, region: 'hoenn', townMusic: 'mus_celadon' };
+    list.forEach((em, i) => want(`act ${id} map ${i}`, retroSong(act, 'mus_route1', { map: (i + 0.5) / list.length }, { has }), em));
+    want(`act ${id} town`, retroSong(act, 'mus_celadon', null, { has }), HOENN_TOWN_MUSIC[id]);
+  }
+  const act = { id: 2, region: 'hoenn', townMusic: 'mus_celadon' };
+  const B = (o) => ({ kind: 'trainer', trainer: {}, ...o });
+  want('wild', retroSong(act, 'mus_vs_wild', { kind: 'wild' }, { has }), 'mus_vs_wild');
+  want('trainer', retroSong(act, 'mus_vs_trainer', B({ music: 'mus_vs_trainer' }), { has }), 'mus_vs_trainer');
+  want('gym leader', retroSong(act, 'mus_vs_gym_leader', B({ music: 'mus_vs_gym_leader' }), { has }), 'mus_vs_gym_leader');
+  want('aqua grunt', retroSong(act, 'mus_vs_trainer', B({ trainer: { key: 'AQUA_GRUNT' } }), { has }), 'mus_vs_aqua_magma');
+  want('groudon', retroSong(act, 'mus_vs_legend', { kind: 'wild', legend: 'GROUDON' }, { has }), 'mus_vs_kyogre_groudon');
+  want('champion', retroSong({ ...act, id: 4 }, 'mus_vs_champion', B({ gauntlet: 4, music: 'mus_vs_champion' }), { has }), 'mus_vs_champion');
+  want('wild victory', retroSong(act, 'mus_victory_wild', { kind: 'wild' }, { has }), 'mus_victory_wild');
+  want('lass encounter', retroSong(act, 'mus_encounter_girl', B({ trainer: { key: 'RS_LASS:1', className: 'LASS' } }), { has }), 'mus_encounter_female');
+  if (wrong.length) fail('HOENN resolves elsewhere: ' + wrong.join('; '));
+  // no conversions in the bank: the stand-ins
+  const fb = retroSong(act, 'mus_vs_wild', { kind: 'wild' }, { has: (n) => !n.startsWith('hoenn:') });
+  if (fb !== EMERALD.mus_vs_wild) fail(`without the conversions the wild battle plays ${fb}, want ${EMERALD.mus_vs_wild}`);
+  // every song: in the bank, loops at Emerald's loop length (or ends with it)
+  let ok = 0;
+  for (const em of [...HOENN_SONG_SET].sort()) {
+    const name = hoennRetro(em), s = meta.songs[name];
+    if (!s) { fail(`${em}: ${name} not in the bank`); continue; }
+    const p = player(DMG);
+    p.playBgm(name);
+    const e = p.bgm.engine, hits = [[], [], [], []];
+    e.onLoop = (c) => { if (c < 4) hits[c].push(p.frames); };
+    let f = 0;
+    for (; f < 60 * 60 * 6 && !p.bgm.ended && !hits.every((h, i) => h.length >= 2 || !e.ch[i].on); f++) p.frame();
+    if (s.emeraldLoop) {
+      const lens = hits.filter((h) => h.length >= 2).map((h) => h[1] - h[0]);
+      if (lens.length !== 4 || lens.some((x) => Math.abs(x - s.emeraldLoop) > Math.max(3, s.emeraldLoop * 0.003))) fail(`${name}: channel loops ${lens.join('/')} frames, Emerald's ${s.emeraldLoop}`);
+      else ok++;
+    } else if (Math.abs(f - s.emeraldEnd) > Math.max(3, s.emeraldEnd * 0.01)) fail(`${name}: ends at frame ${f}, Emerald's at ${s.emeraldEnd}`);
+    else ok++;
+  }
+  console.log(`  ${got.size} resolver cases land on the conversions; ${ok}/${HOENN_SONG_SET.size} songs loop (or end) at Emerald's length`);
 }
 
 // ---- 2. tempo: loop lengths vs the disassembly ----------------------------------------------------------------------

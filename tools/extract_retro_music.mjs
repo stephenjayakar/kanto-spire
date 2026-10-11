@@ -3,12 +3,13 @@
 //   Pokemon Red (USA, Europe)        SHA-1 ea9bcae617fdf159b045185467ae58b2e4a48b9a  (pret/pokered "pokered.gbc")
 //   Pokemon Silver (USA, Europe)     SHA-1 49b163f7e57702bc939d642a18f591de55d92dae  (pret/pokegold "pokesilver.gbc")
 //
-//   node tools/extract_retro_music.mjs --red <pokered.gb> --silver <pokesilver.gbc> [--out web/assets/retro]
+//   node tools/extract_retro_music.mjs --red <pokered.gb> --silver <pokesilver.gbc> [--out web/assets/retro] [--no-hoenn]
 //
 // Writes (ROM-derived, never committed; shipped as the lazy, on-demand 'retro' asset pack):
 //   retro/red.bin      Red's three audio banks ($02, $08, $1F: the three copies of the sound engine's data)
 //   retro/silver.bin   Silver's audio banks ($3A engine + music, $3B-$3D music, $3C fanfares)
 //   retro/retro.json   where each song's header and the engine tables sit in those banks
+//   retro/hoenn.bin    (with the Emerald sound bank extracted) Game Boy conversions of the HOENN songs: build_bank.mjs
 // The songs stay in their original sequence format: web/src/audio/gb-core.js is a port of both games' sound
 // engines (pret's audio/engine*.asm) driving an emulated Game Boy APU, so nothing is re-encoded.
 //
@@ -236,3 +237,12 @@ fs.writeFileSync(path.join(OUT, 'silver.bin'), silverBin);
 fs.writeFileSync(path.join(OUT, 'retro.json'), JSON.stringify(meta));
 const n = (g) => Object.values(songs).filter(s => s.game === g).length;
 console.log(`wrote ${OUT}: red.bin ${redBin.length} B (${n('red')} songs), silver.bin ${silverBin.length} B (${n('silver')} songs)`);
+
+// HOENN: Game Boy conversions of Emerald's songs (tools/hoenn_chip/build_bank.mjs -> retro/hoenn.bin + retro.json's
+// 'hoenn' game), built from the Emerald sound bank when it's there (else HOENN acts keep the Red / Silver stand-ins)
+if (!args.includes('--no-hoenn')) {
+  if (fs.existsSync(path.join(ROOT, 'web/assets/sound/emerald/bank.json'))) {
+    const { buildHoennBank } = await import('./hoenn_chip/build_bank.mjs');
+    buildHoennBank(OUT);
+  } else console.log('no Emerald sound bank (tools/extract_emerald_sound.js): HOENN songs skipped; run tools/hoenn_chip/build_bank.mjs after extracting it');
+}

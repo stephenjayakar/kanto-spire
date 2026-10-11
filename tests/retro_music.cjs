@@ -3,6 +3,7 @@
 // Offline (cloud.json 404s, so the game runs on local web/assets). Checks:
 //  - the default is HQ and nothing from assets/retro/ is fetched until RETRO is picked;
 //  - clicking RETRO loads the bank, restarts the playing song as its Game Boy version (one engine at a time) and saves;
+//  - a HOENN act plays the Game Boy conversions of Emerald's songs (hoenn.bin: Route 101, the wild battle), audibly;
 //  - songs resolve by context (a KANTO wild battle -> red:WildBattle, a JOHTO act's map -> Silver's Route 29, an
 //    unmapped song -> back on m4a), fanfares end, and the engine really outputs sound (AnalyserNode on the master);
 //  - HQ switches back to the GBA soundtrack; a reload with RETRO saved boots straight into RETRO (Red's title theme);
@@ -91,6 +92,11 @@ fs.mkdirSync(OUT, { recursive: true });
     G.run = { act: johto, timeOfDay: () => 'day' };
     __sound.playBGM('mus_route1', { ctx: { map: 0 } }); out.johtoMap = __sound.retro.song;
     __sound.playBGM('mus_vs_trainer', { ctx: { kind: 'trainer', music: 'mus_vs_trainer', trainer: { key: 'JOHTO_X', className: 'YOUNGSTER' } } }); out.johtoTrainer = __sound.retro.song;
+    const hoenn = { id: 1, region: 'hoenn', music: ['mus_route1'], townMusic: 'mus_pallet' };
+    G.run = { act: hoenn, timeOfDay: () => 'day' };
+    __sound.playBGM('mus_route1', { ctx: { map: 0 } }); out.hoennMap = __sound.retro.song;
+    __sound.playBGM('mus_vs_wild', { ctx: { kind: 'wild' } }); out.hoennWild = __sound.retro.song;
+    await new Promise((r) => setTimeout(r, 700)); out.hoennLevel = __level();
     G.run = saved;
     __sound.playBGM('mus_berry_pick_nope'); out.unmapped = __sound.retro.song;
     return out;
@@ -98,6 +104,8 @@ fs.mkdirSync(OUT, { recursive: true });
   check(r2.wild === 'red:WildBattle', 'KANTO wild battle -> red:WildBattle', r2.wild);
   check(r2.fanfare === true && r2.afterFanfare === 'red:WildBattle', 'level-up fanfare plays on the Game Boy engine and ends', JSON.stringify(r2.fanfare));
   check(r2.johtoMap === 'silver:Route29' && r2.johtoTrainer === 'silver:JohtoTrainerBattle', 'JOHTO act -> Pokemon Silver songs', r2.johtoMap + ', ' + r2.johtoTrainer);
+  check(r2.hoennMap === 'hoenn:mus_route101' && r2.hoennWild === 'hoenn:mus_vs_wild', 'HOENN act -> Game Boy conversions of the Emerald songs', r2.hoennMap + ', ' + r2.hoennWild);
+  check(r2.hoennLevel > 0.003 && retroFetches.some(u => u.endsWith('hoenn.bin')), 'the HOENN bank is fetched with the rest and makes sound', 'rms ' + (r2.hoennLevel || 0).toFixed(4));
   check(r2.unmapped === null, 'a song RETRO has no match for leaves the Game Boy engine', String(r2.unmapped));
 
   // back to HQ: the same song on m4a, Game Boy engine stopped

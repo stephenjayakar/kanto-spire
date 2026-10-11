@@ -208,7 +208,20 @@ function ensureGb() {
       sp.connect(gain);
       gb.node = sp; gb.port = { postMessage: (m) => player.onMessage(m) }; gb.backend = 'scriptprocessor';
     }
-    gb.port.postMessage({ type: 'load', meta, binaries: { red, silver } }, [red, silver]);
+    // HOENN: our Game Boy conversions of Emerald's songs (tools/hoenn_chip), a bank of their own on Silver's engine;
+    // without it the HOENN acts keep their stand-in Red / Silver songs (audio/retro.js)
+    const binaries = { red, silver };
+    if (meta.games.hoenn) {
+      try {
+        const rh = await fetch(new URL(meta.games.hoenn.file || 'hoenn.bin', base));
+        if (rh.ok) binaries.hoenn = await rh.arrayBuffer();
+      } catch (err) { console.warn('[sound] retro hoenn bank', err?.message || err); }
+      if (!binaries.hoenn) {
+        delete meta.games.hoenn;
+        for (const k of Object.keys(meta.songs)) if (meta.songs[k].game === 'hoenn') delete meta.songs[k];
+      }
+    }
+    gb.port.postMessage({ type: 'load', meta, binaries }, Object.values(binaries));
     if (!(await ready)) return false;
     gbPost({ type: 'option', stereo: state.stereo !== false, ...(gb.mix ? { mix: gb.mix } : {}) });
     gb.loaded = true;
@@ -529,6 +542,8 @@ export const Sound = {
   setRetroBase(url) { gb.baseUrl = url; },
   /** How RETRO sounds: the Game Boy engine's mix 'A' / 'B' / 'C' (gb-core.js RETRO_MIXES). Switches live. */
   setRetroMix(mix) { gb.mix = mix || null; if (gb.mix && gb.loaded) gbPost({ type: 'option', mix: gb.mix }); },
+  /** Whether the loaded Game Boy bank has song `name` ('hoenn:mus_route101'): the resolver's fallback check. */
+  retroHas(name) { return !!(gb.meta && gb.meta.songs[name]); },
   /** RETRO state, for tests and debugging. */
   get retro() { return { on: gb.on, loaded: gb.loaded, backend: gb.backend, song: gb.current ? gb.current.song : null, mix: gb.mix }; },
 };
