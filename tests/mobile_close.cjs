@@ -18,6 +18,7 @@ const root = path.resolve(__dirname, '..');
   const errors = [], fails = [];
   page.on('pageerror', e => errors.push(e.message));
   page.on('console', m => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(m.text()); });
+  await page.route('**/cloud.json', r => r.fulfill({ status: 404, body: '' })); // (offline: a local web/cloud.json would show the sign-in screen)
   await page.goto(`http://localhost:${port}/`, { waitUntil: 'load' });
   await page.evaluate(() => localStorage.clear());
   await page.reload({ waitUntil: 'load' });
@@ -99,7 +100,12 @@ const root = path.resolve(__dirname, '..');
   await tap(547, 13); await expect('INFO opens', s => s.top === 'InfoModal');
   await shot('info');
   await tap(30, 200); await expect('INFO closes on tap outside', s => s.n === 0);
-  await tap(506, 13); await expect('battle ? opens HOW TO PLAY', s => s.top === 'BasicsModal');
+  await tap(494, 13); await expect('battle MENU opens', s => s.top === 'ChoiceModal');
+  await shot('battle_menu');
+  await tap(320, 153); await expect('battle MENU Resume', s => s.n === 0);
+  await tap(494, 13); await tap(320, 183); await expect('battle MENU > Settings', s => s.top === 'SettingsModal');
+  await ev(() => window.__engine.popOverlay(window.__engine.Engine.overlays.at(-1))); await expect('settings closed', s => s.n === 0);
+  await tap(494, 13); await tap(320, 213); await expect('battle MENU > How to play', s => s.top === 'BasicsModal');
   await tap(61, 341); await expect('HOW TO PLAY CLOSE (battle)', s => s.n === 0);
 
   // ---- map: run menu, settings, bag item -----------------------------------------------------

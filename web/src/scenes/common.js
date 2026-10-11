@@ -465,12 +465,25 @@ export function drawHUD(ctx, run, opts = {}) {
   if (button(ctx, 'INFO', ix, 3, 56, 21, { color: '#806040', font: 'small' })) pushOverlay(new InfoModal({}));
   if (hover(ix, 3, 56, 21)) tip('INFO', 'COMBOS, the TYPE CHART and what every STATUS does.');
   if (opts.onMenu && button(ctx, 'MENU', W - (opts.onDeck ? 168 : 108), 3, 44, 21, { color: '#604080', font: 'small' })) opts.onMenu();
-  // opts.help: a "?" in MENU's slot (battles have no MENU) opening HOW TO PLAY as a local overlay (scenes/tutorial.js)
+  // opts.help: a "?" in MENU's slot opening HOW TO PLAY as a local overlay (scenes/tutorial.js), for screens without a MENU
   if (opts.help && !opts.onMenu) {
     const hx = W - (opts.onDeck ? 144 : 84);
     if (button(ctx, '?', hx, 3, 20, 21, { color: '#3a7a58', font: 'small' })) import('./tutorial.js').then(m => m.openHowToPlay());
     if (hover(hx, 3, 20, 21)) tip('HOW TO PLAY', 'The picture guide: your turn, types, scoring, switching and catching.');
   }
+}
+
+// A battle's MENU (drawHUD onMenu): settings and the guide without leaving the fight. A local overlay, so a solo battle
+// waits underneath and a co-op one goes on (no quitting from here: that's the map's MENU).
+export function openBattleMenu() {
+  pushOverlay(new ChoiceModal({
+    title: 'MENU',
+    options: [{ label: 'Resume', value: 0, color: THEME.green }, { label: 'Settings', value: 1, color: '#506080' }, { label: 'How to play', value: 2, color: '#3a7a58' }],
+    onClose: async (v) => {
+      if (v === 1) { const { SettingsModal } = await import('./title.js'); pushOverlay(new SettingsModal({})); }
+      if (v === 2) { const { openHowToPlay } = await import('./tutorial.js'); openHowToPlay(); }
+    },
+  }));
 }
 
 export function consumableDesc(k) {

@@ -16,7 +16,7 @@ import { CONSUMABLES, BADGES } from '../../game/items.js';
 import { maxHp, monName, typesOf, isFainted, DECK_RULES, LEGENDARY } from '../../game/pokemon.js';
 import { G, saveMeta } from '../../game/state.js';
 import { Sound } from '../../audio/sound.js';
-import { drawTrainer, drawHUD, drawCard, drawCardBack, cardTooltip, drawPartyPanel, drawMon, drawIcon, CARD_W, CARD_H, MessageBox, ChoiceModal, PartyPicker, DeckModal, monTooltip, Modal, drawNoComboTag, STATUS_SEL, ordinal, orderTagWidth, drawOrderTag, ORDER_RULE } from '../common.js';
+import { drawTrainer, drawHUD, drawCard, drawCardBack, cardTooltip, drawPartyPanel, drawMon, drawIcon, CARD_W, CARD_H, MessageBox, ChoiceModal, PartyPicker, DeckModal, openBattleMenu, monTooltip, Modal, drawNoComboTag, STATUS_SEL, ordinal, orderTagWidth, drawOrderTag, ORDER_RULE } from '../common.js';
 import { terrainImage, playedRowPos, TRAINER_LINGER, skippableWait, pollSkip, pileInput, drawPileTip, PILE_X, PILE_Y } from '../battle.js';
 import { COOP_TUNING } from '../../game/coop/tuning.js';
 import { PCOL, PFONT, drawCoopOverlay, drawPartnerChip, playerStatus, coopToast } from './ui.js';
@@ -995,7 +995,7 @@ export class CoopBattleScene {
     this.drawPlayed(ctx);
     const title = cfg.trainers ? cfg.trainers.map(t => t.title).join(' & ') : cfg.trainer ? cfg.trainer.title : (cfg.legend || cfg.areaName || 'WILD BATTLE');
     const aim = this.duo.locks[me] && !this.duo.locks[me].pass ? this.duo.locks[me].target : this.target;
-    drawHUD(ctx, run, { bounce: this.relicBounce, help: true, battle: this.sub, foe: aim === null || aim === undefined ? null : this.duo.enemyAt(aim), onDeck: () => pushOverlay(new DeckModal({ title: 'YOUR DECKS', battle: this.sub })), onConsumableClick: (k) => this.useConsumable(k), noToss: true, subtitle: (this.many ? 'TEAM · ' : 'DUO · ') + title });
+    drawHUD(ctx, run, { bounce: this.relicBounce, help: true, onMenu: openBattleMenu, battle: this.sub, foe: aim === null || aim === undefined ? null : this.duo.enemyAt(aim), onDeck: () => pushOverlay(new DeckModal({ title: 'YOUR DECKS', battle: this.sub })), onConsumableClick: (k) => this.useConsumable(k), noToss: true, subtitle: (this.many ? 'TEAM · ' : 'DUO · ') + title });
     drawFx(ctx, Engine.dt);
     drawFlash(ctx, Engine.dt, W, H);
     if (this.toast) {

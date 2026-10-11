@@ -12,7 +12,7 @@ import { CONSUMABLES, BALLS, BADGES } from '../game/items.js';
 import { maxHp, monName, typesOf, isFainted, stats, DECK_RULES, LEGENDARY } from '../game/pokemon.js';
 import { G, saveRun, saveMeta } from '../game/state.js';
 import { Sound } from '../audio/sound.js';
-import { drawTrainer, drawHUD, drawCard, drawCardBack, cardTooltip, drawPartyPanel, drawMon, drawIcon, CARD_W, CARD_H, MessageBox, ChoiceModal, PartyPicker, DeckModal, matchupText, monTooltip, consumableDesc, monSprite, drawNoComboTag, STATUS_SEL, ordinal, orderTagWidth, drawOrderTag, ORDER_RULE, foeSprite, foeAnimFrame } from './common.js';
+import { drawTrainer, drawHUD, drawCard, drawCardBack, cardTooltip, drawPartyPanel, drawMon, drawIcon, CARD_W, CARD_H, MessageBox, ChoiceModal, PartyPicker, DeckModal, matchupText, monTooltip, openBattleMenu, consumableDesc, monSprite, drawNoComboTag, STATUS_SEL, ordinal, orderTagWidth, drawOrderTag, ORDER_RULE, foeSprite, foeAnimFrame } from './common.js';
 import { battleFinished } from './flow.js';
 import { STAT_NAMES, PROTECT_EFFECTS } from '../game/effects.js';
 import { MoveAnims } from '../anim/player.js';
@@ -626,7 +626,7 @@ export class BattleScene {
     this.drawLeftPanel(ctx);
     this.drawHand(ctx);
     this.drawPlayed(ctx);
-    drawHUD(ctx, run, { bounce: this.relicBounce, help: true, battle: this.b, onDeck: () => this.showDeck(), onConsumableClick: (k) => this.useConsumable(k), noToss: true, subtitle: this.cfg.trainer ? this.cfg.trainer.title : (this.cfg.legend || this.cfg.areaName || 'WILD BATTLE') });
+    drawHUD(ctx, run, { bounce: this.relicBounce, help: true, onMenu: openBattleMenu, battle: this.b, onDeck: () => this.showDeck(), onConsumableClick: (k) => this.useConsumable(k), noToss: true, subtitle: this.cfg.trainer ? this.cfg.trainer.title : (this.cfg.legend || this.cfg.areaName || 'WILD BATTLE') });
     drawFx(ctx, Engine.dt);
     drawFlash(ctx, Engine.dt, W, H);
     if (this.toast) {
