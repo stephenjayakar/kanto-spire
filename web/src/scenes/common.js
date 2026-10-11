@@ -546,11 +546,37 @@ export function matchupText(types) {
   return `\n\nWEAK TO: ${[...weak4.map(t => t + ' x4'), ...weak].join(', ') || 'nothing'}\nRESISTS: ${res.join(', ') || 'nothing'}${imm.length ? `\nIMMUNE TO: ${imm.join(', ')}` : ''}`;
 }
 
-export function monTooltip(mon, x, y) {
+// Stat stage tags (ATK+1 ... ACC-1 EVA+1: every stat, accuracy and evasion too) in a row from (x, y), red up / blue
+// down. maxW: the gaps shrink to fit; past that the first tags show and a +N stands for the rest (stageText lists them
+// all in the tooltips). Returns the width used.
+export const STAGE_KEYS = ['atk', 'def', 'spa', 'spd', 'spe', 'acc', 'eva'];
+const stageTag = (k, n) => `${k.toUpperCase()}${n > 0 ? '+' : ''}${n}`;
+export function drawStageTags(ctx, stages, x, y, { gap = 4, maxW } = {}) {
+  const keys = STAGE_KEYS.filter(k => stages?.[k]);
+  if (!keys.length) return 0;
+  const ws = keys.map(k => measure(stageTag(k, stages[k]), 'small'));
+  const width = (n, g) => ws.slice(0, n).reduce((t, w) => t + w, 0) + g * (n - 1);
+  let n = keys.length;
+  if (maxW !== undefined && width(n, gap) > maxW) {
+    gap = 1;
+    while (n > 1 && width(n, gap) > maxW - (n < keys.length ? gap + measure(`+${keys.length - n}`, 'small') : 0)) n--;
+  }
+  let sx = x;
+  keys.slice(0, n).forEach((k, i) => { text(ctx, stageTag(k, stages[k]), sx, y, { color: stages[k] > 0 ? 'red' : 'blue', font: 'small' }); sx += ws[i] + gap; });
+  if (n < keys.length) sx += text(ctx, `+${keys.length - n}`, sx, y, { color: 'dark', font: 'small' }) + gap;
+  return sx - gap - x;
+}
+// The same for a tooltip: a 'STAT CHANGES: ATK+2, ACC-1' line (empty when there are none).
+export function stageText(stages) {
+  const keys = STAGE_KEYS.filter(k => stages?.[k]);
+  return keys.length ? `\nSTAT CHANGES: ${keys.map(k => stageTag(k, stages[k])).join(', ')}` : '';
+}
+
+export function monTooltip(mon, x, y, extra = '') {
   const s = D.species[mon.species];
   const st = stats(mon);
   const ab = mon.ability || s.abilities?.[(mon.ivs.spe) % Math.max(1, s.abilities.length)];
-  const body = `${typesOf(mon).join('/')}  ·  ${ab ? D.abilities[ab]?.name || ab : ''}\nHP ${mon.hp}/${st.hp}  ATK ${st.atk}  DEF ${st.def}\nSPA ${st.spa}  SPD ${st.spd}  SPE ${st.spe}\n` +
+  const body = `${typesOf(mon).join('/')}  ·  ${ab ? D.abilities[ab]?.name || ab : ''}\nHP ${mon.hp}/${st.hp}  ATK ${st.atk}  DEF ${st.def}\nSPA ${st.spa}  SPD ${st.spd}  SPE ${st.spe}${extra}\n` +
     `Moves: ${mon.moves.map(m => `${D.moves[m.move]?.name}${m.copies > 1 ? ' x' + m.copies : ''}`).join(', ')}` + (ab && D.abilities[ab] ? `\n${D.abilities[ab].name}: ${D.abilities[ab].desc}` : '') + matchupText(typesOf(mon));
   tip(`${monName(mon)}${mon.shiny ? ' ★' : ''}  Lv${mon.level}`, body, { width: 230, x, y, accent: TYPE_COLORS[typesOf(mon)[0]] });
 }

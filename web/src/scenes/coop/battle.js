@@ -22,7 +22,7 @@ import { COOP_TUNING } from '../../game/coop/tuning.js';
 import { PCOL, PFONT, drawCoopOverlay, drawPartnerChip, playerStatus, coopToast } from './ui.js';
 import { MoveAnims } from '../../anim/player.js';
 import { pickHandAnim, ANIM_SPEED } from '../../anim/pick.js';
-import { opaqueBounds, monSprite, foeSprite, foeAnimFrame } from '../common.js';
+import { opaqueBounds, monSprite, foeSprite, foeAnimFrame, drawStageTags, stageText } from '../common.js';
 import { tinted } from '../../engine/assets.js';
 import { AUTO, autoKey, autoStopInput, manualKey, autoLowHp, drawAutoButton } from '../auto.js';
 
@@ -1117,7 +1117,7 @@ export class CoopBattleScene {
     for (const p of this.order) {
       const [bx, by, bw, bh] = this.leadBox(p);
       const l = this.duo.subs[p].lead();
-      if (l && hover(bx, by, bw, bh)) monTooltip(l, bx - 206, by - 40);
+      if (l && hover(bx, by, bw, bh)) monTooltip(l, bx - 206, by - 40, stageText(this.duo.subs[p].sides.player.stages));
     }
     if (this._order && this.orderTagBoxes.some(t => hover(t.x, t.y, t.w, t.h))) this.orderTip(this._order);
   }
@@ -1220,9 +1220,9 @@ export class CoopBattleScene {
     hpBar(ctx, x + 22, y + 22, FOE_BOX_W - 30, f.hp / Math.max(1, f.maxHp), 4);
     text(ctx, `${Math.max(0, Math.round(f.hp)).toLocaleString()}/${f.maxHp.toLocaleString()}`, x + FOE_BOX_W - 6, y + 26, { align: 'right', color: 'dark', font: 'small' });
     // stat stages (shared foe side)
-    const st = d.enemySides[f.ri]?.stages || {};
-    let sx = x + 7;
-    for (const k of ['atk', 'def', 'spa', 'spd', 'spe']) if (st[k]) { const s = `${k.toUpperCase()}${st[k] > 0 ? '+' : ''}${st[k]}`; text(ctx, s, sx, y + 27, { color: st[k] > 0 ? 'red' : 'blue', font: 'small' }); sx += measure(s, 'small') + 3; }
+    // (every stat, ACC and EVA too, kept clear of the HP numbers on the right)
+    const hpW = measure(`${Math.max(0, Math.round(f.hp)).toLocaleString()}/${f.maxHp.toLocaleString()}`, 'small');
+    drawStageTags(ctx, d.enemySides[f.ri]?.stages, x + 7, y + 27, { gap: 3, maxW: FOE_BOX_W - 17 - hpW });
     // (trainers' party balls: drawFoeParty, under both healthboxes)
     if (isTarget) { pixBox(ctx, x - 3, y + 12, 6, 12, '#f8d038', '#302000', 1); }
   }
@@ -1269,7 +1269,8 @@ export class CoopBattleScene {
     const hidden = this.g.ascension >= 2 || this.run().ascension >= 2;
     const mine = its.find(it => it.target === this.me);
     const blink = Math.floor(Engine.time * 3) % 2 === 0;
-    pixBox(ctx, x, y, w, h, '#101018d8', mine?.lethal && !sleeping && blink ? '#ff3030' : '#ff6060', 3);
+    // (A2+ hidden: a neutral frame that never blinks, so a lethal hit is not telegraphed)
+    pixBox(ctx, x, y, w, h, '#101018d8', hidden ? '#8890a0' : mine?.lethal && !sleeping && blink ? '#ff3030' : '#ff6060', 3);
     pixBox(ctx, x + 3, y + 3, 26, 11, '#c01818', null, 2);
     text(ctx, 'ALL', x + 16, y + 2, { align: 'center', color: 'white', font: 'small' });
     if (sleeping) text(ctx, en.status === 'SLP' ? 'ASLEEP' : 'FROZEN', x + 33, y + 2, { color: 'blue', font: 'small' });
@@ -1306,7 +1307,9 @@ export class CoopBattleScene {
     const en = d.enemies[it.ri];
     const tp = it.target;
     const tname = tp === this.me ? 'YOU' : this.s.nameOf(tp).slice(0, 8);
-    pixBox(ctx, x, y, w, h, '#101018d8', it.kind === 'attack' ? '#ff6060' : it.kind === 'buff' ? '#60a0ff' : '#c080ff', 3);
+    const hidden = this.g.ascension >= 2 || this.run().ascension >= 2;
+    // (A2+ hidden: one neutral frame, neither its color nor a lethal blink hints at the move)
+    pixBox(ctx, x, y, w, h, '#101018d8', hidden ? '#8890a0' : it.kind === 'attack' ? '#ff6060' : it.kind === 'buff' ? '#60a0ff' : '#c080ff', 3);
     const first = this.intentFirst(slot, it); // (before its target's hand: the move order tags)
     text(ctx, first ? 'FIRST!' : 'INTENT', x + 4, y + 1, { color: first ? 'red' : 'gray', font: 'small' });
     // -> target player
@@ -1314,7 +1317,6 @@ export class CoopBattleScene {
     pixBox(ctx, x + w - tw - 3, y + 2, tw, 11, PCOL[tp] || '#606060', null, 2);
     text(ctx, '-> ' + tname, x + w - 6, y + 1, { align: 'right', color: 'white', font: 'small' });
     const sleeping = en && (en.status === 'SLP' || en.status === 'FRZ');
-    const hidden = this.g.ascension >= 2 || this.run().ascension >= 2;
     if (sleeping) {
       text(ctx, en.status === 'SLP' ? 'ASLEEP' : 'FROZEN', x + 4, y + 14, { color: 'blue', font: 'small' });
       if (!hidden) textFit(ctx, 'then ' + it.move.name, x + 4, y + 25, w - 8, { color: 'gray', font: 'small' });
@@ -1330,7 +1332,7 @@ export class CoopBattleScene {
         if (it.lethal && Math.floor(Engine.time * 3) % 2 === 0) { pixBox(ctx, x + 36, y + 24, 22, 11, '#c01818', null, 2); text(ctx, 'KO!', x + 47, y + 23, { align: 'center', color: 'white', font: 'small' }); }
       } else text(ctx, it.text, x + w - 5, y + 24, { align: 'right', color: it.kind === 'buff' ? 'blue' : 'purple', font: 'small' });
     }
-    if (it.lethal && !sleeping && Math.floor(Engine.time * 3) % 2 === 0) { ctx.save(); ctx.strokeStyle = '#ff3030'; ctx.lineWidth = 2; ctx.strokeRect(x - 1, y - 1, w + 2, h + 2); ctx.restore(); }
+    if (it.lethal && !sleeping && !hidden && Math.floor(Engine.time * 3) % 2 === 0) { ctx.save(); ctx.strokeStyle = '#ff3030'; ctx.lineWidth = 2; ctx.strokeRect(x - 1, y - 1, w + 2, h + 2); ctx.restore(); }
     if (hover(x, y, w, h)) {
       const lead = d.subs[tp]?.lead();
       const who = tp === this.me ? 'your' : `${this.s.nameOf(tp)}'s`;
@@ -1351,7 +1353,7 @@ export class CoopBattleScene {
     const en = d.enemies[f.ri];
     const sleeping = en && (en.status === 'SLP' || en.status === 'FRZ');
     const hidden = this.g.ascension >= 2 || this.run().ascension >= 2;
-    pixBox(ctx, x, y, w, rh * its.length, '#101018d8', its.some(it => it.lethal && it.target === this.me) ? '#ff3030' : '#ff6060', 3);
+    pixBox(ctx, x, y, w, rh * its.length, '#101018d8', hidden ? '#8890a0' : its.some(it => it.lethal && it.target === this.me) ? '#ff3030' : '#ff6060', 3);
     its.forEach((it, k) => {
       const ry = y + k * rh, tp = it.target, first = this.intentFirst(this.shownIntents().indexOf(it), it);
       const tag = tp === this.me ? 'YOU' : `P${tp + 1}`;
@@ -1384,6 +1386,8 @@ export class CoopBattleScene {
     const lead = (L && sub.run.party.find(m => m.uid === L.uid)) || sub.lead();
     const down = d.down[p], away = d.away?.[p] || this.g.away?.[p];
     pixBox(ctx, x, y, w, h, down || away ? '#c8c0b8' : '#f8f8d8', p === this.me ? '#f8d038' : PCOL[p], 3);
+    // my team's stat stages above my row, the top one, as above the 2-player healthbox (the partners': their tooltip)
+    if (p === this.me) drawStageTags(ctx, sub.sides.player.stages, x + 4, y - 11, { gap: 3, maxW: w - 8 });
     pixBox(ctx, x + 2, y + 2, 24, h - 4, PCOL[p], null, 2);
     text(ctx, p === this.me ? 'YOU' : `P${p + 1}`, x + 14, y + 3, { align: 'center', color: 'white', font: 'small' });
     if (!lead) return;
@@ -1422,9 +1426,8 @@ export class CoopBattleScene {
     text(ctx, 'HP', x + 7, y + 18, { color: 'orange', font: 'small' });
     hpBar(ctx, x + 22, y + 21, w - 84, hp / maxHp(lead), 4);
     text(ctx, `${Math.max(0, Math.round(hp))}/${maxHp(lead)}`, x + w - 6, y + 18, { align: 'right', color: 'dark', font: 'small' });
-    const st = sub.sides.player.stages;
-    let sx = x + 4;
-    for (const k of ['atk', 'def', 'spa', 'spd', 'spe']) if (st[k]) { const s = `${k.toUpperCase()}${st[k] > 0 ? '+' : ''}${st[k]}`; text(ctx, s, sx, y - 11, { color: st[k] > 0 ? 'red' : 'blue', font: 'small' }); sx += measure(s, 'small') + 3; }
+    // (every stat, ACC and EVA too, clear of the LOCKED / PASS badge on the right)
+    drawStageTags(ctx, sub.sides.player.stages, x + 4, y - 11, { gap: 3, maxW: w - 8 - (!down && d.locks[p] && !d.result ? 52 : 0) });
     if (down) {
       pixBox(ctx, x + w / 2 - 26, y + 9, 52, 16, '#801818', '#ff6060', 3);
       text(ctx, 'DOWN', x + w / 2, y + 11, { align: 'center', color: 'white', font: 'small' });
@@ -1443,7 +1446,7 @@ export class CoopBattleScene {
     const by = f => all.filter(t => f(typeEffect(t, e.types)));
     const weak4 = by(x => x >= 4), weak = by(x => x === 2), res = by(x => x > 0 && x < 1), imm = by(x => x === 0);
     const matchup = `\n\nWEAK TO: ${[...weak4.map(t => t + ' x4'), ...weak].join(', ') || 'nothing'}\nRESISTS: ${res.join(', ') || 'nothing'}${imm.length ? `\nIMMUNE TO: ${imm.join(', ')}` : ''}`;
-    tip(`${speciesName(e.species)}  Lv${e.level}`, `${e.types.join('/')}  ·  ${ab}${ab && D.abilities[e.ability] ? ': ' + D.abilities[e.ability].desc : ''}\nATK ${st.atk} DEF ${st.def} SPA ${st.spa} SPD ${st.spd} SPE ${st.spe}${coopHp}\nMoves: ${this.run().ascension >= 2 ? '??? (hidden at A2+)' : e.moves.map(m => D.moves[m]?.name).join(', ')}${matchup}${rule}${this.canAct() ? '\n\nClick to target it.' : ''}`, { width: 230, accent: TYPE_COLORS[e.types[0]] });
+    tip(`${speciesName(e.species)}  Lv${e.level}`, `${e.types.join('/')}  ·  ${ab}${ab && D.abilities[e.ability] ? ': ' + D.abilities[e.ability].desc : ''}\nATK ${st.atk} DEF ${st.def} SPA ${st.spa} SPD ${st.spd} SPE ${st.spe}${coopHp}${stageText(this.duo.enemySides[this.duo.enemies.indexOf(e)]?.stages)}\nMoves: ${this.run().ascension >= 2 ? '??? (hidden at A2+)' : e.moves.map(m => D.moves[m]?.name).join(', ')}${matchup}${rule}${this.canAct() ? '\n\nClick to target it.' : ''}`, { width: 230, accent: TYPE_COLORS[e.types[0]] });
   }
 
   drawLeftPanel(ctx) {

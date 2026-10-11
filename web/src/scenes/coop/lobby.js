@@ -86,6 +86,14 @@ export class CoopLobbyScene {
   }
   unwatchRooms() { try { this.stopRooms?.(); } catch {} this.stopRooms = null; }
   ownBest() { return Math.max(0, ...Object.values(G.meta.ascBy || {}).map(n => Math.min(MAX_ASC, n | 0))); }
+  // My ascension progress, as on the title screen: the highest ascension won (any starter, solo or co-op) and the highest
+  // unlocked. (The other players' overall bests are not sent to the room; their per-starter unlock is: see drawRoom.)
+  bestLine() { const w = G.meta.bestAscensionWon ?? -1; return `YOUR BEST: ${w >= 0 ? 'A' + w + ' won' : 'no win yet'}`; }
+  bestTip() {
+    const w = G.meta.bestAscensionWon ?? -1, per = Object.entries(G.meta.ascBy || {}).filter(([s, n]) => (n | 0) > 0 && D.species[s]).sort((a, b) => b[1] - a[1]);
+    return `${w >= 0 ? `Highest ascension you have won: A${w}.` : 'You have not won a run yet.'}\nHighest unlocked: A${this.ownBest()}.` +
+      (per.length ? `\nUnlocked per starter: ${per.map(([s, n]) => `${D.species[s].name} A${Math.min(MAX_ASC, n | 0)}`).join(', ')}.` : '\nEvery starter starts at A0; a win at An opens A(n+1) for that starter.');
+  }
   async create() {
     const r = await this.act(net => net.createRoom({ ascension: this.asc, world: coopWorldFor(G.meta) }));
     if (r) this.openRoom(r.roomId);
@@ -206,6 +214,8 @@ export class CoopLobbyScene {
     if (button(ctx, 'JOIN ROOM', x + 20, 176, w - 40, 30, { color: THEME.play, disabled: this.busy || !this.net })) { this.mode = 'join'; this.code = ''; }
     textBlock(ctx, "Type (or paste) the 5-letter code your host sent you.", x + 16, 212, w - 32, { color: 'whiteSoft', font: 'small' });
     if (this.netErr) textBlock(ctx, this.netErr, x + 16, 250, w - 32, { color: 'red', font: 'small' });
+    text(ctx, this.bestLine(), x + w / 2, 290, { align: 'center', color: 'gold', font: 'small' });
+    if (hover(x + 10, 288, w - 20, 14)) tip('YOUR ASCENSION', this.bestTip(), { width: 220 });
     // rejoin list
     const rx = 300, rw = 280;
     panel(ctx, rx, 62, rw, 250);
@@ -253,6 +263,10 @@ export class CoopLobbyScene {
     text(ctx, 'ROOM CODE', 20, 62, { color: 'gray', font: 'small' });
     text(ctx, room.code, 20, 74, { color: 'gold', scale: 2 });
     if (button(ctx, 'COPY', 150, 66, 56, 16, { color: '#506080', font: 'small' })) navigator.clipboard?.writeText(room.code).then(() => coopToast('Code copied!', { good: true })).catch(() => coopToast('Copy failed; read it out instead.', { bad: true }));
+    // my best ascension, under COPY
+    const bl = this.bestLine().replace('YOUR BEST: ', 'BEST ');
+    text(ctx, bl, 206, 86, { align: 'right', color: 'gold', font: 'small', maxW: 96 });
+    if (hover(110, 84, 100, 14)) tip('YOUR ASCENSION', this.bestTip(), { width: 220 });
     const nm = v.members.length;
     // (seats: 2 while a player on an older 2-player version is in the room, see convex/coop.ts roomCap)
     const seats = Math.max(2, Math.min(MAX_PLAYERS, room.maxPlayers ?? MAX_PLAYERS));
@@ -272,6 +286,15 @@ export class CoopLobbyScene {
       draw(ctx, PSPRITE[p], 150, y + 4, { sx: 0, sy: 0, sw: 16, sh: 32 });
       if (m.starter) drawIcon(ctx, m.starter, 170, y + 4);
       else text(ctx, '?', 186, y + 14, { align: 'center', color: 'gray', font: 'small' });
+      // the highest ascension this player has unlocked with that starter (as on the solo starter tiles): mine from my
+      // save, the others' as their client reported it (none from an older client)
+      const an = m.starter ? (p === me ? ascUnlocked(G.meta, m.starter) : m.ascMax) : null;
+      if (typeof an === 'number') {
+        const bw = an >= 10 ? 19 : 14;
+        pixBox(ctx, 209 - bw, y + 25, bw, 11, '#141820', null, 2);
+        text(ctx, 'A' + an, 211 - bw, y + 24, { color: an ? 'gold' : 'gray', font: 'small' });
+        if (hover(166, y + 2, 46, 36)) tip(`${p === me ? 'YOU' : m.name}: A${an}`, `${p === me ? 'You have' : `${m.name} has`} unlocked up to ASCENSION ${an} with ${D.species[m.starter]?.name || m.starter}.${p === me ? `\n\n${this.bestTip()}` : ''}`, { width: 210 });
+      }
     }
     // starter pick
     const mine = v.members.find(x => x.slot === me);

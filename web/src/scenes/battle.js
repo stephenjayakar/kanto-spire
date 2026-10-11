@@ -17,7 +17,7 @@ import { battleFinished } from './flow.js';
 import { STAT_NAMES, PROTECT_EFFECTS } from '../game/effects.js';
 import { MoveAnims } from '../anim/player.js';
 import { pickHandAnim, ANIM_SPEED, HAND_START_EVENTS, orderTurnEvents } from '../anim/pick.js';
-import { opaqueBounds } from './common.js';
+import { opaqueBounds, drawStageTags, stageText } from './common.js';
 import { AUTO, autoKey, autoStopInput, manualKey, autoLowHp, drawAutoButton } from './auto.js';
 
 const SCENE_X = 160, SCENE_Y = 27, SCENE_W = 480, SCENE_H = 200;
@@ -707,7 +707,7 @@ export class BattleScene {
     ctx.restore();
     // hover enemy
     if (ed.species && e && hover(SCENE_X + 296, SCENE_Y + 6, 128, 120)) this.enemyTooltip(e);
-    if (this.leadSpecies && hover(SCENE_X + 56, SCENE_Y + 72, 128, 128)) { const l = b.lead(); if (l) monTooltip(l, SCENE_X + 190, SCENE_Y + 60); }
+    if (this.leadSpecies && hover(SCENE_X + 56, SCENE_Y + 72, 128, 128)) { const l = b.lead(); if (l) monTooltip(l, SCENE_X + 190, SCENE_Y + 60, stageText(b.sides.player.stages)); }
     if (this._order && this.orderTagBoxes.some(t => hover(t.x, t.y, t.w, t.h))) this.orderTip(this._order);
   }
 
@@ -796,9 +796,9 @@ export class BattleScene {
     // party balls for trainers
     if (this.cfg.trainer) this.b.enemies.forEach((en, i) => { draw(ctx, `gfx/ui/battle/${en.hp <= 0 ? 'ball_fainted' : 'ball_ok'}.png`, x + 8 + i * 10, y + 42); });
     // stat stages
-    const st = this.b.sides.enemy.stages;
-    let sx = x + 8;
-    for (const k of ['atk', 'def', 'spa', 'spd', 'spe', 'acc', 'eva']) if (st[k]) { const s = `${k.toUpperCase()}${st[k] > 0 ? '+' : ''}${st[k]}`; text(ctx, s, sx + (this.cfg.trainer ? 64 : 0), y + 42, { color: st[k] > 0 ? 'red' : 'blue', font: 'small' }); sx += measure(s, 'small') + 4; }
+    // (right under the box, clear of the intent panel below it, which used to cover their lower half)
+    const sx = x + 8 + (this.cfg.trainer ? 64 : 0);
+    drawStageTags(ctx, this.b.sides.enemy.stages, sx, y + 39, { maxW: x + 170 - sx });
   }
 
   drawPlayerBox(ctx, x, y) {
@@ -814,9 +814,7 @@ export class BattleScene {
     text(ctx, 'HP', x + 8, y + 17, { color: 'orange', font: 'small' });
     text(ctx, `${Math.round(hp)}/${maxHp(lead)}`, x + 160, y + 17, { align: 'right', color: 'dark', font: 'small' });
     if (lead.status) draw(ctx, `gfx/ui/status/${lead.status === 'TOX' ? 'psn' : lead.status.toLowerCase()}.png`, x + 94, y + 4);
-    const st = this.b.sides.player.stages;
-    let sx = x + 4;
-    for (const k of ['atk', 'def', 'spa', 'spd', 'spe', 'acc', 'eva']) if (st[k]) { const s = `${k.toUpperCase()}${st[k] > 0 ? '+' : ''}${st[k]}`; text(ctx, s, sx, y - 12, { color: st[k] > 0 ? 'red' : 'blue', font: 'small' }); sx += measure(s, 'small') + 4; }
+    drawStageTags(ctx, this.b.sides.player.stages, x + 4, y - 12, { maxW: 162 });
     const ps = this.b.sides.player;
     const flags = [ps.reflect && 'REFLECT', ps.lightScreen && 'L.SCREEN', ps.protect && 'PROTECT', ps.substitute && 'SUB', ps.confused && 'CONFUSED', ps.seeded && 'SEEDED', ps.safeguard && 'SAFEGUARD'].filter(Boolean);
     if (flags.length) text(ctx, flags.join(' '), x + 4, y + 36, { color: 'gold', font: 'small' });
@@ -828,18 +826,20 @@ export class BattleScene {
     if (this._order) it = { ...it, first: this._order.foeFirst };
     const mv = it.move;
     const w = 172;
-    pixBox(ctx, x - 4, y - 2, w, 30, '#101018d0', it.kind === 'attack' ? '#ff6060' : it.kind === 'buff' ? '#60a0ff' : '#c080ff', 3);
+    // A2+ (hidden): one neutral frame, so neither its color (attack / buff / status) nor anything else hints at the move
+    const hidden = G.run.ascension >= 2;
+    pixBox(ctx, x - 4, y - 2, w, 30, '#101018d0', hidden ? '#8890a0' : it.kind === 'attack' ? '#ff6060' : it.kind === 'buff' ? '#60a0ff' : '#c080ff', 3);
     const en = this.b.enemy();
     if (en && (en.status === 'SLP' || en.status === 'FRZ')) {
       pixBox(ctx, x - 4, y - 2, w, 30, '#101018d0', '#60a0ff', 3);
       text(ctx, 'INTENT', x + 2, y - 1, { color: 'gray', font: 'small' });
       text(ctx, en.status === 'SLP' ? 'ASLEEP' : 'FROZEN SOLID', x + 2, y + 10, { color: 'blue', font: 'small' });
-      text(ctx, 'then ' + mv.name, x + w - 10, y + 10, { align: 'right', color: 'gray', font: 'small' });
+      text(ctx, hidden ? 'hidden (A2)' : 'then ' + mv.name, x + w - 10, y + 10, { align: 'right', color: 'gray', font: 'small' });
       return;
     }
     text(ctx, (it.first ? 'FIRST! ' : '') + 'INTENT', x + 2, y - 1, { color: it.first ? 'red' : 'gray', font: 'small' });
-    if (G.run.ascension >= 2) {
-      // A2+: the foe's move stays secret
+    if (hidden) {
+      // A2+: the foe's move stays secret (no KO! either)
       text(ctx, '???', x + 2, y + 10, { color: 'white', font: 'small' });
       text(ctx, 'hidden (A2)', x + w - 10, y + 10, { align: 'right', color: 'gray', font: 'small' });
       if (hover(x - 4, y - 2, w, 30)) tip('INTENT HIDDEN', `Ascension 2+: you can't see what the foe will do.\n${it.first ? 'The foe acts first: BEFORE your hand resolves.' : 'You act first: your hand resolves before the foe moves.'}`, { width: 200 });
@@ -866,7 +866,7 @@ export class BattleScene {
     const ab = e.ability ? (D.abilities[e.ability]?.name || e.ability) : '';
     const rule = (e.bossRule && BOSS_RULES[e.bossRule] ? `\n\n${BOSS_RULES[e.bossRule].name}: ${BOSS_RULES[e.bossRule].desc}` : '') + (e.forme ? `\nNow in its ${e.forme} FORME.` : '');
     const matchup = matchupText(e.types);
-    tip(`${speciesName(e.species)}  Lv${e.level}`, `${e.types.join('/')}  ·  ${ab}${ab && D.abilities[e.ability] ? ': ' + D.abilities[e.ability].desc : ''}\nATK ${st.atk} DEF ${st.def} SPA ${st.spa} SPD ${st.spd} SPE ${st.spe}\nMoves: ${G.run.ascension >= 2 ? '??? (hidden at A2+)' : e.moves.map(m => D.moves[m]?.name).join(', ')}${matchup}${rule}`, { width: 230, accent: TYPE_COLORS[e.types[0]] });
+    tip(`${speciesName(e.species)}  Lv${e.level}`, `${e.types.join('/')}  ·  ${ab}${ab && D.abilities[e.ability] ? ': ' + D.abilities[e.ability].desc : ''}\nATK ${st.atk} DEF ${st.def} SPA ${st.spa} SPD ${st.spd} SPE ${st.spe}${stageText(this.b.sides.enemy.stages)}\nMoves: ${G.run.ascension >= 2 ? '??? (hidden at A2+)' : e.moves.map(m => D.moves[m]?.name).join(', ')}${matchup}${rule}`, { width: 230, accent: TYPE_COLORS[e.types[0]] });
   }
 
   drawLeftPanel(ctx) {
