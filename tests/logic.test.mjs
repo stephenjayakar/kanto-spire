@@ -2383,9 +2383,9 @@ t('v0.5.2: a foe never uses FLY / DIG / DIVE / BOUNCE two turns in a row (unless
 });
 
 const { BOSS_RULES } = await import('../web/src/game/bosses.js');
-t('v0.5.2: LEADER NORMAN\'s BALANCE caps every hand at 35% of his POKéMON\'s max HP (preview = actual)', () => {
+t('v0.5.2: LEADER NORMAN\'s BALANCE caps every hand at 60% of his POKéMON\'s max HP (preview = actual)', () => {
   assert.equal(BOSS_RULES.NORMAN.name, 'BALANCE');
-  assert.equal(BOSS_RULES.NORMAN.handCap, 0.35);
+  assert.equal(BOSS_RULES.NORMAN.handCap, 0.6);
   assert.ok(!BOSS_RULES.NORMAN.afterHand, 'no SLACK OFF heal');
   const foe = slowFoe(['GROWL'], 1000); foe.bossRule = 'NORMAN'; foe.status = 'PAR'; // (no burn chip at the end of the turn)
   const run = Run.create({ starter: 'CHARMANDER', seed: 'NRM52' });
@@ -2395,15 +2395,15 @@ t('v0.5.2: LEADER NORMAN\'s BALANCE caps every hand at 35% of his POKéMON\'s ma
   b.sides.player.lockOn = 3;
   const ids = handOf(b, ['EMBER', 'EMBER', 'FLAMETHROWER', 'FLAMETHROWER', 'FIRE_BLAST']);
   const sim = b.simulate(ids);
-  assert.equal(sim.damage, 350, 'the preview shows the cap');
+  assert.equal(sim.damage, 600, 'the preview shows the cap');
   const ev = b.play(ids);
-  assert.equal(foe.hp, 650, 'the hand dealt exactly 35%');
+  assert.equal(foe.hp, 400, 'the hand dealt exactly 60%');
   assert.ok(ev.some(e => e.t === 'msg' && /BALANCE/.test(e.text)));
   // a weak hand is untouched, and nothing heals him
   const ids2 = handOf(b, ['SCRATCH']);
   const s2 = b.simulate(ids2).damage;
   b.play(ids2);
-  assert.ok(s2 < 350 && foe.hp === 650 - s2, 'no cap, no heal');
+  assert.ok(s2 < 600 && foe.hp === 400 - s2, 'no cap, no heal');
 });
 
 console.log(`${pass} passed, ${fail} failed`);

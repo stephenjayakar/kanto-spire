@@ -14,7 +14,7 @@ export const PATCH_NOTES = [
         'At a co-op legendary node, every player got the same held item. Each player now gets the item of the legendary they caught.',
       ]],
       ['CHANGES', [
-        "LEADER NORMAN's SLACK OFF was replaced by BALANCE: no single hand can deal more than 35% of his POKéMON's max HP (no more healing).",
+        "LEADER NORMAN's SLACK OFF was replaced by BALANCE: no single hand can deal more than 60% of his POKéMON's max HP (no more healing).",
         'The POKéDEX scrolled a page at a time. It now scrolls smoothly with the mouse wheel, drag or arrow keys.',
         'RECORDS lists stopped at 50. LOAD MORE at the bottom now shows the next 50.',
       ]],

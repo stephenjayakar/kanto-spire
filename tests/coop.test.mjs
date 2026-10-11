@@ -1378,8 +1378,8 @@ t('v0.5.2: co-op legendary node: each player gets the held item of the legendary
   assert.equal(solo.legendRelic(sc, null), 'FLAME_FEATHER');
 });
 
-t('v0.5.2: LEADER NORMAN\'s BALANCE caps each co-op hand at 35% of his POKéMON\'s max HP (no healing)', () => {
-  assert.equal(BR52.NORMAN.handCap, 0.35);
+t('v0.5.2: LEADER NORMAN\'s BALANCE caps each co-op hand at 60% of his POKéMON\'s max HP (no healing)', () => {
+  assert.equal(BR52.NORMAN.handCap, 0.6);
   const big = (seed) => { const r = Run.create({ starter: 'CHARMANDER', seed, coop: true }); r.party[0].level = 60; r.party[0].hp = maxHp(r.party[0]); return r; };
   const n0 = foe37(1000), n1 = foe37(1000);
   n0.bossRule = n1.bossRule = 'NORMAN'; n0.status = n1.status = 'PAR';
@@ -1389,13 +1389,13 @@ t('v0.5.2: LEADER NORMAN\'s BALANCE caps each co-op hand at 35% of his POKéMON\
   for (const s of d.subs) s.sides.player.lockOn = 3;
   aimAll52(d, 0, 'GROWL');
   const h0 = hand37(d.subs[0], ['EMBER', 'EMBER', 'FLAMETHROWER', 'FLAMETHROWER', 'FIRE_BLAST']);
-  assert.equal(d.simulate(0, h0, 0).damage, 350, 'the preview shows the cap');
+  assert.equal(d.simulate(0, h0, 0).damage, 600, 'the preview shows the cap');
   const h1 = hand37(d.subs[1], ['WATER_GUN', 'WATER_GUN', 'SURF', 'SURF', 'HYDRO_PUMP'], 9600);
   d.lock(0, { ids: h0, target: 0 });
   assert.ok(d.lastOk);
-  d.lock(1, { ids: h1, target: 0 }); // TEAM UP on the same foe: still capped per hand
-  assert.equal(n0.hp, 1000 - 2 * 350, 'two hands, 35% each');
-  assert.equal(n1.hp, 1000);
+  d.lock(1, { ids: h1, target: 1 }); // each player's hand is capped on its own
+  assert.equal(n0.hp, 1000 - 600, 'capped at 60%');
+  assert.equal(n1.hp, 1000 - 600, 'capped at 60%');
 });
 
 console.log(`${pass} passed, ${fail} failed`);

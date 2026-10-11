@@ -125,7 +125,7 @@ export const BOSS_RULES = {
   FLANNERY: { name: 'DROUGHT', desc: 'Harsh sunlight all battle. Your WATER cards are weakened.', onBattleStart(b) { b.setWeather('SUN', true); } },
   // v0.5.2: BALANCE replaced SLACK OFF (heal when a hand fell short, which out-healed co-op teams). Every hand is capped
   // instead (battle.js handCap): no one-shots, no healing, the same for each co-op player.
-  NORMAN: { name: 'BALANCE', desc: "No single hand can deal more than 35% of his POKéMON's max HP.", handCap: 0.35 },
+  NORMAN: { name: 'BALANCE', desc: "No single hand can deal more than 60% of his POKéMON's max HP.", handCap: 0.6 }, // (0.35 left solo at 30% wins vs ~91% for the other act 2 gyms: tests/boss_gauntlet.mjs)
   WINONA: { name: 'TAILWIND', desc: 'Her POKéMON always move first. -1 hand size.', handSize: -1 },
   TATE_LIZA: { name: 'TWIN MINDS', desc: 'Each hand must have exactly 2 or 4 cards.', canPlay(b, infos) { return infos.length === 2 || infos.length === 4 ? null : 'TWIN MINDS: play 2 or 4 cards!'; } },
   WALLACE: { name: 'RAIN DANCE', desc: 'Rain all battle and his POKéMON heal 6% each turn.', onBattleStart(b) { b.setWeather('RAIN', true); }, onTurnEnd(b) { b.healEnemy(0.06); } },
