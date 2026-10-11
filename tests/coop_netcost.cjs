@@ -14,6 +14,7 @@ const { chromium } = require('playwright');
 const fs = require('fs'), path = require('path');
 const { spawn } = require('child_process');
 const A = require('./coop_auth.cjs');
+const { routePacks } = require('./pack_cache.cjs');
 
 const LABEL = process.argv[2] || 'run';
 const BASE = process.argv[3] || process.env.BASE || 'http://localhost:8097/';
@@ -187,6 +188,7 @@ async function vote(pages, id) {
       const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
       await ctx.addInitScript(t => localStorage.setItem('kantospire.auth.v1', JSON.stringify({ token: t, refreshToken: 'e2e' })), tokens[i]);
       await ctx.addInitScript(NET_COUNTER);
+      await routePacks(ctx); // (asset packs from the shared test cache, not Convex egress; PACK_CACHE=0 to measure real downloads)
       const p = await ctx.newPage(); p.__name = `P${i + 1}`; p.__url = BASE + (process.env.OLD2 && i === 1 ? 'old/' : '') + (process.env.URLQ || ''); pagesG.push(p); // (OLD2=1: P2 runs the older client from old/)
       p.on('pageerror', e => errors.push(`${p.__name}: ${e.message}`));
       p.on('console', m => { if (m.type() === 'error' && /\[coop/.test(m.text())) errors.push(`${p.__name} console: ${m.text()}`); });

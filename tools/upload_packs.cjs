@@ -2,7 +2,8 @@
 // to allowlisted accounts only (the hosted static site has no assets).
 // Usage: node tools/upload_packs.cjs [--prod] [--dry] [--out <dir>]
 //   --dry        build and print the packs, upload nothing
-//   --out <dir>  also write every pack as <dir>/<name>-<hash>.ksp (the test pack cache, tests/pack_cache.cjs)
+//   --out <dir>  write every pack as <dir>/<name>-<hash>.ksp (default: the browser tests' pack cache, tests/pack_cache.cjs:
+//                PACK_CACHE_DIR or <tmp>/kanto-spire-packs, so tests never download what was just uploaded; PACK_CACHE=0 skips it)
 //
 // v0.3.21, to keep downloads small (Convex egress):
 // - PNGs are stored losslessly re-encoded (tools/pngopt.cjs: palette PNGs for the 16-colour sprites, about half
@@ -23,7 +24,8 @@ const { optimizePng } = require('./pngopt.cjs');
 const root = path.join(__dirname, '..'), assets = path.join(root, 'web', 'assets');
 const args = process.argv.slice(2);
 const prod = args.includes('--prod'), dry = args.includes('--dry');
-const outDir = args.includes('--out') ? path.resolve(args[args.indexOf('--out') + 1]) : null;
+const outDir = args.includes('--out') ? path.resolve(args[args.indexOf('--out') + 1])
+  : process.env.PACK_CACHE === '0' ? null : (process.env.PACK_CACHE_DIR || path.join(require('os').tmpdir(), 'kanto-spire-packs'));
 if (!fs.existsSync(path.join(assets, 'data'))) { console.error('web/assets is missing; run the extract tools first.'); process.exit(1); }
 
 const POKEMON_BUCKETS = 8;
@@ -121,6 +123,10 @@ const mb = n => (n / 1048576).toFixed(2);
   if (outDir) {
     fs.mkdirSync(outDir, { recursive: true });
     for (const p of packs) fs.writeFileSync(path.join(outDir, `${p.name}-${p.hash}.ksp`), p.data);
+    // keep the 3 newest copies of each pack (old builds still find theirs; the cache doesn't grow forever)
+    const byName = {};
+    for (const f of fs.readdirSync(outDir)) { const m = /^(.+)-[0-9a-f]{64}\.ksp$/.exec(f); if (m) (byName[m[1]] ||= []).push(f); }
+    for (const list of Object.values(byName)) list.map(f => [f, fs.statSync(path.join(outDir, f)).mtimeMs]).sort((a, b) => b[1] - a[1]).slice(3).forEach(([f]) => fs.unlinkSync(path.join(outDir, f)));
     console.log('wrote', packs.length, 'packs to', outDir);
   }
   if (dry) return;
