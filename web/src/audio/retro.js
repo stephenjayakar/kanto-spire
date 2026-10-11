@@ -179,3 +179,22 @@ export const RETRO_SONG_SET = new Set([
   ...Object.values(JOHTO_CLASS_LOOK).map((s) => 'silver:' + s), ...Object.values(EMERALD), ...Object.keys(RETRO_NEXT), ...Object.values(RETRO_NEXT),
   'silver:RivalBattle', 'silver:RocketBattle', 'silver:JohtoWildBattleNight', 'silver:ChampionBattle',
 ]);
+
+// ---- RETRO MIX: how the Game Boy engine sounds (gb-core.js MIXES; every mix plays exactly the same notes) -------------
+// RETRO_MIX_PICKER on: SETTINGS shows a RETRO MIX row (A / B / C) while RETRO is picked, saved in this browser only.
+// Off: no extra UI, everyone hears RETRO_MIX.
+export const RETRO_MIX_PICKER = true;
+export const RETRO_MIX = 'A';
+export const RETRO_MIX_OPTIONS = [
+  ['A', 'CLEAN', 'Smooth Game Boy tones and soft stereo, no clicks or harsh fizz. (Default)'],
+  ['B', 'WARM', 'CLEAN with a softer top end and a small room around the sound.'],
+  ['C', 'RICH', 'WARM plus a light chorus that thickens the two lead voices.'],
+];
+const RETRO_MIX_KEY = 'kantospire.retroMix';
+export function savedRetroMix() {
+  if (!RETRO_MIX_PICKER) return RETRO_MIX;
+  let v = null;
+  try { v = localStorage.getItem(RETRO_MIX_KEY); } catch { v = null; }
+  return RETRO_MIX_OPTIONS.some((o) => o[0] === v) ? v : RETRO_MIX;
+}
+export function saveRetroMix(v) { try { localStorage.setItem(RETRO_MIX_KEY, v); } catch { /* private mode: this session only */ } }
