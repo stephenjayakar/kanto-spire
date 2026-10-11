@@ -250,16 +250,16 @@ t('resume: unverifiable rooms (no checksums) replay as before', async () => {
 
 // ------------------------------------------------------------------------------------- legacy engine
 t('engines: selection is explicit (stamp first, then the current code, then the other frozen copies)', () => {
-  assert.equal(LOGIC_ID, 'v050', 'v0.5.0 changes game logic (every ability does something; Gen 4 species use their HGSS abilities)');
+  assert.equal(LOGIC_ID, 'v051', 'v0.5.1 changes game logic (NORMAN SLACK OFF split in co-op); v0.5.0 is not frozen (mid-node rooms restart the node)');
   assert.equal(UNSTAMPED, 'v035');
   assert.deepEqual(Object.keys(FROZEN), ['v040', 'v0323', 'v0319', 'v0311', 'v037', 'v035', 'v031'], 'newest first');
   const ids = (l) => l.map(e => (e.current ? 'current:' : '') + e.id);
   // a room stamped by an older logic goes to its own frozen copy first, then the current code, then the rest
-  assert.deepEqual(ids(engineOrder('v040')), ['v040', 'current:v050', 'v0323', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
-  assert.deepEqual(ids(engineOrder('v0323')), ['v0323', 'current:v050', 'v040', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
-  assert.deepEqual(ids(engineOrder('v035')), ['v035', 'current:v050', 'v040', 'v0323', 'v0319', 'v0311', 'v037', 'v031']);
-  assert.deepEqual(ids(engineOrder('v050')), ['current:v050', 'v040', 'v0323', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
-  assert.deepEqual(ids(engineOrder('zzz')), ['current:v050', 'v040', 'v0323', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('v040')), ['v040', 'current:v051', 'v0323', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('v0323')), ['v0323', 'current:v051', 'v040', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('v035')), ['v035', 'current:v051', 'v040', 'v0323', 'v0319', 'v0311', 'v037', 'v031']);
+  assert.deepEqual(ids(engineOrder('v051')), ['current:v051', 'v040', 'v0323', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('zzz')), ['current:v051', 'v040', 'v0323', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
   // under the older ids (what those versions did)
   assert.deepEqual(ids(engineOrder('v0323', 'v040')), ['v0323', 'current:v040', 'v040', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
   assert.deepEqual(ids(engineOrder('v0319', 'v0323')), ['v0319', 'current:v0323', 'v040', 'v0323', 'v0311', 'v037', 'v035', 'v031']);

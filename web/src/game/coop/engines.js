@@ -28,7 +28,9 @@ import { RNG } from '../rng.js';
 // (Further logic changes for the same release fold into this id; once it ships, the next change needs a new one.)
 // v0.5.0 does: every ability does something (docs/ABILITIES_PROPOSAL.md), the Gen 4
 // species use their HGSS abilities, your POKéMON can flinch; v0.4.0-v0.4.7 is frozen as 'v040'.
-export const LOGIC_ID = 'v050';
+// v0.5.1 does: LEADER NORMAN's SLACK OFF is split between co-op players (and softened). v0.5.0 is NOT frozen on purpose:
+// a room mid-node in v0.5.0 (e.g. stuck in the broken NORMAN fight) restarts that node from the map on the fixed rules.
+export const LOGIC_ID = 'v051';
 // Actions from before v0.3.6 carry no stamp: they were played on v0.3.5 (or, for older rooms, earlier; the
 // replay checks the clients' logged checksums and tries every frozen engine, see resume.js).
 export const UNSTAMPED = 'v035';
