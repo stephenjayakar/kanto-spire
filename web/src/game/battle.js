@@ -834,6 +834,7 @@ export class Battle {
     if (!S) return null;
     let dmg = S.damage + S.fixed;
     if (S.ohko) dmg = e.hp;
+    if (this.bossRule?.handCap) dmg = Math.min(dmg, this.handCap(e));
     if (this.sides.player.confused > 0) dmg = Math.floor(dmg * 0.75); // expected: 50% chance of x0.5
     return { key: S.combo, base: Math.round(S.cardTotal + S.flatTotal), bonus: Math.round(S.pctTotal), times: +S.timesTotal.toFixed(2), damage: dmg };
   }
@@ -1056,6 +1057,7 @@ export class Battle {
         let dmg = score.damage + score.fixed;
         if (score.ohko) dmg = e.hp;
         if (score.falseSwipe) dmg = Math.min(dmg, e.hp - 1);
+        if (this.bossRule?.handCap && dmg > this.handCap(e)) { dmg = this.handCap(e); this.msg(`BALANCE! The hand was capped at ${dmg} damage.`); }
         if (this.sides.enemy.substitute) {
           const absorbed = Math.min(dmg, this.sides.enemy.subHp);
           this.sides.enemy.subHp -= absorbed; dmg -= absorbed;
@@ -1209,6 +1211,7 @@ export class Battle {
     const bonusMult = TUNING.scoring === 'hybrid' || TUNING.scoring === 'hybridlite' ? (1 + bonus / 100) * (1 + (S.pctTotal - bonus) / 100) : 1 + S.pctTotal / 100;
     const damage = Math.max(0, Math.floor((S.cardTotal + S.flatTotal) * bonusMult * S.timesTotal));
     S.damage = damage;
+    if (this.bossRule?.handCap) S.damage = Math.min(S.damage, this.handCap(enemy)); // (LEADER NORMAN's BALANCE)
     if (!this.dry) this.maxHand = Math.max(this.maxHand || 0, damage);
     if (this.run.metrics && !this.dry) this.run.metrics.hands.push({ act: this.run.actIndex, dmg: damage, ehp: enemy.maxHp, kind: this.kind });
     S.effLabel = bestEff === null ? null : bestEff > 1 ? 'super' : bestEff === 0 ? 'none' : bestEff < 1 ? 'weak' : null;
@@ -1437,6 +1440,8 @@ export class Battle {
   }
 
   healLead(frac, src) { const l = this.lead(); if (l && !isFainted(l)) this.healSide('player', l, frac, src, true); }
+  // The most one hand may deal to `e` under a capping boss rule (NORMAN's BALANCE: a share of its max HP).
+  handCap(e) { return Math.max(1, Math.floor(e.maxHp * this.bossRule.handCap)); }
   healEnemy(frac) { const e = this.enemy(); const before = e.hp; e.hp = Math.min(e.maxHp, e.hp + Math.floor(e.maxHp * frac)); if (e.hp > before) this.emit({ t: 'heal', side: 'enemy', amount: e.hp - before, hp: e.hp, maxHp: e.maxHp }); }
 
   healSide(side, mon, frac, src, quiet) {

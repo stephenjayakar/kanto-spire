@@ -123,10 +123,9 @@ export const BOSS_RULES = {
   BRAWLY: { name: 'BULK UP', desc: 'His POKéMON gain +1 ATTACK every turn.', onTurnEnd(b) { b.addStage('enemy', 'atk', 1, 'BULK UP'); } },
   WATTSON: { name: 'MAGNET PULL', desc: 'Discarding costs your lead 5% HP.', },
   FLANNERY: { name: 'DROUGHT', desc: 'Harsh sunlight all battle. Your WATER cards are weakened.', onBattleStart(b) { b.setWeather('SUN', true); } },
-  // v0.5.1: was heal 25% under 20% per hand, which in co-op (every player's hand checked against the team-sized HP pool)
-  // healed him faster than a team could hurt him. Co-op splits both numbers between the players still fighting.
-  NORMAN: { name: 'SLACK OFF', desc: 'His POKéMON heal 20% whenever a hand fails to deal 15% of their HP (in co-op, split between the players).',
-    afterHand(b, S) { const e = b.enemy(), n = Math.max(1, b.duo ? b.duo.aliveSubs().length : 1); if (e.hp > 0 && S.damage < e.maxHp * 0.15 / n) b.healEnemy(0.2 / n); } },
+  // v0.5.2: BALANCE replaced SLACK OFF (heal when a hand fell short, which out-healed co-op teams). Every hand is capped
+  // instead (battle.js handCap): no one-shots, no healing, the same for each co-op player.
+  NORMAN: { name: 'BALANCE', desc: "No single hand can deal more than 35% of his POKéMON's max HP.", handCap: 0.35 },
   WINONA: { name: 'TAILWIND', desc: 'Her POKéMON always move first. -1 hand size.', handSize: -1 },
   TATE_LIZA: { name: 'TWIN MINDS', desc: 'Each hand must have exactly 2 or 4 cards.', canPlay(b, infos) { return infos.length === 2 || infos.length === 4 ? null : 'TWIN MINDS: play 2 or 4 cards!'; } },
   WALLACE: { name: 'RAIN DANCE', desc: 'Rain all battle and his POKéMON heal 6% each turn.', onBattleStart(b) { b.setWeather('RAIN', true); }, onTurnEnd(b) { b.healEnemy(0.06); } },
