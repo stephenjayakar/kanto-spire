@@ -16,6 +16,19 @@
   - a balance check for balance-relevant changes (`node tests/balance.mjs`; use `--rotate` so the bot spreads EXP
     like a human);
   - one quick muted browser run of any changed UI.
+- **Boss changes**: when adding or changing a boss, a boss rule, an ability, a held item or anything else that
+  changes boss fights, run the boss gauntlet on the affected bosses, solo and co-op, before shipping:
+  - `node tests/boss_gauntlet.mjs --boss NORMAN` (substring of the id, comma-separated; `--cat gym,e4,champ,rival,
+    bird,mythic,legend,post`; no filter = the whole roster). It sets each fight up directly from team snapshots of
+    smart-bot runs (`tests/boss_fixtures.json`) and plays it 40 times solo and with 2, 3 and 4 players (co-op HP and
+    damage multipliers included). One boss takes under a minute, the whole roster about 25 minutes (4 workers).
+  - Put its table (console output; JSON in `tests/out/`) in the report or PR. Ship only with no new RED flags, or once
+    the owner has accepted each one. RED means: stalls (over 10% of fights at the 40-turn cap), foes healing about all
+    the damage they take, a win rate 30+ points under its peers (same category and act), or a co-op win rate 30+
+    points further under solo than is typical (a rule that doesn't scale with players, like v0.5.0's SLACK OFF).
+  - Flags compare against `tests/boss_baseline.json` (the last full roster run on main). After a change ships, refresh
+    it with a full run and `--save-baseline`; after big balance changes re-sample the teams with `--harvest`.
+    `--root <checkout>` tests another checkout's game code (e.g. a detached worktree of an old commit).
 - **Co-op determinism**: co-op is lockstep. Anything that touches battle or run state must stay deterministic
   under the shared action log. Cosmetic code (animations, tooltips) must never change it.
 - **Saved games**: game-logic changes must not break saved games.
