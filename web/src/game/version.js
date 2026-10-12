@@ -2,9 +2,17 @@
 // Game version and patch notes (shown from the title screen). Versions are major.minor.patch: every production
 // deploy that changes the game bumps the patch (v0.2.0 -> v0.2.1); the owner calls minor bumps (v0.1.x -> v0.2.0);
 // no major bumps yet. Each one gets a new top PATCH_NOTES entry; see AGENTS.md.
-export const VERSION = 'v0.5.3';
+export const VERSION = 'v0.5.4';
 
 export const PATCH_NOTES = [
+  {
+    v: 'v0.5.4',
+    sections: [
+      ['NEW', [
+        'INFO has a HELD ITEMS tab: every held item in the game with its art, what it does, its rarity and where it comes from (legendary items name their legendary). Items you hold are marked HELD',
+      ]],
+    ],
+  },
   {
     v: 'v0.5.3',
     sections: [

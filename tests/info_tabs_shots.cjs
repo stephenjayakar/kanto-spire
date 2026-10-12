@@ -1,4 +1,4 @@
-// INFO button (was COMBOS) and its COMBOS / TYPE CHART / STATUSES tabs: screenshots in a solo battle, on the solo
+// INFO button (was COMBOS) and its COMBOS / TYPE CHART / STATUSES / HELD ITEMS tabs: screenshots in a solo battle, on the solo
 // map, in a co-op battle and on the co-op map (muted Chrome, offline; co-op on an in-memory net from player 2's seat,
 // like statuscombo_shots.cjs). Look at them.
 //   node tests/info_tabs_shots.cjs [port=8761] [prefix=info]
@@ -43,10 +43,10 @@ async function infoTabs(page, shot, tag, all) {
   await mouseTo(page, 320, 352);
   await shot('tab_combos');
   if (all) {
-    await clickAt(page, 320, 21); // TYPE CHART tab
+    await clickAt(page, 266, 21); // TYPE CHART tab
     check(`${tag}: TYPE CHART tab`, await page.evaluate(() => window.__engine.Engine.overlays.at(-1).tab === 1));
     await mouseTo(page, 300, 150); await shot('tab_typechart');
-    await clickAt(page, 428, 21); // STATUSES tab
+    await clickAt(page, 374, 21); // STATUSES tab
     check(`${tag}: STATUSES tab`, await page.evaluate(() => window.__engine.Engine.overlays.at(-1).tab === 2));
     await mouseTo(page, 320, 352);
     await shot('tab_statuses_1');
@@ -60,12 +60,31 @@ async function infoTabs(page, shot, tag, all) {
     }
     await page.evaluate(() => { window.__engine.Engine.overlays.at(-1).stScroll.scroll = 1e6; });
     await shot('tab_statuses_end');
-    // the arrow keys cycle the tabs: right from STATUSES wraps to COMBOS
+    await page.evaluate(() => { window.__engine.Engine.overlays.at(-1).stScroll.scroll = 0; });
+    // HELD ITEMS: every RELICS entry, scrolled with the keys (PageDown / ArrowDown) as well as the wheel
+    await clickAt(page, 482, 21); // HELD ITEMS tab
+    check(`${tag}: HELD ITEMS tab`, await page.evaluate(() => window.__engine.Engine.overlays.at(-1).tab === 3));
+    await mouseTo(page, 320, 352);
+    await shot('tab_helditems_1');
+    const hm = await page.evaluate(() => window.__engine.Engine.overlays.at(-1).hiScroll);
+    check(`${tag}: HELD ITEMS scrolls`, hm.contentH > 3000, `contentH=${hm.contentH}`);
+    await page.keyboard.press('PageDown'); await sleep(150);
+    await page.keyboard.press('ArrowDown'); await sleep(150);
+    const s1 = await page.evaluate(() => window.__engine.Engine.overlays.at(-1).hiScroll.scroll);
+    check(`${tag}: HELD ITEMS PageDown / ArrowDown scroll`, s1 > 200, `scroll=${s1}`);
+    await shot('tab_helditems_2');
+    for (const [i, f] of [[3, 0.3], [4, 0.55], [5, 0.8]]) {
+      await page.evaluate((f) => { const o = window.__engine.Engine.overlays.at(-1); o.hiScroll.scroll = Math.round(f * o.hiScroll.contentH); }, f);
+      await mouseTo(page, 320, 352); await shot(`tab_helditems_${i}`);
+    }
+    await page.evaluate(() => { window.__engine.Engine.overlays.at(-1).hiScroll.scroll = 1e6; });
+    await shot('tab_helditems_end');
+    // the arrow keys cycle the tabs: right from HELD ITEMS wraps to COMBOS
     await page.keyboard.press('ArrowRight'); await sleep(150);
     check(`${tag}: ArrowRight wraps to COMBOS`, await page.evaluate(() => window.__engine.Engine.overlays.at(-1).tab === 0));
     await page.keyboard.press('ArrowLeft'); await sleep(150);
-    check(`${tag}: ArrowLeft wraps to STATUSES`, await page.evaluate(() => window.__engine.Engine.overlays.at(-1).tab === 2));
-    await page.evaluate(() => { window.__engine.Engine.overlays.at(-1).stScroll.scroll = 0; });
+    check(`${tag}: ArrowLeft wraps to HELD ITEMS`, await page.evaluate(() => window.__engine.Engine.overlays.at(-1).tab === 3));
+    await page.evaluate(() => { window.__engine.Engine.overlays.at(-1).hiScroll.scroll = 0; });
   }
   await clickAt(page, 320, 339); // CLOSE
   check(`${tag}: CLOSE`, (await top(page)) === null);
@@ -76,7 +95,7 @@ async function solo(browser, errors) {
   const ev = (fn, arg) => page.evaluate(fn, arg);
   await ev(async () => {
     G.meta.seenVersion = (await import('/src/game/version.js')).PATCH_NOTES[0].v; Object.assign(G.meta, { tutorialDone: true, tipCatch: true, hintBattles: 9, basicsSeen: true });
-    const { Run } = await import('/src/game/run.js'); G.run = Run.create({ starter: 'CHARMANDER', ascension: 0, seed: 'INFO' });
+    const { Run } = await import('/src/game/run.js'); G.run = Run.create({ starter: 'CHARMANDER', ascension: 0, seed: 'INFO' }); G.run.addRelic('CHARCOAL'); // (shows HELD in the HELD ITEMS tab)
     window.__flow.enterNode(G.run.map.start[0]);
   });
   await page.waitForFunction(() => { const s = window.__engine.Engine.scene; return s?.b && !s.busy && s.b.deck?.hand?.length >= 5 && !s.msg?.active; }, null, { timeout: 60000 });
@@ -117,9 +136,10 @@ const START = async ({ SLOT }) => {
     postAction: async (id, a) => push(a, SLOT),
     finishRoom: async () => ({ score: 1, duplicate: false }),
   };
-  net.CoopPoller = class {
+  // (the stand-in for net/coopnet.js CoopFeed, as in coop_hand_ui.cjs: it re-reads the in-memory log every 120 ms)
+  net.CoopFeed = class {
     constructor(roomId, o) { Object.assign(this, o, { running: false }); }
-    start() { this.running = true; const tick = async () => { if (!this.running) return; const r = await net.fetchSince('r1', this.after); const f = r.actions.filter(a => a.seq > this.after); if (f.length) { this.after = f[f.length - 1].seq; await this.onActions(f); } await this.onRoom(r.room, r.members, r); this.t = setTimeout(tick, 120); }; tick(); return this; }
+    start() { this.running = true; const tick = async () => { if (!this.running) return; const r = await net.fetchSince('r1', this.after); const f = r.actions.filter(a => a.seq > this.after); if (f.length) { this.after = f[f.length - 1].seq; await this.onActions(f); } await this.onHead?.({ room: r.room, members: r.members, me: r.me, isHost: r.isHost }); if (!f.length) await this.onCaughtUp?.(); this.t = setTimeout(tick, 120); }; tick(); return this; }
     stop() { this.running = false; clearTimeout(this.t); return this; }
     kick() { return this; } setAfter(s) { this.after = s; return this; }
   };

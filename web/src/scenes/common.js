@@ -12,6 +12,7 @@ import { G } from '../game/state.js';
 import { TUNING, LEVEL_CAP_ASC, ASCENSIONS, NUZLOCKE_ASC } from '../game/run.js';
 import { Sound } from '../audio/sound.js';
 import { drawStatusInfo } from './status_info.js';
+import { drawHeldItemsInfo } from './held_items_info.js';
 
 export const GFX = { manifest: null };
 
@@ -463,7 +464,7 @@ export function drawHUD(ctx, run, opts = {}) {
   }
   const ix = W - (opts.onDeck ? 120 : 60);
   if (button(ctx, 'INFO', ix, 3, 56, 21, { color: '#806040', font: 'small' })) pushOverlay(new InfoModal({}));
-  if (hover(ix, 3, 56, 21)) tip('INFO', 'COMBOS, the TYPE CHART and what every STATUS does.');
+  if (hover(ix, 3, 56, 21)) tip('INFO', 'COMBOS, the TYPE CHART, what every STATUS does and every HELD ITEM.');
   if (opts.onMenu && button(ctx, 'MENU', W - (opts.onDeck ? 168 : 108), 3, 44, 21, { color: '#604080', font: 'small' })) opts.onMenu();
   // opts.help: a "?" in MENU's slot opening HOW TO PLAY as a local overlay (scenes/tutorial.js), for screens without a MENU
   if (opts.help && !opts.onMenu) {
@@ -773,9 +774,9 @@ export class MessageBox {
   }
 }
 
-// The INFO screen (top-bar INFO button): COMBOS (every combo, its level and damage bonus), TYPE CHART and STATUSES
-// (scenes/status_info.js).
-const INFO_TABS = ['COMBOS', 'TYPE CHART', 'STATUSES'];
+// The INFO screen (top-bar INFO button): COMBOS (every combo, its level and damage bonus), TYPE CHART, STATUSES
+// (scenes/status_info.js) and HELD ITEMS (scenes/held_items_info.js).
+const INFO_TABS = ['COMBOS', 'TYPE CHART', 'STATUSES', 'HELD ITEMS'];
 let infoTab = 0; // last tab shown, remembered for the session
 export class InfoModal extends Modal {
   draw(ctx) {
@@ -793,6 +794,7 @@ export class InfoModal extends Modal {
     if (keyPressed('ArrowRight')) infoTab = this.tab = (this.tab + 1) % n;
     if (this.tab === 1) drawTypeChart(ctx, x, y, w, h);
     else if (this.tab === 2) drawStatusInfo(ctx, (this.stScroll ||= {}), x, y, w, h);
+    else if (this.tab === 3) drawHeldItemsInfo(ctx, (this.hiScroll ||= {}), x, y, w, h);
     else this.drawCombos(ctx, x, y, w);
     if (button(ctx, 'CLOSE', W / 2 - 40, y + h - 25, 80, 20, { color: '#506080', font: 'small' })) this.close(null);
     this.closeOnTapOutside(x, y, w, h);
