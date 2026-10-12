@@ -120,7 +120,10 @@ export const BOSS_RULES = {
   },
   // Hoenn leaders (post-game world)
   ROXANNE: { name: 'STURDY', desc: 'Her POKéMON survive the first knockout blow with 1 HP.', sturdy: true },
-  BRAWLY: { name: 'BULK UP', desc: 'His POKéMON gain +1 ATTACK every turn.', onTurnEnd(b) { b.addStage('enemy', 'atk', 1, 'BULK UP'); } },
+  // v0.5.3: was +1 every turn; co-op fights last longer per foe (more HP), so the boosts snowballed (gauntlet: solo 85% vs
+  // co-op ~40%). Now every other turn, and every other turn per player in co-op.
+  BRAWLY: { name: 'BULK UP', desc: 'His POKéMON gain +1 ATTACK every other turn (more slowly in co-op).',
+    onTurnEnd(b) { const n = Math.max(1, b.duo ? b.duo.aliveSubs().length : 1); if (b.turn % (2 * n) === 0) b.addStage('enemy', 'atk', 1, 'BULK UP'); } },
   WATTSON: { name: 'MAGNET PULL', desc: 'Discarding costs your lead 5% HP.', },
   FLANNERY: { name: 'DROUGHT', desc: 'Harsh sunlight all battle. Your WATER cards are weakened.', onBattleStart(b) { b.setWeather('SUN', true); } },
   // v0.5.2: BALANCE replaced SLACK OFF (heal when a hand fell short, which out-healed co-op teams). Every hand is capped

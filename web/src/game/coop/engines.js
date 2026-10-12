@@ -33,13 +33,15 @@ import { RNG } from '../rng.js';
 // v0.5.2 does: LEADER NORMAN's BALANCE (every hand capped) replaces SLACK OFF, a lead sent in after a faint can't be hit
 // by moves still resolving that turn, no FLY / DIG / DIVE / BOUNCE two turns in a row (foes too), and at a co-op
 // legendary node each player gets the held item of the legendary they catch; v0.5.1 is frozen as 'v051'.
-export const LOGIC_ID = 'v052';
+// v0.5.3 does: BRAWLY's BULK UP every other turn (per player in co-op); v0.5.2 is frozen as 'v052'.
+export const LOGIC_ID = 'v053';
 // Actions from before v0.3.6 carry no stamp: they were played on v0.3.5 (or, for older rooms, earlier; the
 // replay checks the clients' logged checksums and tries every frozen engine, see resume.js).
 export const UNSTAMPED = 'v035';
 // Frozen copies, newest first: id -> the versions it covers and its loader (dynamic import: only fetched when a
 // room needs it).
 export const FROZEN = {
+  v052: { versions: 'v0.5.2', load: () => import('../../legacy/v052/engine.js') },
   v051: { versions: 'v0.5.1', load: () => import('../../legacy/v051/engine.js') },
   v040: { versions: 'v0.4.0-v0.4.7', load: () => import('../../legacy/v040/engine.js') },
   v0323: { versions: 'v0.3.23-v0.3.24', load: () => import('../../legacy/v0323/engine.js') },
