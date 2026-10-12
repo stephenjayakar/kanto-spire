@@ -2,7 +2,7 @@
 // Lockstep: every client applies the room's action log (seq 1, 2, 3...) to its own CoopGame and routes
 // scenes by game.phase. Nothing is applied optimistically; our own actions come back through the log.
 import { Engine, setScene } from '../../engine/core.js';
-import { G, saveMeta } from '../../game/state.js';
+import { G, saveMeta, recordRelics } from '../../game/state.js';
 import { recordCoopDex } from '../../game/coop/dex.js';
 import * as Coop from '../../game/coop/coop.js';
 import { NODE_INFO } from '../../game/map.js';
@@ -430,7 +430,7 @@ export class CoopSession {
     if (!replay && a.type === 'privateDone' && a.p === this.mySlot && a.runD !== undefined && a.run === null && g.phase === 'private' && !g.private?.done?.[this.mySlot]
       && this.privateRun && this.privateRun.id === this.privatePosted && this.privatePosted === this.privateId()) {
       console.warn('[coop] compact privateDone refused at #' + a.seq + ', sending the whole run');
-      this.post({ type: 'privateDone', run: this.privateRun.run });
+      this.post({ type: 'privateDone', run: this.privateRun.run, ...(this.privateRun.sitOut ? { sitOut: true } : {}) });
     }
     if (a.type === 'vote' && a.p === this.mySlot && this.pendingVote === a.node) this.pendingVote = null;
     if (g.phase !== 'map') this.pendingVote = null;
@@ -466,7 +466,12 @@ export class CoopSession {
       for (const e of g.events.slice(before.events)) {
         if (e?.t === 'away') coopToast(e.p === this.mySlot ? 'You were sat out (offline).' : `${this.nameOf(e.p)} sits out: carrying on without them`, { t: 4 });
         else if (e?.t === 'back') coopToast(e.p === this.mySlot ? 'You are back in the game!' : `${this.nameOf(e.p)} is back!`, { good: true });
-        else if (e?.t === 'softLoss') coopToast(`${e.foe || 'The mythic'} threw every team out! Everyone lost 30% HP, but the run goes on.`, { t: 5 }); // (v0.3.25)
+        else if (e?.t === 'sitOut') { // (v0.5.6: players who sat a mythic fight out)
+          const names = (e.ps || []).map(q => (q === this.mySlot ? 'you' : this.nameOf(q)));
+          const who = names.join(', ');
+          coopToast(e.fight ? `${who.charAt(0).toUpperCase() + who.slice(1)} sat this one out: the others take on ${e.foe || 'the mythic'}!` : `Everyone sat it out: ${e.foe || 'the mythic'} is left in peace.`, { t: 5 });
+        }
+        else if (e?.t === 'softLoss') coopToast(`${e.foe || 'The mythic'} threw every team out! Every team that fought lost 30% HP, but the run goes on.`, { t: 5 }); // (v0.3.25)
         else if (e?.t === 'revive') coopToast(e.p === this.mySlot ? 'Your team is back on its feet!' : `${this.nameOf(e.p)}'s team is back on its feet!`, { good: true });
         else if (e?.t === 'actClear') {
           // the next act's region and its possible GYM LEADERS (One Spire), so the team can plan for it
@@ -590,14 +595,19 @@ export class CoopSession {
     if (this.privatePosted !== id) {
       this.privatePosted = id;
       const run = g.snapshotRun(G.run);
-      this.privateRun = { id, run };
+      const sitOut = this.sitOutId === id; // (v0.5.6: "Sit this one out" at a mythic event, see markSitOut)
+      this.privateRun = { id, run, sitOut };
       // only what changed since the phase opened, when every client in the room can rebuild it (game/coop/wire.js)
       const enc = this.compactOK() ? encodePrivateDone(g, this.mySlot, run) : null;
-      this.post(enc ? { type: 'privateDone', ...enc } : { type: 'privateDone', run });
+      this.post({ type: 'privateDone', ...(enc || { run }), ...(sitOut ? { sitOut: true } : {}) });
     }
     this.routeKey = 'wait';
     setScene(this.wrap(new CoopWaitScene(this)));
   }
+
+  // The event screen's "Sit this one out" (a mythic "?" event, v0.5.6): this private phase's privateDone says so, and the
+  // game leaves this player out of the room's fight (CoopGame.privateDone).
+  markSitOut() { this.sitOutId = this.privateId(); }
 
   // Every member's client speaks the compact wire format (their heartbeats say so; see convex/coop.ts heartbeat).
   compactOK() {
@@ -676,7 +686,7 @@ export class CoopSession {
   // The local player's Pokédex (meta.dexSeen / dexCaught): what this player has met and caught so far (game/coop/dex.js;
   // local meta only, never part of the game state). Before v0.3.21 co-op never wrote to the Pokédex at all.
   recordDex() {
-    try { if (G.meta && Number.isInteger(this.mySlot) && recordCoopDex(G.meta, this.game, this.mySlot)) saveMeta(); }
+    try { if (G.meta && Number.isInteger(this.mySlot) && (recordCoopDex(G.meta, this.game, this.mySlot) + recordRelics(this.game?.runs?.[this.mySlot]?.relics?.map(r => r.key), G.meta))) saveMeta(); }
     catch (e) { console.warn('[coop] dex', e); }
   }
 

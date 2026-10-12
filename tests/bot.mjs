@@ -393,6 +393,7 @@ export function relicScore(run, key) {
   const tier = { CHOICE_BAND: 70, SOUL_DEW: 55, DRAGON_SCALE: 45, EON_TICKET: 65, METEORITE: 65, FAME_CHECKER: 55, BICYCLE: 65, SCOPE_LENS: 60, EXP_SHARE: 55, LEFTOVERS: 55, SHELL_BELL: 50, FOCUS_BAND: 45, RUBY: 65, SAPPHIRE: 65, POWDER_JAR: 50, SHOAL_SHELL: 50, UP_GRADE: 45, TEACHY_TV: 45, MACHO_BRACE: 55, SOOTHE_BELL: 45, EVERSTONE: 40, OLD_AMBER: 30, LUCKY_EGG: 40, AMULET_COIN: 45, COIN_CASE: 40, SMOKE_BALL: 20, CLEANSE_TAG: 35, TOWN_MAP: 35, TM_CASE: 35 };
   if (tier[key]) s = tier[key];
   if (r.boostType) s = 25 + (types.get(r.boostType) || 0) * 9;
+  if (r.legendary) s += 40; // (a legendary / mythic item's perk on top of its type boost)
   if (key === 'SILK_SCARF') s = 15 + (types.get('NORMAL') || 0) * 3;
   if (key === 'EVERSTONE') s = run.party.some(m => (D.species[m.species].evolutions || []).length) ? 60 : 0;
   if (key === 'SEA_INCENSE') s = 20 + (types.get('WATER') || 0) * 7;
@@ -456,7 +457,10 @@ export function postBattle(run, b, rng, skill, metrics) {
   handleLevelEvents(run, run.distributeExp(b.result, b.kind), skill);
   if (r.newMon) addMon(run, r.newMon, skill);
   const cfg = b.cfg || {};
-  if (cfg.rewardRelic && !run.hasRelic(cfg.rewardRelic)) { run.addRelic(cfg.rewardRelic); if (metrics) metrics.relicPicks.push(cfg.rewardRelic); }
+  // (co-op legendary node, v0.5.6: either legendary's item, the better one for this run)
+  const pairItems = run.legendItemChoices ? run.legendItemChoices(cfg) : [];
+  if (pairItems.length) { const k = pairItems.sort((a, c) => relicScore(run, c) - relicScore(run, a))[0]; run.addRelic(k); if (metrics) metrics.relicPicks.push(k); }
+  else if (cfg.rewardRelic && !run.hasRelic(cfg.rewardRelic)) { run.addRelic(cfg.rewardRelic); if (metrics) metrics.relicPicks.push(cfg.rewardRelic); }
   if ((cfg.catchOffer || cfg.catchOffers) && b.result.outcome === 'win') { const caught = decideLegend(run, (run.legendCatches ? run.legendCatches(cfg) : [run.legendCatch(cfg)].filter(Boolean)).sort((x, y) => monValue(y) - monValue(x))[0] || null, skill); if (metrics) metrics.legendCatches = (metrics.legendCatches || 0) + (caught ? 1 : 0); }
   if (metrics && r.released?.length) metrics.released = (metrics.released || 0) + r.released.length;
   const kind = b.kind;
@@ -478,7 +482,8 @@ export function postBattle(run, b, rng, skill, metrics) {
   const won = b.result.outcome === 'win' || b.result.outcome === 'caught';
   if (!cfg.rewardRelic && ((cfg.rewardRelicW && won) || cfg.rival || ((kind === 'elite' || kind === 'boss') && rng.chance(TUNING.relicOdds[kind] ?? 0)))) {
     const w = cfg.rewardRelicW || (kind === 'boss' ? { common: 0, uncommon: 55, rare: 45 } : cfg.rival ? { common: 10, uncommon: 55, rare: 35 } : { common: 45, uncommon: 40, rare: 15 });
-    const choices = run.relicChoices(rng, 3, w);
+    let choices = run.relicChoices(rng, 3, w);
+    if (cfg.mythic && run.mythicRelicChoices) choices = run.mythicRelicChoices(cfg, choices); // (v0.5.6: the mythic's own item first)
     if (choices.length) {
       const pick = skill === 'smart' ? choices.sort((a, b) => relicScore(run, b) - relicScore(run, a))[0] : choices[0];
       if (false) {
@@ -599,6 +604,7 @@ export function doEvent(run, rng, skill, fightFn, forcedId = null) {
     run.logEvent({ k: 'event', id: ev.id, choice: choiceLabel(choice, run) });
     applyEventResult(run, res, rng, skill);
     if (res.battle) return { battle: res.battle, id: ev.id, label };
+    if (choice.sitOut) return { id: ev.id, label, sitOut: true }; // (co-op mythic, v0.5.6: this player sits the fight out)
     list = res.next ? res.next.choices : null;
   }
   return { id: ev.id, label };

@@ -12,7 +12,7 @@ import { G } from '../game/state.js';
 import { TUNING, LEVEL_CAP_ASC, ASCENSIONS, NUZLOCKE_ASC } from '../game/run.js';
 import { Sound } from '../audio/sound.js';
 import { drawStatusInfo } from './status_info.js';
-import { drawHeldItemsInfo } from './held_items_info.js';
+import { drawHeldItemsInfo, closeHeldItemsSearch, clearHeldItemsSearch } from './held_items_info.js';
 
 export const GFX = { manifest: null };
 
@@ -779,6 +779,12 @@ export class MessageBox {
 const INFO_TABS = ['COMBOS', 'TYPE CHART', 'STATUSES', 'HELD ITEMS'];
 let infoTab = 0; // last tab shown, remembered for the session
 export class InfoModal extends Modal {
+  // (v0.5.6) ESC first clears the HELD ITEMS search; the search box's <input> goes when the tab or the screen closes
+  update(dt) {
+    if (this.tab === 3 && keyPressed('Escape') && clearHeldItemsSearch(this.hiScroll)) Engine.pressed.delete('Escape');
+    super.update(dt);
+  }
+  exit() { closeHeldItemsSearch(this.hiScroll); } // (popOverlay, or setScene dropping it)
   draw(ctx) {
     this.dim(ctx);
     const x = 60, y = 6, w = W - 120, h = H - 12;
@@ -796,6 +802,7 @@ export class InfoModal extends Modal {
     else if (this.tab === 2) drawStatusInfo(ctx, (this.stScroll ||= {}), x, y, w, h);
     else if (this.tab === 3) drawHeldItemsInfo(ctx, (this.hiScroll ||= {}), x, y, w, h);
     else this.drawCombos(ctx, x, y, w);
+    if (this.tab !== 3) closeHeldItemsSearch(this.hiScroll);
     if (button(ctx, 'CLOSE', W / 2 - 40, y + h - 25, 80, 20, { color: '#506080', font: 'small' })) this.close(null);
     this.closeOnTapOutside(x, y, w, h);
     drawTips(ctx);

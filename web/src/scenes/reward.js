@@ -51,14 +51,13 @@ export class RewardScene {
       // may promise a held item choice with their own rarity weights (cfg.rewardRelicW)
       const w = cfg.rewardRelicW || (cfg.kind === 'boss' ? { common: 0, uncommon: 55, rare: 45 } : cfg.rival ? { common: 10, uncommon: 55, rare: 35 } : { common: 20, uncommon: 55, rare: 25 });
       let choices = run.relicChoices(rng, 3 + (cfg.kind === 'elite' ? (run.mods().eliteChoices || 0) : 0), w);
-      const fallback = choices;
       if (cfg.rewardRelic && !run.hasRelic(cfg.rewardRelic)) choices = [cfg.rewardRelic];
-      // co-op legendary node (two legendaries, v0.5.2): the held item is the one of the legendary you catch
-      const byLegend = legendMons.length && run.legendOffers(cfg).some(o => o.item) ? { fallback } : null;
-      if (byLegend) {
-        const items = [...new Set(legendMons.map(m => run.legendRelic(cfg, m.species)).filter(Boolean))];
-        this.rewards.push({ kind: 'relic', choices: items.length ? items : choices, byLegend, label: `Held item: ${items.map(k => D.items[k]?.name || k).join(' or ')}`, tipText: legendMons.map(m => `${speciesName(m.species)}: ${D.items[run.legendRelic(cfg, m.species)]?.name || '-'}`).join('\n') + `\nYou get the held item of the legendary you catch${cfg.rewardRelic ? ` (${D.items[cfg.rewardRelic]?.name || cfg.rewardRelic} if you catch none)` : ''}.` });
-      } else if (choices.length) this.rewards.push({ kind: 'relic', choices, label: 'Choose a held item (no limit on held items)' });
+      // a mythic "?" fight (v0.5.6): its own held item and rare ones
+      if (cfg.mythic) choices = run.mythicRelicChoices(cfg, choices);
+      // co-op legendary node (two legendaries, v0.5.6): pick either one's held item, whatever you caught
+      const pair = run.legendItemChoices(cfg);
+      if (pair.length) this.rewards.push({ kind: 'relic', choices: pair, label: `Held item: ${pair.map(k => D.items[k]?.name || k).join(' or ')}`, tipText: `${run.legendOffers(cfg).map(o => `${speciesName(o.species)}: ${D.items[o.item]?.name || '-'}`).join('\n')}\nPick either legendary's held item, whichever one you catch (every player picks their own).` });
+      else if (choices.length) this.rewards.push({ kind: 'relic', choices, label: cfg.mythic ? `Choose a held item (${cfg.legend || 'the mythic'}'s own or a rare one)` : 'Choose a held item (no limit on held items)' });
     }
     // "?" event battle prizes: items (NUGGET, MASTER BALL, a vitamin) and a POKéMON to pick (the DOJO's HITMONs)
     if (won) for (const k of cfg.rewardItems || []) this.rewards.push({ kind: 'item', key: k, label: 'Prize:' });
@@ -140,7 +139,6 @@ export class RewardScene {
         }));
         if (v !== 1) { run.takeLegend(r.mon, false); r.claimed = true; r.label = `${name} flew away.`; break; }
         run.takeLegend(r.mon, true);
-        this.legendTook = r.mon.species;
         Sound.playSE('se_ball_throw');
         if (run.addToParty(r.mon)) { r.claimed = true; r.label = `Gotcha! ${name} joined your team!`; Sound.playCry(r.mon.species); Sound.playBGM('mus_caught'); }
         else {
@@ -184,13 +182,6 @@ export class RewardScene {
         }
         break;
       case 'relic': {
-        if (r.byLegend) {
-          // catch (or let go) first: the item follows the legendary you take
-          const L = this.rewards.find(x => x.kind === 'legend' && !x.claimed);
-          if (L) await this.claim(L);
-          if (r.byLegend) this.legendRelic(r);
-          if (r.claimed) break;
-        }
         r.choices = r.choices.filter(k => !run.hasRelic(k));
         if (!r.choices.length) { r.claimed = true; r.label += ' (already owned)'; break; }
         const v = await pick(new RelicChoiceModal({ choices: r.choices }));
@@ -210,18 +201,7 @@ export class RewardScene {
         break;
       }
     }
-    if (r.kind === 'legend' && r.claimed) for (const x of this.rewards) if (x.kind === 'relic' && x.byLegend) this.legendRelic(x);
     saveRun();
-  }
-
-  // A co-op legendary node's held item, once the legendary pick is made: the caught legendary's item (Run.legendRelic;
-  // the act's legendary's when you caught neither), or the usual random choice if you already hold it.
-  legendRelic(r) {
-    const run = G.run, item = run.legendRelic(this.cfg, this.legendTook || null);
-    r.choices = item && !run.hasRelic(item) ? [item] : r.byLegend.fallback;
-    r.byLegend = null;
-    r.label = 'Choose a held item (no limit on held items)';
-    if (!r.choices.length) { r.claimed = true; r.label += ' (already owned)'; }
   }
 
   draw(ctx) {
@@ -275,7 +255,7 @@ export class RewardScene {
       if (hot) {
         if (r.kind === 'item') tip(D.items[r.key]?.name, consumableDesc(r.key));
         if (r.kind === 'badge') tip(BADGES[r.badge].name, BADGES[r.badge].desc);
-        if (r.kind === 'relic' && r.byLegend && r.tipText) tip('LEGENDARY HELD ITEM', r.tipText, { width: 220 });
+        if (r.kind === 'relic' && r.tipText) tip('LEGENDARY HELD ITEM', r.tipText, { width: 220 });
         if (Engine.mouse.clicked) { Sound.playSE('se_select'); this.claim(r); }
       }
     });

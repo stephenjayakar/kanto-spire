@@ -2,9 +2,11 @@
 import { Engine, W, H, hover, clicked, keyPressed, pushOverlay, setScene } from '../engine/core.js';
 import { text, textFit, textBlock, measure } from '../engine/font.js';
 import { swirlBackground, button, closeButton, pixBox, rect, drawTips, tip, THEME, scrollArea } from '../engine/ui.js';
-import { draw, tinted } from '../engine/assets.js';
+import { draw, tinted, itemPath } from '../engine/assets.js';
 import { D, byDex, TYPE_COLORS, DEX_MAX, moveName } from '../game/data.js';
-import { G, shinyUnlocked } from '../game/state.js';
+import { G, shinyUnlocked, relicsFound } from '../game/state.js';
+import { RELICS } from '../game/items.js';
+import { relicList, sourceOf, GROUPS } from './held_items_info.js';
 import { familyOf } from '../game/run.js';
 import { NO_PLAYER_MOVES } from '../game/pokemon.js';
 import { KNOWS_MOVE_LEVEL } from '../game/gen4.js';
@@ -31,6 +33,10 @@ export class DexScene {
     swirlBackground(ctx, ['#401010', '#802020', '#501818'], 0.3);
     const m = G.meta;
     text(ctx, 'POKéDEX', 12, 6, { color: 'white', scale: 2 });
+    // (v0.5.6) POKéMON / HELD ITEMS pages
+    const items = this.page === 'items';
+    if (button(ctx, items ? 'POKéMON' : 'HELD ITEMS', W - 170, 6, 84, 22, { color: '#a07040', font: 'small' })) { this.page = items ? 'mons' : 'items'; Sound.playSE('se_select'); }
+    if (items) { this.drawItems(ctx); return; }
     text(ctx, `SEEN ${m.dexSeen.length}  ·  CAUGHT ${m.dexCaught.length} / ${DEX_MAX}`, 160, 14, { color: 'gold' });
     if (Engine.mouse.justPressed) { this.pressY = Engine.mouse.y; this.dragged = false; }
     if (Engine.mouse.down && this.pressY != null && Math.abs(Engine.mouse.y - this.pressY) > DRAG_CLICK) this.dragged = true;
@@ -58,12 +64,16 @@ export class DexScene {
       }
       return top + rows * CELL_H;
     }, { hint: false });
-    text(ctx, 'Click a POKéMON for its entry', W - 90, 14, { align: 'right', color: 'whiteSoft', font: 'small' });
-    text(ctx, `No.${String(first).padStart(3, '0')}-${String(last).padStart(3, '0')} of ${DEX_MAX} (scroll or drag)`, W / 2, 28, { align: 'center', color: 'gray', font: 'small' });
+    text(ctx, `No.${String(first).padStart(3, '0')}-${String(last).padStart(3, '0')} of ${DEX_MAX} (scroll or drag)  ·  click a POKéMON for its entry`, W / 2, 28, { align: 'center', color: 'gray', font: 'small' });
     const maxScroll = Math.max(0, this.contentH - viewH);
     if (button(ctx, '↑', 10, H - 30, 30, 22, { color: '#806060', disabled: this.scroll <= 0 })) this.scroll = Math.max(0, this.scroll - (viewH - CELL_H));
     if (button(ctx, '↓', 44, H - 30, 30, 22, { color: '#806060', disabled: this.scroll >= maxScroll })) this.scroll = Math.min(maxScroll, this.scroll + (viewH - CELL_H));
-    // recent runs
+    this.drawFooter(ctx);
+    if (open) this.openEntry(open);
+  }
+  // recent runs + BACK (both pages)
+  drawFooter(ctx) {
+    const m = G.meta;
     const runs = m.runs.slice(0, 3);
     runs.forEach((r, i) => {
       const x = 90 + i * 180;
@@ -73,7 +83,36 @@ export class DexScene {
     });
     if (button(ctx, 'BACK', W - 80, 6, 70, 22, { color: '#806060' })) setScene(new TitleScene());
     drawTips(ctx);
-    if (open) this.openEntry(open);
+  }
+  // HELD ITEMS page (v0.5.6): every held item, the ones this player has had in a run (meta.relicsFound) in color, the rest
+  // as dark shapes. The INFO screen's HELD ITEMS tab has the full text of each.
+  drawItems(ctx) {
+    const found = relicsFound(), list = relicList();
+    const sc = (this.itemScroll ||= {});
+    text(ctx, `HELD ITEMS FOUND ${list.filter(x => found.has(x.key)).length} / ${list.length}`, 160, 14, { color: 'gold' });
+    text(ctx, 'Every held item you have had in a run (solo or co-op). INFO > HELD ITEMS has what each one does.', W / 2, 28, { align: 'center', color: 'gray', font: 'small' });
+    const rows = Math.ceil(list.length / COLS);
+    scrollArea(ctx, sc, GRID_X, GRID_TOP, GRID_W, GRID_BOTTOM, (top) => {
+      list.forEach((it, i) => {
+        const x = 10 + (i % COLS) * CELL_W, y = top + Math.floor(i / COLS) * CELL_H;
+        if (y + 34 < GRID_TOP || y > GRID_BOTTOM) return;
+        const got = found.has(it.key), g = GROUPS.find(gr => gr.id === it.group);
+        const over = Engine.mouse.y >= GRID_TOP && Engine.mouse.y < GRID_BOTTOM && hover(x, y, 38, 34);
+        pixBox(ctx, x, y, 38, 34, got ? (over ? '#fffaf0' : '#f8f0d8') : '#504848', over ? '#f8d038' : '#201818', 3);
+        rect(ctx, x + 3, y + 29, 32, 2, g.color[0]); // (rarity strip)
+        if (got) draw(ctx, itemPath(it.key), x + 7, y + 3);
+        else { const sh = tinted(itemPath(it.key), '#201818', 1); if (sh) ctx.drawImage(sh, x + 7, y + 3); }
+        if (over && !Engine.mouse.down) {
+          const where = sourceOf(it.key);
+          tip(got ? it.name : '??????????', got ? `${g.label}  ·  ${RELICS[it.key].desc}${where ? `\n${where}` : ''}` : `${g.label}  ·  Not found yet.${where ? `\n${where}` : ''}`, { width: 220 });
+        }
+      });
+      return top + rows * CELL_H;
+    }, { hint: false });
+    const viewH = GRID_BOTTOM - GRID_TOP, maxScroll = Math.max(0, (sc.contentH || 0) - viewH);
+    if (button(ctx, '↑', 10, H - 30, 30, 22, { color: '#806060', disabled: (sc.scroll || 0) <= 0 })) sc.scroll = Math.max(0, (sc.scroll || 0) - (viewH - CELL_H));
+    if (button(ctx, '↓', 44, H - 30, 30, 22, { color: '#806060', disabled: (sc.scroll || 0) >= maxScroll })) sc.scroll = Math.min(maxScroll, (sc.scroll || 0) + (viewH - CELL_H));
+    this.drawFooter(ctx);
   }
   openEntry(n) {
     Sound.playSE('se_select');

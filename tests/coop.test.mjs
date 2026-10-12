@@ -119,8 +119,8 @@ t('rules: illegal and stale actions are ignored', () => {
   assert.equal(post(b, { p: 0, type: 'lock', ids: [s.deck.hand[0].id], target: 5 }), false, 'bad target');
   assert.equal(post(b, { p: 0, type: 'lock', ball: 'POKE_BALL', target: 0 }), false, 'ball at a trainer');
   assert.equal(post(b, { p: 0, type: 'switch', uid: 12345 }), false, 'switch to nobody');
-  s.run.consumables.push('ESCAPE_ROPE');
-  assert.equal(post(b, { p: 0, type: 'item', key: 'ESCAPE_ROPE', uid: null }), false, 'no escaping in co-op');
+  s.run.consumables.push('POKE_DOLL');
+  assert.equal(post(b, { p: 0, type: 'item', key: 'POKE_DOLL', uid: null }), false, 'a POKé DOLL only works in wild battles');
   s.run.consumables.pop();
   assert.equal(post(b, { p: 0, type: 'vote', node: 'x' }), false, 'vote in battle');
   assert.equal(digestNoSeq(b), before);

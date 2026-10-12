@@ -56,7 +56,7 @@ const TYPE_SFX = {
 };
 const HAND_EVENTS = new Set(['teamUp', 'combo', 'card', 'flat', 'bonus', 'times', 'total']);
 const PLAYED_Y = HAND_Y - 2;                                         // played cards: full size (crisp), integer positions, below the scene
-const NO_COOP_ITEM = (def) => def.flee || def.levels || def.evo || def.combo || def.sell || def.addCopy || def.relearn;
+const NO_COOP_ITEM = (def) => def.levels || def.evo || def.combo || def.sell || def.addCopy || def.relearn; // (flee items: DuoBattle.canEscape, v0.5.6)
 
 export class CoopBattleScene {
   constructor(session) {
@@ -611,9 +611,12 @@ export class CoopBattleScene {
           const sub = this.sub;
           const you = this.many ? 'Your team' : `You and ${this.s.nameOf(this.pa)}`;
           await this.say(sub.caught ? `${speciesName(sub.caught.species)} joins your team!` : this.isTrainer() ? `${you} defeated ${this.cfg.trainer?.title || 'the foes'}!` : `${you} won the battle!`);
+        } else if (e.outcome === 'fled') {
+          Sound.playSE('se_flee');
+          await this.say(`${this.many ? 'Your team' : `You and ${this.s.nameOf(this.pa)}`} got away safely!`); // (an ESCAPE ROPE, v0.5.6)
         } else {
           Sound.fadeOutBGM?.(60);
-          if (this.cfg.softLose) await this.say(`${this.cfg.legend || 'The mythic'} threw every team out! Everyone lost 30% HP, but the run goes on.`); // (v0.3.25)
+          if (this.cfg.softLose) await this.say(`${this.cfg.legend || 'The mythic'} threw every team out! Every team that fought lost 30% HP, but the run goes on.`); // (v0.3.25)
           else await this.say(this.many ? 'Every team is out of usable POKéMON... You blacked out!' : 'Both teams are out of usable POKéMON... You blacked out!');
         }
         break;
@@ -809,7 +812,7 @@ export class CoopBattleScene {
   // dropped them silently whenever the partner locked in while the modal was open.
   canChoose() {
     const d = this.duo, g = this.g;
-    return !!d && !this.posting && !this.finishing && g.phase === 'battle' && g.battle === d && !d.result && !d.down[this.me] && !d.locks[this.me] && !this.s.desync && !this.s.stopped;
+    return !!d && !this.posting && !this.finishing && g.phase === 'battle' && g.battle === d && !d.result && !d.down[this.me] && !d.locks[this.me] && !g.sitOut?.[this.me] && !this.s.desync && !this.s.stopped;
   }
 
   toggle(id) {
@@ -1004,6 +1007,8 @@ export class CoopBattleScene {
       if (this.toast.t <= 0) this.toast = null;
       else { const w = measure(this.toast.text) + 20; pixBox(ctx, Math.round((W - w) / 2 + 80), 236, w, 20, this.toast.info ? '#2a2410' : '#401010', this.toast.info ? '#d8a020' : '#ff6060', 3); text(ctx, this.toast.text, W / 2 + 80, 239, { align: 'center', color: 'white' }); }
     }
+    // (v0.5.6) you sat this mythic fight out: you watch, the others fight
+    if (g.sitOut?.[me] && !this.duo.result) { const t = 'You sat this one out: watching the others fight', w = measure(t) + 20; pixBox(ctx, Math.round((W - w) / 2 + 80), 214, w, 20, '#1e2a40', '#58a8f8', 3); text(ctx, t, W / 2 + 80, 217, { align: 'center', color: 'white' }); }
     drawTips(ctx);
     drawCoopOverlay(ctx, s);
   }
@@ -1739,7 +1744,18 @@ DECK: cards left in the draw pile / cards in your lead's deck.`, { width: 200 })
     if (!this.canAct()) { if (this.duo.locks[this.me]) this.toast = { text: "You're locked in for this turn.", t: 1.6 }; return; }
     const def = CONSUMABLES[k];
     if (!def) return;
-    if (NO_COOP_ITEM(def)) { this.toast = { text: def.flee ? "No running from a co-op battle!" : 'Use that outside of battle.', t: 2 }; return; }
+    if (NO_COOP_ITEM(def)) { this.toast = { text: 'Use that outside of battle.', t: 2 }; return; }
+    if (def.flee) {
+      // ESCAPE ROPE (v0.5.6): it gets the whole room out, so ask first
+      if (!this.duo.canEscape?.(k)) { this.toast = { text: this.cfg.kind === 'boss' || this.cfg.gauntlet !== undefined ? "Can't escape from this battle!" : 'That only works in wild battles.', t: 2 }; return; }
+      pushOverlay(new ChoiceModal({
+        title: `Use ${D.items[k]?.name || k}?`,
+        body: `${this.many ? 'The whole team' : `You and ${this.s.nameOf(this.pa)}`} escape${this.many ? 's' : ''} this battle: back to the map, no rewards for anyone.`,
+        options: [{ label: 'Escape!', value: 1, color: THEME.green }, { label: 'Keep fighting', value: 0, color: THEME.discard }],
+        onClose: (v) => { if (v === 1 && this.canChoose()) this.post({ type: 'item', key: k, uid: null }); },
+      }));
+      return;
+    }
     if (def.target === 'none' || def.stage || def.focus || def.mist || def.reviveAll) { this.post({ type: 'item', key: k, uid: null }); return; }
     pushOverlay(new DuoPartyPicker({
       title: `Use ${D.items[k]?.name || k} on...`,

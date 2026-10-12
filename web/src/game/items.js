@@ -156,6 +156,11 @@ Object.assign(RELICS, {
   THUNDER_MANE: legendItem('THUNDER MANE', 'ELECTRIC', 'Your POKéMON are 20% faster. ELECTRIC cards deal +50% damage.', { mods: { speedMult: 0.2 }, icon: 'MAGNET' }),
   VOLCANO_MANE: legendItem('VOLCANO MANE', 'FIRE', '+1 hand size. FIRE cards deal +50% damage.', { mods: { handSize: 1 }, icon: 'CHARCOAL' }),
   CLEAR_BELL: legendItem('CLEAR BELL', 'WATER', 'Your party heals 12% after every battle. WATER cards deal +50% damage.', { mods: { postHeal: 0.12 }, icon: 'SOOTHE_BELL' }),
+  // the mythic "?" events' own items (v0.5.6, acts.js MYTHICS item: one of the choices for beating it; borrowed icons)
+  BERSERK_GENE: legendItem('BERSERK GENE', 'PSYCHIC', '+40% damage on every hand. PSYCHIC cards deal +50% damage.', { onHand(s) { s.pct(40, 'BERSERK_GENE'); }, icon: 'TM29' }),
+  OLD_SEA_MAP: legendItem('OLD SEA MAP', 'PSYCHIC', '+1 hand size. Card and item rewards offer one more choice. PSYCHIC cards deal +50% damage.', { mods: { handSize: 1, rewardChoices: 1 }, icon: 'TOWN_MAP' }),
+  METEOR_SHARD: legendItem('METEOR SHARD', 'PSYCHIC', 'Your POKéMON are 20% faster and take 10% less damage. PSYCHIC cards deal +50% damage.', { mods: { speedMult: 0.2, dmgTaken: -0.1 }, icon: 'STAR_PIECE' }),
+  JADE_ORB: legendItem('JADE ORB', 'DRAGON', '+30% damage on every hand and +1 discard each battle. DRAGON cards deal +50% damage.', { onHand(s) { s.pct(30, 'JADE_ORB'); }, mods: { discards: 1 }, icon: 'GREEN_SHARD' }),
 });
 
 // Curse held items (v0.0.7): bad held items some "?" events hand out as a cost. They have rarity 'curse',

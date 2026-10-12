@@ -187,6 +187,7 @@ function privateAction(game, bot) {
   const p = bot.p, kind = game.private.kind;
   const run = game.privateRunClone(p);
   const rng = run.rng.fork('bot' + game.seq + ':' + p);
+  let sitOut = false;
   if (kind === 'reward') {
     const b = game.battleSubs[p], cfg = game.battleCfg;
     postBattle(run, b, rng, 'smart');
@@ -202,11 +203,11 @@ function privateAction(game, bot) {
     gainBotItem(run, run.randomConsumable(rng, run.actIndex + 1), 'smart');
     const rel = rng.chance(TUNING.relicOdds.treasure) ? run.relicChoices(rng, 2, { common: 40, uncommon: 45, rare: 15 }) : [];
     if (rel[0]) run.addRelic(rel[0]);
-  } else if (kind === 'event') doEvent(run, rng, 'smart', null, game.sharedEvent?.node === game.world.nodeId ? game.sharedEvent.id : null); // the shared event (both players)
+  } else if (kind === 'event') sitOut = !!doEvent(run, rng, 'smart', null, game.sharedEvent?.node === game.world.nodeId ? game.sharedEvent.id : null)?.sitOut; // the shared event (both players)
   // strongest healthy POKéMON leads into the next fight
   const lead = [...run.party].filter(m => !isFainted(m)).sort((a, b) => (b.level * 3 + b.hp / maxHp(b) * 20) - (a.level * 3 + a.hp / maxHp(a) * 20))[0];
   if (lead && run.party[0] !== lead) { run.party.splice(run.party.indexOf(lead), 1); run.party.unshift(lead); }
-  return { p, type: 'privateDone', run: game.snapshotRun(run) };
+  return { p, type: 'privateDone', run: game.snapshotRun(run), ...(sitOut ? { sitOut: true } : {}) };
 }
 
 // --------------------------------------------------------------------------------------------- driver

@@ -2,9 +2,25 @@
 // Game version and patch notes (shown from the title screen). Versions are major.minor.patch: every production
 // deploy that changes the game bumps the patch (v0.2.0 -> v0.2.1); the owner calls minor bumps (v0.1.x -> v0.2.0);
 // no major bumps yet. Each one gets a new top PATCH_NOTES entry; see AGENTS.md.
-export const VERSION = 'v0.5.5';
+export const VERSION = 'v0.5.6';
 
 export const PATCH_NOTES = [
+  {
+    v: 'v0.5.6',
+    sections: [
+      ['NEW', [
+        'The POKéDEX has a HELD ITEMS page: every held item you have had in a run (solo or co-op) shows in color, the rest as dark shapes. INFO > HELD ITEMS marks them FOUND (items count from this update on)',
+        'INFO > HELD ITEMS has a SEARCH box: type part of a name or an effect (e.g. "discard" or "FIRE")',
+        'MEWTWO, MEW, DEOXYS and RAYQUAZA have their own held items: BERSERK GENE, OLD SEA MAP, METEOR SHARD and JADE ORB. Beating one offers its item and two rare ones',
+      ]],
+      ['CHANGES', [
+        'Co-op: you can sit out a mythic ? event (MEWTWO, MEW, DEOXYS, RAYQUAZA). The others fight without you (if only one fights, it is the solo fight); you lose no HP and get no reward',
+        'Co-op: ESCAPE ROPE works. It gets the whole team out of any battle but a boss (POKé DOLL and FLUFFY TAIL: wild battles), with no rewards',
+        "Co-op legendary node: every player picks either legendary's held item, whichever one they caught (or none)",
+        'Mythic ? events now always offer rare held items (they could offer uncommon ones)',
+      ]],
+    ],
+  },
   {
     v: 'v0.5.5',
     sections: [

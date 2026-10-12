@@ -170,6 +170,7 @@ function tick(dt) {
 
 export function setScene(scene) {
   Engine.scene?.exit?.();
+  for (const o of Engine.overlays) o.exit?.(); // (dropped overlays clean up like popped ones)
   Engine.overlays = [];
   Engine.scene = scene;
   Engine.mouse.clicked = false; Engine.mouse.rclicked = false; Engine.pressed.clear();

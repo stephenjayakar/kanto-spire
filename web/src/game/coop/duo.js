@@ -703,8 +703,10 @@ export class DuoBattle {
     const s = this.actor(p);
     const def = CONSUMABLES[key];
     if (!s || !def || !s.run.hasConsumable(key)) return [];
-    // No escaping in co-op; growth items (candies, stones, vitamins) are used between battles.
-    if (def.flee || def.levels || def.evo || def.combo || def.sell || def.addCopy) return [];
+    // ESCAPE ROPE (v0.5.6; POKé DOLL / FLUFFY TAIL in wild battles): the whole room gets away, no rewards (solo's rule).
+    if (def.flee) return this.escape(p, key);
+    // Growth items (candies, stones, vitamins) are used between battles.
+    if (def.levels || def.evo || def.combo || def.sell || def.addCopy) return [];
     if (toP !== undefined && toP !== null && toP !== p) {
       if (!this.inGame(toP) || this.away[toP]) return [];
       if (def.stage || def.focus || def.mist || def.reviveAll) return [];
@@ -735,6 +737,36 @@ export class DuoBattle {
     s.useItem(key, uid || null);
     this.lastOk = this.events.length > n;
     this.maybeResolve();
+    return this.takeEvents();
+  }
+
+  // Can the room run from this battle with a flee item (solo Battle.useItem's rule)? Never from a boss (GYM LEADERS, the
+  // ELITE FOUR, legendary bosses); POKé DOLL / FLUFFY TAIL only from wild battles, ESCAPE ROPE (anyNonBoss) from any other.
+  canEscape(key) {
+    const def = CONSUMABLES[key];
+    if (!def?.flee || this.result || this.kind === 'boss' || this.cfg.gauntlet !== undefined) return false;
+    return this.kind === 'wild' || !!def.anyNonBoss;
+  }
+  escape(p, key) {
+    const s = this.subs[p];
+    if (!this.canEscape(key)) return [];
+    s.run.useConsumable(key);
+    this.emit({ t: 'item', key, uid: null, from: p, p });
+    this.msg(`${s.run.playerName || 'Your partner'} used ${D.items[key]?.name || key}! Everyone got away safely!`);
+    // like a won fight, a downed player's lead gets back up (nobody walks back to the map with a fainted team)
+    for (const t of this.subs) {
+      if (!this.down[t.p]) continue;
+      const lead = t.lead() || t.run.party[0];
+      lead.hp = Math.max(1, Math.floor(maxHp(lead) * COOP_TUNING.reviveFrac));
+      lead.status = null;
+      t.ms(lead.uid).faintHandled = false;
+      this.emit({ t: 'revive', p: t.p, uid: lead.uid, hp: lead.hp });
+    }
+    for (const t of this.subs) t.finalize('fled');
+    this.result = { outcome: 'fled' };
+    this.locks = this.subs.map(() => null);
+    this.lastOk = true;
+    this.emit({ t: 'duoEnd', outcome: 'fled' });
     return this.takeEvents();
   }
 

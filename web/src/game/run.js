@@ -54,6 +54,9 @@ export function expShareScale(foes, monLevel) {
   return tot > 0 ? scaled / tot : 1;
 }
 
+// A won mythic "?" fight's held item choice: rare items only (v0.5.6; uncommon 50 / rare 50 before), see mythicRelicChoices.
+export const MYTHIC_RELIC_W = { rare: 100 };
+
 // Tuning knobs (balanced with tests/sim.mjs)
 export const TUNING = {
   expMult: 1.3, // (v0.3.2: 1.35 -> 1.3 with scaled EXP, which levels a rotating team faster)
@@ -654,6 +657,19 @@ export class Run {
   // The held item a won legendary battle gives you: the item of the legendary you caught (`took`: its species; a co-op
   // node fields two, offer.item, v0.5.2), else the battle's own (cfg.rewardRelic, the act's legendary's).
   legendRelic(cfg, took) { const o = took ? this.legendOffers(cfg).find(x => x.species === took) : null; return o?.item || cfg.rewardRelic || null; }
+  // The held items a won co-op legendary node lets you pick from (v0.5.6): either legendary's item, whoever caught what
+  // (or landed the last hit), minus the ones you hold. [] for any other battle (a solo node gives cfg.rewardRelic).
+  legendItemChoices(cfg) {
+    const items = [...new Set(this.legendOffers(cfg).map(o => o.item).filter(k => k && RELICS[k]))];
+    return items.length > 1 ? items.filter(k => !this.hasRelic(k)) : [];
+  }
+  // A won mythic "?" fight's held item choice (v0.5.6): the mythic's own item (acts.js MYTHICS item) first, then the
+  // rare picks (`rare`: relicChoices with MYTHIC_RELIC_W), as many choices in all as `rare` has.
+  mythicRelicChoices(cfg, rare = []) {
+    const own = MYTHICS[cfg?.mythic]?.item;
+    if (!own || !RELICS[own] || this.hasRelic(own)) return rare;
+    return [own, ...rare.filter(k => k !== own)].slice(0, Math.max(rare.length, 1));
+  }
   // Every legendary you could catch from this battle (the ones you haven't had yet), ready to join. ONE LEGENDARY PER
   // RUN (v0.3.25): none once you have a legendary (hasLegendary), whatever the battle.
   legendCatches(cfg) { return this.hasLegendary() ? [] : this.legendOffers(cfg).map(o => this.legendCatch(cfg, o)).filter(Boolean); }
@@ -704,7 +720,7 @@ export class Run {
 
   // ---- mythic "?" events (v0.3.25: CERULEAN CAVE, FARAWAY ISLAND, BIRTH ISLAND, SKY PILLAR) ----------------------
   // A rare one-off fight with a mythic (acts.js MYTHICS), scaled like the act's legendary node. Win: a one-time
-  // catch offer (one legendary per run), plus a held item choice. Lose: the run goes on (cfg.softLose, softLoss()).
+  // catch offer (one legendary per run), plus a held item choice (v0.5.6: its own item and rare ones, mythicRelicChoices). Lose: the run goes on (cfg.softLose, softLoss()).
   mythicConfig(rng, floor, id) {
     const M = MYTHICS[id];
     if (!M) return null;
@@ -714,7 +730,7 @@ export class Run {
     const e = makeEnemy(M.species, lvl, { rng, moves, hpScale: hp, isBoss: false, isElite: true, legendary: true, bossRule: M.rule, ivs: ivsFrom(220) });
     e.legendary = true;
     const offer = { species: M.species, key: 'MYTHIC_' + id, mythic: id, ei: 0, level: lvl, moves: M.tmMoves ? e.moves.slice() : M.catchMoves };
-    const cfg = { kind: M.wild ? 'wild' : 'elite', mythic: id, enemies: [e], terrain: M.terrain, music: M.music, dmgScale: this.dmgScale() * TUNING.bird.dmg * M.dmg, rng, legend: M.title, catchOffer: offer, softLose: true, rewardRelicW: { uncommon: 50, rare: 50 } };
+    const cfg = { kind: M.wild ? 'wild' : 'elite', mythic: id, enemies: [e], terrain: M.terrain, music: M.music, dmgScale: this.dmgScale() * TUNING.bird.dmg * M.dmg, rng, legend: M.title, catchOffer: offer, softLose: true, rewardRelicW: MYTHIC_RELIC_W };
     if (M.catchMult) cfg.catchMult = M.catchMult;
     return cfg;
   }

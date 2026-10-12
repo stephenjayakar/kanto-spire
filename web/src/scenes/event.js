@@ -61,6 +61,7 @@ export class EventScene {
       }
     }
     const res = c.run(run, this.rng, mon, keys) || {};
+    if (c.sitOut && G.coop) G.coop.markSitOut?.(); // (co-op mythic, v0.5.6: you stay out of the room's fight)
     run.logEvent({ k: 'event', id: this.ev.id, choice: choiceLabel(c, run) });
     this.result = res;
     this.steps = res.next ? res.next.choices : null;

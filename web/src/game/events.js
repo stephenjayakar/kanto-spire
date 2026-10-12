@@ -1517,8 +1517,8 @@ const FALLBACKS = [
 // MYTHIC "?" EVENTS (v0.3.25): rare one-off fights with a mythic POKéMON (acts.js MYTHICS, Run.mythicConfig).
 // Each is forced at the first "?" room of an act where it can happen once its roll (from the run's seed, per act)
 // came up, and is never part of the normal pools. Win: a one-time catch offer (ONE LEGENDARY PER RUN) and a held
-// item; lose: the run goes on (the mythic throws your team out: Run.softLoss). Co-op: the whole room fights
-// (coop.js mythicDuoConfig; no "Leave": the mythic blocks the way) and every player gets their own catch offer.
+// item; lose: the run goes on (the mythic throws your team out: Run.softLoss). Co-op: the room fights (coop.js
+// mythicDuoConfig; "Leave" becomes "Sit this one out", v0.5.6) and every player who fought gets their own catch offer.
 //   CERULEAN CAVE  MEWTWO    KANTO act 3, only if a CHAMPION was beaten in an earlier run (flags.champ; co-op: anyone)
 //   FARAWAY ISLAND MEW       any act, ultra rare; more likely after MEW'S JOURNAL's "Fund the research"
 //   BIRTH ISLAND   DEOXYS    holding the METEORITE (co-op: anyone), HOENN act 3+ or the SEVII ISLANDS post-game
@@ -1555,7 +1555,7 @@ function mythicEvent(id, e) {
     follows: (p) => MYTHIC_CAN[id](p), spawn: (p) => mythicDue(p, id), forced: (p) => mythicDue(p, id),
     text: r => e.text(r) + catchLine(r),
     choices: [
-      { label: r => (r.coop ? `${e.verb} together! (the whole room fights)` : `${e.verb} (mythic battle)`), mythic: id, ai: mythicAi, tip: e.tip,
+      { label: r => (r.coop ? `${e.verb} together! (everyone who joins fights)` : `${e.verb} (mythic battle)`), mythic: id, ai: mythicAi, tip: e.tip,
         run: (r, rng) => ({ text: e.fight, battle: mythicFight(r, rng, id) }) },
       LEAVE(e.leave, e.leaveText),
     ],
@@ -1608,7 +1608,8 @@ export function eventChoices(ev, run) {
     let c = c0;
     if (run.nuzlocke && giftLike(c)) { if (!c.nuz) continue; c = c.nuz; }
     if (c.solo && run.coop) continue;
-    if (ev.mythic && run.coop && c.leave) continue; // (co-op: the mythic blocks the way, the room fights it)
+    // (co-op, v0.5.6: no walking away from the room's fight, but a player may sit it out: CoopGame privateDone sitOut)
+    if (ev.mythic && run.coop && c.leave) c = { ...c, label: 'Sit this one out (no fight, no reward)', leave: false, sitOut: true, ai: () => 0, tip: 'You stay back: the others fight it without you (if nobody fights, nobody does). You lose no HP, and get no catch or held item.', run: () => ({ text: 'You stayed back and let the others go on without you.' }) };
     // ONE LEGENDARY PER RUN (v0.3.25): a legendary gift says so, and is greyed out once you have one
     if (c.legend) { const base = c; c = { ...base, label: r => `${choiceLabel(base, r)}${r.hasLegendary?.() ? ': you already have a legendary' : ' (your one legendary)'}`, cond: r => !r.hasLegendary?.() && (!base.cond || base.cond(r)), tip: run.legendRuleText?.() || base.tip }; }
     if (c.minFloor && floorOf(run) < c.minFloor) continue;

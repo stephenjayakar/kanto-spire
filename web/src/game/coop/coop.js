@@ -150,9 +150,13 @@ export function legendPairConfig(world, rng, floor, key, n = 2) {
 // co-op legendary (COOP_TUNING 'mythic'). CERULEAN CAVE's MEWTWO attacks every player each turn (enemy.allTarget,
 // duo.js chooseIntents), each hit x COOP_TUNING.spread. Rewards: every player's own catch offer (ONE LEGENDARY PER RUN
 // still applies to each) and held item, in their own reward screen. A loss doesn't end the run (afterBattle).
+// v0.5.6: a player may sit it out (the event's "Sit this one out", privateDone sitOut): only the others fight (n = how many),
+// and the ones who sat out get no reward screen and lose no HP. Nobody left: no fight.
 export function mythicDuoConfig(world, id, n = 2) {
   const rng = world.rng.fork('mythic' + world.nodeId + ':' + world.actIndex);
   const c = world.mythicConfig(rng, Math.max(0, world.floor), id);
+  // one player left in it (the rest sat it out, v0.5.6): the solo fight's own numbers
+  if (n === 1) return { ...c, rng, queues: [[0]], slotQueue: [0, 0], slots: 1, coopKind: 'mythic' };
   const cfg = single({ ...c, rng }, 'mythic', world, n);
   if (MYTHICS[id]?.coopHp) for (const e of cfg.enemies) { e.maxHp = Math.round(e.maxHp * MYTHICS[id].coopHp); e.hp = e.maxHp; e.coopHp = Math.round((e.coopHp || 1) * MYTHICS[id].coopHp * 100) / 100; }
   if (MYTHICS[id]?.allTarget) {
@@ -203,6 +207,7 @@ export class CoopGame {
     this.lastEvents = [];
     this.names = ['P1', 'P2'];
     this.away = [false, false];  // players who left (sat out by the others): skipped by votes, battles, private phases
+    this.sitOut = null;          // (v0.5.6) the players sitting out this mythic fight (by choice), or null
   }
 
   get n() { return this.runs.length; }
@@ -243,7 +248,7 @@ export class CoopGame {
       case 'item': return this.battleAct(p, d => d.useItem(p, a.key, a.uid ?? null, a.toP));
       case 'lock': return this.battleAct(p, d => d.lock(p, a.pass ? { pass: true } : a.ball ? { ball: a.ball, target: a.target } : { ids: a.ids, target: a.target }));
       case 'unlock': return this.battleAct(p, d => d.unlock(p, a.turn));
-      case 'privateDone': return this.privateDone(p, a.run, seq);
+      case 'privateDone': return this.privateDone(p, a.run, seq, !!a.sitOut);
       default: return false; // chat & unknown types
     }
   }
@@ -359,7 +364,7 @@ export class CoopGame {
         this.lastEvents = this.battle.takeEvents();
         if (this.battle.result) this.afterBattle();
       }
-    } else if (this.phase === 'battle' && this.battle && !this.battle.result) {
+    } else if (this.phase === 'battle' && this.battle && !this.battle.result && !this.sitOut?.[q]) {
       this.battle.setAway(q, false);
       this.battle.takeEvents();
     }
@@ -399,7 +404,7 @@ export class CoopGame {
 
   startPrivate(kind, extra = {}) {
     this.phase = 'private';
-    this.private = { kind, node: this.world.nodeId, done: this.runs.map((r, q) => !!this.away[q]), ...extra };
+    this.private = { kind, node: this.world.nodeId, done: this.runs.map((r, q) => !!this.away[q] || !!this.sitOut?.[q]), ...extra };
     // The shared event is fixed when the phase opens (a partner who finishes first changes their run's
     // seenEvents). It's derived state, kept out of digest() so clients on the old rule don't desync; a reload
     // replays the log and gets the same pick.
@@ -407,11 +412,12 @@ export class CoopGame {
   }
 
   // ---- battle -----------------------------------------------------------------------------------
-  startBattle(cfg) {
+  startBattle(cfg, sitOut = null) {
     this.mirror();
     this.battleCfg = cfg;
+    this.sitOut = sitOut;
     this.battle = new DuoBattle(this.runs, cfg);
-    if (this.away.some(Boolean)) this.battle.away = this.away.slice();
+    if (this.away.some(Boolean) || sitOut) this.battle.away = this.away.map((a, q) => a || !!sitOut?.[q]);
     this.down = this.runs.map(() => false);
     this.result = null;
     this.phase = 'battle';
@@ -436,7 +442,7 @@ export class CoopGame {
     for (let p = 0; p < this.n; p++) if (d.down[p] && d.result.outcome === 'win') this.events.push({ seq: this.seq, t: 'revive', p });
     if (d.result.outcome === 'lose' && cfg.softLose) {
       // a mythic "?" fight (v0.3.25): the run goes on, every team thrown out with 30% less HP than it came in with
-      for (const s of d.subs) s.run.softLoss(s);
+      for (const s of d.subs) if (!d.away[s.p]) s.run.softLoss(s); // (not the ones who sat it out)
       this.down = this.runs.map(() => false);
       this.events.push({ seq: this.seq, t: 'softLoss', foe: cfg.mythic || null });
       this.toMap();
@@ -460,12 +466,13 @@ export class CoopGame {
     this.phase = 'map';
     this.private = null;
     this.battle = null;
+    this.sitOut = null;
     this.votes = this.runs.map(() => null);
     this.mirror();
   }
 
   // ---- private phases ---------------------------------------------------------------------------
-  privateDone(p, snap, seq) {
+  privateDone(p, snap, seq, sitOut = false) {
     if (this.phase !== 'private' || !this.private || this.private.done[p]) return false;
     if (!snap || typeof snap !== 'object' || !Array.isArray(snap.party) || !snap.party.length || typeof snap.rngState !== 'number') return false;
     if (!snap.party.every(m => m && D.species[m.species] && Array.isArray(m.moves) && Number.isFinite(m.hp) && Number.isFinite(m.uid))) return false;
@@ -474,13 +481,15 @@ export class CoopGame {
     r.playerName = this.names[p];
     this.runs[p] = r;
     this.mirror();
+    // (v0.5.6) "Sit this one out" at a mythic "?" event: this player stays out of the room's fight
+    if (sitOut && this.private.kind === 'event' && this.sharedMythic()) (this.private.sitOut ||= this.runs.map(() => false))[p] = true;
     this.private.done[p] = true;
     if (this.private.done.every(Boolean)) this.advance();
     return true;
   }
 
   advance() {
-    const k = this.private.kind, cfg = this.battleCfg;
+    const k = this.private.kind, cfg = this.battleCfg, sitOut = this.private.sitOut || null;
     this.private = null;
     if (k === 'reward' && cfg?.kind === 'boss') {
       if (cfg.gauntlet !== undefined) return this.gauntletBreak(cfg.gauntlet + 1);
@@ -488,7 +497,11 @@ export class CoopGame {
     }
     if (k === 'plateau') return this.startBattle(gauntletDuoConfig(this.world, this.world.gauntletIndex, this.activeCount()));
     const mythic = k === 'event' ? this.sharedMythic() : null;
-    if (mythic) return this.startBattle(mythicDuoConfig(this.world, mythic, this.activeCount()));
+    if (mythic) {
+      const n = this.runs.filter((r, q) => !this.away[q] && !sitOut?.[q]).length;
+      if (sitOut) this.events.push({ seq: this.seq, t: 'sitOut', foe: mythic, ps: sitOut.map((x, q) => (x ? q : -1)).filter(q => q >= 0), fight: n > 0 });
+      if (n > 0) return this.startBattle(mythicDuoConfig(this.world, mythic, n), sitOut);
+    }
     this.toMap();
   }
 
@@ -550,6 +563,7 @@ export class CoopGame {
       world: w ? { a: w.actIndex, n: w.nodeId, f: w.floor, b: w.boss, g: w.gauntletIndex, r: w.rng.state, u: w.usedTrainers, s: w.map?.start, ws: w.wildSeen || [] } : null,
       runs: this.runs.map(r => (r ? runDigest(r) : null)), private: this.private, result: this.result, down: this.down,
       ...(this.away.some(Boolean) ? { away: this.away } : {}),
+      ...(this.sitOut ? { sitOut: this.sitOut } : {}),
       battle: this.phase === 'battle' && this.battle ? this.battle.digest() : null,
     };
   }

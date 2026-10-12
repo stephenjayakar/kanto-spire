@@ -327,8 +327,8 @@ export const BIRDS = {
   ...JOHTO_BIRDS,
 };
 // Co-op (v0.3.11): a legendary node fields two legendaries, the act's own and the next one of its trio (each player
-// may catch one of the two). Each player gets the held item of the legendary they catch (v0.5.2); a player who catches
-// neither gets the act's legendary's item (Run.legendRelic).
+// may catch one of the two). Each player picks either legendary's held item, whatever they caught (v0.5.6,
+// Run.legendItemChoices; v0.5.2-v0.5.5: the item of the one they caught, else the act's own).
 export const BIRD_PARTNER = {
   LEGEND_ZAPDOS: 'LEGEND_ARTICUNO', LEGEND_ARTICUNO: 'LEGEND_MOLTRES', LEGEND_MOLTRES: 'LEGEND_ZAPDOS',
   LEGEND_REGIROCK: 'LEGEND_REGICE', LEGEND_REGICE: 'LEGEND_REGISTEEL', LEGEND_REGISTEEL: 'LEGEND_REGIROCK',
@@ -344,13 +344,14 @@ export const BIRD_PARTNER = {
 //   MEWTWO  co-op: attacks EVERY player each turn (allTarget, coop/duo.js); solo: a normal fight
 //   MEW     a wild battle (balls work, catchMult x the catch rate); flees after 3 turns unless asleep or paralysed
 //   DEOXYS  switches ATTACK / DEFENSE / SPEED forme every turn
+// item: its own held item (v0.5.6, items.js): beating it offers that item and two rare ones (Run.mythicRelicChoices).
 export const MYTHICS = {
-  MEWTWO: { species: 'MEWTWO', title: 'MEWTWO', terrain: 'cave', music: 'mus_vs_mewtwo', lvl: 3, hp: 0.72, dmg: 0.8, coopHp: 0.7, rule: 'MEWTWO', allTarget: true,
+  MEWTWO: { species: 'MEWTWO', title: 'MEWTWO', terrain: 'cave', music: 'mus_vs_mewtwo', lvl: 3, hp: 0.72, dmg: 0.8, coopHp: 0.7, rule: 'MEWTWO', allTarget: true, item: 'BERSERK_GENE',
     moves: ['PSYCHIC', 'SHADOW_BALL', 'ICE_BEAM', 'THUNDERBOLT'], catchMoves: ['PSYCHIC', 'SWIFT', 'BARRIER', 'RECOVER'] },
-  MEW: { species: 'MEW', title: 'MEW', terrain: 'longgrass', music: 'mus_vs_legend', lvl: 0, hp: 0.5, dmg: 0.75, coopHp: 2.2, rule: 'MEW', wild: true, catchMult: 4, tmMoves: true },
-  DEOXYS: { species: 'DEOXYS', title: 'DEOXYS', terrain: 'mountain', music: 'mus_vs_deoxys', lvl: 3, hp: 1.5, dmg: 0.85, coopHp: 0.85, rule: 'DEOXYS',
+  MEW: { species: 'MEW', title: 'MEW', terrain: 'longgrass', music: 'mus_vs_legend', lvl: 0, hp: 0.5, dmg: 0.75, coopHp: 2.2, rule: 'MEW', wild: true, catchMult: 4, tmMoves: true, item: 'OLD_SEA_MAP' },
+  DEOXYS: { species: 'DEOXYS', title: 'DEOXYS', terrain: 'mountain', music: 'mus_vs_deoxys', lvl: 3, hp: 1.5, dmg: 0.85, coopHp: 0.85, rule: 'DEOXYS', item: 'METEOR_SHARD',
     moves: ['PSYCHO_BOOST', 'SUPERPOWER', 'PSYCHIC', 'COSMIC_POWER'], catchMoves: ['PSYCHIC', 'NIGHT_SHADE', 'SUPERPOWER', 'COSMIC_POWER'] },
-  RAYQUAZA: { species: 'RAYQUAZA', title: 'RAYQUAZA', terrain: 'mountain', music: 'mus_vs_legend', lvl: 3, hp: 0.75, dmg: 0.85, coopHp: 0.85, rule: 'LEGEND',
+  RAYQUAZA: { species: 'RAYQUAZA', title: 'RAYQUAZA', terrain: 'mountain', music: 'mus_vs_legend', lvl: 3, hp: 0.75, dmg: 0.85, coopHp: 0.85, rule: 'LEGEND', item: 'JADE_ORB',
     moves: ['DRAGON_CLAW', 'EXTREME_SPEED', 'CRUNCH', 'DRAGON_DANCE'], catchMoves: ['DRAGON_CLAW', 'TWISTER', 'CRUNCH', 'DRAGON_DANCE'] },
 };
 // Nobody fights their own POKéMON (v0.3.25): an act boss the run's player (co-op: anyone in the room) caught becomes the

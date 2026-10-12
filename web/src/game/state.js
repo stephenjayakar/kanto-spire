@@ -3,6 +3,7 @@ import { Run, familyOf } from './run.js';
 import { queueRun, queueProgressSync } from '../net/cloud.js';
 import { migrateStarterMeta, migrateAscensionMeta, migrateSpireMeta, grantAscension } from './unlocks.js';
 import { JOHTO_WINS } from './regions.js';
+import { RELICS } from './items.js';
 
 // Local save keys. When signed in, they are scoped to the account's email so two accounts on one
 // browser never share (or overwrite) each other's save data and unlocks.
@@ -26,6 +27,7 @@ const DEFAULT_META = {
   shinyOn: {}, // family -> true when the player picked the shiny form on the starter screen
   bestAscensionWon: -1,
   dexSeen: [], dexCaught: [],
+  relicsFound: [], // (v0.5.6) every held item this player has had in a run, solo or co-op (recordRelics; display only)
   runs: [], // {date, starter, ascension, result, act, floor, party:[species], seed}
   totalWins: 0, totalRuns: 0,
   settings: { music: 0.35, sfx: 0.45, fast: false, stereo: true, vol2: true, audioQuality: 'hq', crt: 'off', crtCurve: true, display: 'fill' },
@@ -52,6 +54,7 @@ export function saveMeta(sync) { try { localStorage.setItem(saveKeys.meta, JSON.
 
 export function saveRun(sync) {
   if (!G.run || G.coop) return;
+  if (recordRelics(G.run.relics?.map(r => r.key))) saveMeta('defer');
   try { localStorage.setItem(saveKeys.run, JSON.stringify(G.run)); } catch (e) { console.warn('save failed', e); }
   queueProgressSync(sync);
 }
@@ -79,6 +82,22 @@ export function recordDex(run) {
   const m = G.meta;
   for (const s of run.seen) if (!m.dexSeen.includes(s)) m.dexSeen.push(s);
   for (const s of run.caughtSpecies) if (!m.dexCaught.includes(s)) m.dexCaught.push(s);
+  recordRelics(run.relics?.map(r => r.key), m);
+}
+
+// HELD ITEMS found (v0.5.6): adds held item keys to meta.relicsFound (the Pokédex's HELD ITEMS page and the INFO screen's
+// HELD ITEMS tab read it). Solo: every run save; co-op: the session, after every batch of actions. Never game logic.
+// -> the number of keys added.
+export function recordRelics(keys, meta = G.meta) {
+  if (!meta || !Array.isArray(keys)) return 0;
+  if (!Array.isArray(meta.relicsFound)) meta.relicsFound = [];
+  let added = 0;
+  for (const k of keys) if (typeof k === 'string' && RELICS[k] && !meta.relicsFound.includes(k)) { meta.relicsFound.push(k); added++; }
+  return added;
+}
+// The held items found so far, counting the run on screen (a pick shows up before the save lands).
+export function relicsFound(meta = G.meta, run = G.run) {
+  return new Set([...(meta?.relicsFound || []), ...(run?.relics || []).map(r => r.key)].filter(k => RELICS[k]));
 }
 
 const LOG_KEY = 'kantospire.runlogs.v1';
