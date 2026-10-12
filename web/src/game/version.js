@@ -2,9 +2,17 @@
 // Game version and patch notes (shown from the title screen). Versions are major.minor.patch: every production
 // deploy that changes the game bumps the patch (v0.2.0 -> v0.2.1); the owner calls minor bumps (v0.1.x -> v0.2.0);
 // no major bumps yet. Each one gets a new top PATCH_NOTES entry; see AGENTS.md.
-export const VERSION = 'v0.5.4';
+export const VERSION = 'v0.5.5';
 
 export const PATCH_NOTES = [
+  {
+    v: 'v0.5.5',
+    sections: [
+      ['FIXES', [
+        'At many window sizes the sign-in page (and the loading text) was hidden behind a black box. They now always show.',
+      ]],
+    ],
+  },
   {
     v: 'v0.5.4',
     sections: [

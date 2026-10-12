@@ -171,12 +171,15 @@ export const CRT = {
   },
 
   // Follow #game's on-screen box (core.js calls this after it re-sizes the canvas; frame() re-checks).
+  // #game not shown (main.js hides it for the sign-in page): the overlay hides with it. Left up, it covered the page
+  // with a black box at every window size that turns on the SCREEN: FILL scaler (most of them).
   resize() {
     if (!this.on || !this.el) return;
     const r = this.src.getBoundingClientRect();
-    if (!r.width || !r.height) return;
     this.rect = { left: r.left, top: r.top, width: r.width, height: r.height };
     const st = this.el.style;
+    st.display = r.width && r.height ? 'block' : 'none';
+    if (!r.width || !r.height) return;
     st.left = r.left + window.scrollX + 'px'; st.top = r.top + window.scrollY + 'px';
     st.width = r.width + 'px'; st.height = r.height + 'px';
     const k = Math.min(window.devicePixelRatio || 1, MAX_DPR, MAX_W / r.width);
@@ -195,7 +198,7 @@ export const CRT = {
     const r = this.src.getBoundingClientRect();
     if (r.left !== this.rect.left || r.top !== this.rect.top || r.width !== this.rect.width || r.height !== this.rect.height) this.resize();
     const P = this.preset(), u = this.u;
-    if (!P) return;
+    if (!P || !this.rect.width || !this.rect.height) return;
     gl.viewport(0, 0, this.el.width, this.el.height);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, this.src);
     gl.uniform2f(u.res, this.el.width, this.el.height);

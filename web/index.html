@@ -9,7 +9,7 @@
   html, body { margin: 0; height: 100%; background: #08090d; overflow: hidden; }
   body { display: flex; align-items: center; justify-content: center; }
   canvas { image-rendering: pixelated; image-rendering: crisp-edges; display: block; outline: none; touch-action: pinch-zoom; }
-  #loading { position: absolute; color: #ddd; font: 14px monospace; }
+  #loading { position: absolute; z-index: 2; color: #ddd; font: 14px monospace; } /* (above the CRT overlay, #crt) */
   [hidden] { display: none !important; }
   #signin { color: #e8e8f0; font: 15px/1.5 ui-monospace, Consolas, monospace; text-align: center; max-width: 420px; padding: 32px 28px;
     background: #161a26; border: 3px solid #2c3346; border-radius: 10px; box-shadow: 0 8px 0 #0c0e14; }
