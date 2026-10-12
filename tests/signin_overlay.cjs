@@ -1,15 +1,16 @@
-// The sign-in page and the loading text must be visible at every window size (local build; never touches Convex).
+// The sign-in page and the loading text must be visible at every window size (local build by default; never touches Convex).
 // Regression: at sizes where SCREEN: FILL lands on a fractional scale, the CRT pass's WebGL overlay (#crt, above
 // #game) stayed up after main.js hid #game for the sign-in page and covered it with a black box; it also hid #loading.
 // Checks real pixels: screenshots of the button / loading text, decoded in the page.
+// BASE=<url> node tests/signin_overlay.cjs checks a deployed site instead (its own cloud.json; staging, never prod).
 const { spawn } = require('child_process');
 const path = require('path');
 const { chromium } = require('playwright');
-const port = 8764, root = path.resolve(__dirname, '..');
+const port = 8764, root = path.resolve(__dirname, '..'), base = process.env.BASE || `http://localhost:${port}/`;
 const SIZES = [[1280, 720, 1], [1000, 700, 1], [1366, 768, 1], [1440, 900, 2], [1536, 864, 1.25], [390, 844, 3]];
 (async () => {
-  const server = spawn(process.execPath, [path.join(root, 'serve.cjs'), String(port)], { cwd: root, stdio: 'ignore' });
-  await new Promise(r => setTimeout(r, 700));
+  const server = process.env.BASE ? null : spawn(process.execPath, [path.join(root, 'serve.cjs'), String(port)], { cwd: root, stdio: 'ignore' });
+  if (server) await new Promise(r => setTimeout(r, 700));
   const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--mute-audio'] });
   const fails = []; const ok = (c, l, i = '') => { console.log((c ? 'ok   ' : 'FAIL ') + l, i); if (!c) fails.push(l); };
   // average colour and brightest channel of a PNG screenshot
@@ -30,8 +31,12 @@ const SIZES = [[1280, 720, 1], [1000, 700, 1], [1366, 768, 1], [1440, 900, 2], [
       const page = await ctx.newPage();
       // cloud.json held back: the page sits on "Loading Kanto Spire..." (the engine and its overlay are already up)
       let release; const held = new Promise(r => { release = r; });
-      await page.route('**/cloud.json', async r => { await held; r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ convexUrl: 'https://elegant-corgi-316.convex.cloud', packs: true }) }); });
-      await page.goto(`http://localhost:${port}/`);
+      await page.route('**/cloud.json', async r => {
+        await held;
+        if (server) r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ convexUrl: 'https://elegant-corgi-316.convex.cloud', packs: true }) });
+        else r.continue();
+      });
+      await page.goto(base);
       await page.waitForFunction(() => document.getElementById('game').style.width, null, { timeout: 30000 });
       await page.waitForTimeout(200);
       const lb = await page.locator('#loading').boundingBox();
@@ -48,7 +53,7 @@ const SIZES = [[1280, 720, 1], [1000, 700, 1], [1366, 768, 1], [1440, 900, 2], [
       ok(crt === 'none', `${tag}: no CRT overlay on the sign-in page`, crt);
       await ctx.close();
     }
-  } catch (e) { ok(false, 'harness', e.message); } finally { await browser.close(); server.kill(); }
+  } catch (e) { ok(false, 'harness', e.message); } finally { await browser.close(); server?.kill(); }
   console.log(fails.length ? 'FAILED: ' + fails.length : 'all checks passed');
   process.exit(fails.length ? 1 : 0);
 })();
