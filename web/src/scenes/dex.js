@@ -90,7 +90,13 @@ export class DexScene {
     const found = relicsFound(), list = relicList();
     const sc = (this.itemScroll ||= {});
     text(ctx, `HELD ITEMS FOUND ${list.filter(x => found.has(x.key)).length} / ${list.length}`, 160, 14, { color: 'gold' });
-    text(ctx, 'Every held item you have had in a run (solo or co-op). INFO > HELD ITEMS has what each one does.', W / 2, 28, { align: 'center', color: 'gray', font: 'small' });
+    // (v0.5.9) found per rarity, in its color, and the legend: colored = found (in any run, solo or co-op), ??? = not yet
+    let gx = 12;
+    for (const g of GROUPS) {
+      const inG = list.filter(x => x.group === g.id), n = inG.filter(x => found.has(x.key)).length;
+      gx += text(ctx, `${g.label} ${n}/${inG.length}`, gx, 28, { color: g.color, font: 'small' }) + 8;
+    }
+    text(ctx, '??? = not found yet', W - 12, 28, { align: 'right', color: 'whiteSoft', font: 'small' });
     const rows = Math.ceil(list.length / COLS);
     scrollArea(ctx, sc, GRID_X, GRID_TOP, GRID_W, GRID_BOTTOM, (top) => {
       list.forEach((it, i) => {
@@ -101,10 +107,13 @@ export class DexScene {
         pixBox(ctx, x, y, 38, 34, got ? (over ? '#fffaf0' : '#f8f0d8') : '#504848', over ? '#f8d038' : '#201818', 3);
         rect(ctx, x + 3, y + 29, 32, 2, g.color[0]); // (rarity strip)
         if (got) draw(ctx, itemPath(it.key), x + 7, y + 3);
-        else { const sh = tinted(itemPath(it.key), '#201818', 1); if (sh) ctx.drawImage(sh, x + 7, y + 3); }
+        else {
+          const sh = tinted(itemPath(it.key), '#3a3232', 1); if (sh) ctx.drawImage(sh, x + 7, y + 3);
+          text(ctx, '???', x + 19, y + 9, { align: 'center', color: 'whiteSoft', font: 'small' }); // (not found yet, v0.5.9)
+        }
         if (over && !Engine.mouse.down) {
           const where = sourceOf(it.key);
-          tip(got ? it.name : '??????????', got ? `${g.label}  ·  ${RELICS[it.key].desc}${where ? `\n${where}` : ''}` : `${g.label}  ·  Not found yet.${where ? `\n${where}` : ''}`, { width: 220 });
+          tip(got ? `${it.name}  ·  FOUND` : '??????????  ·  NOT FOUND YET', got ? `${g.label}  ·  ${RELICS[it.key].desc}${where ? `\n${where}` : ''}` : `${g.label}  ·  You haven't had this one in a run yet.${where ? `\n${where}` : ''}`, { width: 220 });
         }
       });
       return top + rows * CELL_H;

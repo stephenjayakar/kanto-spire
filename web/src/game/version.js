@@ -2,9 +2,17 @@
 // Game version and patch notes (shown from the title screen). Versions are major.minor.patch: every production
 // deploy that changes the game bumps the patch (v0.2.0 -> v0.2.1); the owner calls minor bumps (v0.1.x -> v0.2.0);
 // no major bumps yet. Each one gets a new top PATCH_NOTES entry; see AGENTS.md.
-export const VERSION = 'v0.5.8';
+export const VERSION = 'v0.5.9';
 
 export const PATCH_NOTES = [
+  {
+    v: 'v0.5.9',
+    sections: [
+      ['CHANGES', [
+        "POKéDEX > HELD ITEMS marks the items you haven't found yet with ??? and shows how many you've found of each rarity (COMMON, UNCOMMON, RARE, LEGENDARY, CURSE); held items from your past runs count as found",
+      ]],
+    ],
+  },
   {
     v: 'v0.5.8',
     sections: [
