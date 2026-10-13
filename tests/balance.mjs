@@ -47,6 +47,9 @@ if (arg('expmult')) TUNING.expMult = +arg('expmult');
 if (process.argv.includes('--prev032')) { TUNING.expCurve = 0; RELICS.EXP_SHARE.rarity = 'uncommon'; RELICS.POKE_FLUTE.rarity = 'common'; } // the v0.3.1 EXP rules (A/B baseline) // the smart bot never discards (measures what discards are worth)
 if (arg('scoring')) TUNING.scoring = arg('scoring');
 if (arg('hpmult')) TUNING.hpMult = +arg('hpmult');
+// --easystart: acts 1-2 enemy HP and damage x0.7, so more runs reach acts 3+ (late-act balance samples; the smart bot
+// loses about half its runs in act 1 otherwise). Compare late-act numbers between builds run the same way.
+if (process.argv.includes('--easystart')) { for (const i of [0, 1]) { TUNING.hpScale[i] = TUNING.hpScale[i].map(x => x * 0.7); TUNING.dmgScale[i] *= 0.7; TUNING.bossHpAct[i] *= 0.7; } }
 if (arg('dmgmult')) TUNING.dmgMult = +arg('dmgmult');
 if (arg('itemscale')) TUNING.itemScale = +arg('itemscale');
 // --hhp 0.75,0.925,1.035 / --hdmg 1.08: HOENN act scaling (TUNING.worldScale.hoenn: HP per act, damage)

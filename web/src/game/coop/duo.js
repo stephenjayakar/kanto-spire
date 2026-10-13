@@ -11,7 +11,7 @@
 import { D, typeEffect, speciesName } from '../data.js';
 import { Battle, newSide, makeEnemy, effectiveness, abilityOf } from '../battle.js';
 import { isFainted, maxHp, monName, typesOf, defaultMoves, DECK_RULES } from '../pokemon.js';
-import { BOSS_RULES } from '../bosses.js';
+import { BOSS_RULES, threatText } from '../bosses.js';
 import { CONSUMABLES, BALLS } from '../items.js';
 import { FIXED_DAMAGE, PROTECT_EFFECTS, preRollProtect } from '../effects.js';
 import { COOP_TUNING } from './tuning.js';
@@ -320,6 +320,7 @@ export class DuoBattle {
     if (this.kind === 'wild') this.emit({ t: 'msg', text: `A wild ${speciesName(e.species)} appeared!`, slot, ei: ri });
     else this.emit({ t: 'msg', text: `${this.trainerFor(slot)?.name || 'Foe'} sent out ${speciesName(e.species)}!`, slot, ei: ri });
     if (e.bossRule && BOSS_RULES[e.bossRule]) this.emit({ t: 'bossRule', rule: e.bossRule, name: BOSS_RULES[e.bossRule].name, desc: BOSS_RULES[e.bossRule].desc, slot, ei: ri });
+    if (e.threat && !this.threatShown) { this.threatShown = true; this.emit({ t: 'msg', text: threatText(e.threat, true, this.activeCount()), slot, ei: ri }); } // (once per battle)
     h.withFocus(ri, () => {
       if (spikes) { h.damageEnemy(Math.floor(e.maxHp * spikes / 8), 'SPIKES'); h.msg(`${h.monName(e)} is hurt by spikes!`); }
       const ab = e.ability;

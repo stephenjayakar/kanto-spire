@@ -38,7 +38,7 @@ export const BOSS_RULES = {
     onLeadEnter(b, lead) { if (!lead.status) b.inflictStatus('player', 'TOX', 'TOXIC FOG', false, lead); },
   },
   SABRINA: {
-    name: 'PSYCHIC VEIL', desc: 'Some cards are dealt face down.', faceDown: 0.25, enemyDamageMult: 0.85,
+    name: 'PSYCHIC VEIL', desc: 'Some cards are dealt face down.', faceDown: 0.25, // (v0.5.8: no more enemyDamageMult 0.85, it made her weaker)
   },
   BLAINE: {
     name: 'FIRE QUIZ', desc: '-1 hand size and -1 discard.', handSize: -1,
@@ -186,6 +186,28 @@ export function deoxysForme(b, e) {
 }
 
 // Rules picked for the Champion's individual Pokémon.
+// VETERAN (v0.5.8): the late threat on act 3+ bosses that were pushovers (tests/boss_gauntlet.mjs: 95-100% wins solo and
+// co-op; docs: Notion "making acts 3-5 a real threat"). On top of the boss's own rule, keyed by trainer (not by rule: JOHTO's
+// E4 KOGA and the CHAMPION rule pool share KOGA's rule): no more than `cap` of a POKéMON's max HP per turn (co-op: every
+// player's hands together, battle.js capFor), and +1 ATTACK / SP. ATK every `ramp` turns (not slower in co-op). Tuned per
+// boss with the gauntlet to about 85-90% wins solo and in co-op. Run.bossConfig / gauntletConfig put it on the enemies
+// (e.threat), from act 3 on.
+// cap: solo (per turn = per hand); coopCap: co-op with 2 / 3 / 4 players (per turn, every player's hands together; a bigger
+// room is more forgiving, so it gets a tighter cap); ramp: turns. null = no cap.
+export const LATE_THREATS = {
+  LEADER_KOGA: { cap: 0.9, coopCap: [0.6, 0.5, 0.5], ramp: 2 }, LEADER_GIOVANNI: { cap: null, coopCap: [0.6, 0.48, 0.42], ramp: 2 },
+  LEADER_CHUCK: { cap: 0.5, coopCap: [0.3, 0.22, 0.2], ramp: 1 }, LEADER_JASMINE: { cap: 0.5, coopCap: [0.35, 0.27, 0.23], ramp: 1 },
+  // one ELITE FOUR room: HOENN's SIDNEY. Not rooms whose own rule grows with the fight's length (in the gauntlet LORELEI's
+  // ICE BODY and KANTO BRUNO's FIGHTING SPIRIT sat at 60-73% solo whatever the cap and ramp; JOHTO's rooms stay as they were).
+  ELITE_FOUR_SIDNEY: { cap: 0.85, coopCap: [0.4, 0.35, 0.3], ramp: 4 },
+};
+export const threatCoopCap = (t, n = 2) => (t.coopCap ? t.coopCap[Math.min(4, Math.max(2, n)) - 2] : null);
+export function threatText(t, coop = false, n = 2) {
+  const cap = coop ? threatCoopCap(t, n) : t.cap;
+  const every = t.ramp === 1 ? 'every turn' : t.ramp === 2 ? 'every other turn' : `every ${t.ramp} turns`;
+  return `VETERAN: ${cap ? `no more than ${Math.round(cap * 100)}% of its max HP in damage per turn${coop ? " (everyone's hands together)" : ''}, and ` : ''}+1 ATTACK and SP. ATK ${every}.`;
+}
+
 export const CHAMPION_RULE_POOL = ['BROCK', 'LT_SURGE', 'KOGA', 'GIOVANNI', 'LORELEI', 'BRUNO'];
 export const ELITE_RULE_POOL = ['ROCKET', 'RIVAL', 'BROCK', 'MISTY'];
 

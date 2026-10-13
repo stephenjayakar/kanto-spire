@@ -2,9 +2,18 @@
 // Game version and patch notes (shown from the title screen). Versions are major.minor.patch: every production
 // deploy that changes the game bumps the patch (v0.2.0 -> v0.2.1); the owner calls minor bumps (v0.1.x -> v0.2.0);
 // no major bumps yet. Each one gets a new top PATCH_NOTES entry; see AGENTS.md.
-export const VERSION = 'v0.5.7';
+export const VERSION = 'v0.5.8';
 
 export const PATCH_NOTES = [
+  {
+    v: 'v0.5.8',
+    sections: [
+      ['CHANGES', [
+        'Acts 3-5 are a bit harder. LEADER KOGA, GIOVANNI, CHUCK and JASMINE and ELITE FOUR SIDNEY are VETERANS: they take no more than part of their max HP in damage per turn (in co-op, everyone\'s hands together) and their POKéMON grow stronger as the fight goes on. Their tooltips show the numbers',
+        "LEADER SABRINA's POKéMON no longer hit 15% softer",
+      ]],
+    ],
+  },
   {
     v: 'v0.5.7',
     sections: [

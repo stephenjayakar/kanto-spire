@@ -11,7 +11,7 @@ import { swirlBackground, BG_THEMES, button, panel, pixBox, rect, drawTips, tip,
 import { burst, floatText, drawFx, clearFx, doFlash, drawFlash } from '../../engine/fx.js';
 import { D, TYPE_COLORS, speciesName, typeEffect } from '../../game/data.js';
 import { COMBOS } from '../../game/hands.js';
-import { BOSS_RULES } from '../../game/bosses.js';
+import { BOSS_RULES, threatText } from '../../game/bosses.js';
 import { CONSUMABLES, BADGES } from '../../game/items.js';
 import { maxHp, monName, typesOf, isFainted, DECK_RULES, LEGENDARY } from '../../game/pokemon.js';
 import { G, saveMeta } from '../../game/state.js';
@@ -1449,7 +1449,7 @@ export class CoopBattleScene {
   enemyTooltip(e) {
     const st = e.stats;
     const ab = e.ability ? (D.abilities[e.ability]?.name || e.ability) : '';
-    const rule = (e.bossRule && BOSS_RULES[e.bossRule] ? `\n\n${BOSS_RULES[e.bossRule].name}: ${BOSS_RULES[e.bossRule].desc}` : '') + (e.forme ? `\nNow in its ${e.forme} FORME.` : '');
+    const rule = (e.bossRule && BOSS_RULES[e.bossRule] ? `\n\n${BOSS_RULES[e.bossRule].name}: ${BOSS_RULES[e.bossRule].desc}` : '') + (e.threat ? `\n${threatText(e.threat, true, this.duo?.activeCount?.() ?? 2)}` : '') + (e.forme ? `\nNow in its ${e.forme} FORME.` : '');
     const coopHp = e.coopHp && e.coopHp !== 1 ? `\nCO-OP: x${e.coopHp} HP (your hands deal full damage)` : '';
     const all = Object.keys(TYPE_COLORS).filter(t => D.types.chart[t]);
     const by = f => all.filter(t => f(typeEffect(t, e.types)));

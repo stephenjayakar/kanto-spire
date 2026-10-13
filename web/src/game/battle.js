@@ -4,7 +4,7 @@ import { stats, maxHp, typesOf, monName, isFainted, nextUid, defaultMoves, rando
 import { detectCombo, comboBonus, COMBOS } from './hands.js';
 import { EFFECTS, POWER_FN, FIXED_DAMAGE, hitCount, critStageOf, resolveCallMove, hiddenPower, STAT_NAMES, PROTECT_EFFECTS, preRollProtect } from './effects.js';
 import { RELICS, BADGES, CONSUMABLES, BALLS, ballRate } from './items.js';
-import { BOSS_RULES } from './bosses.js';
+import { BOSS_RULES, threatText, threatCoopCap } from './bosses.js';
 import { RNG } from './rng.js';
 import { TUNING } from './run.js';
 import { STARTERS } from './acts.js';
@@ -540,6 +540,7 @@ export class Battle {
     if (this.wildLike) this.msg(`A wild ${speciesName(e.species)} appeared!${e.rareFind ? ' A rare find!' : ''}`);
     else this.msg(`${this.trainer?.name || 'Foe'} sent out ${speciesName(e.species)}!`);
     if (e.bossRule && BOSS_RULES[e.bossRule]) this.emit({ t: 'bossRule', rule: e.bossRule, name: BOSS_RULES[e.bossRule].name, desc: BOSS_RULES[e.bossRule].desc });
+    if (e.threat && !this.dry && !this.threatShown) { this.threatShown = true; this.msg(threatText(e.threat)); } // (once per battle)
     if (this.sides.enemy.spikes) {
       const d = Math.floor(e.maxHp * this.sides.enemy.spikes / 8);
       this.damageEnemy(d, 'SPIKES');
@@ -912,7 +913,8 @@ export class Battle {
     if (!S) return null;
     let dmg = S.damage + S.fixed;
     if (S.ohko) dmg = e.hp;
-    if (this.bossRule?.handCap) dmg = Math.min(dmg, this.handCap(e));
+    const cap = this.capFor(e);
+    if (cap !== null) dmg = Math.min(dmg, cap);
     if (this.sides.player.confused > 0) dmg = Math.floor(dmg * 0.75); // expected: 50% chance of x0.5
     return { key: S.combo, base: Math.round(S.cardTotal + S.flatTotal), bonus: Math.round(S.pctTotal), times: +S.timesTotal.toFixed(2), damage: dmg };
   }
@@ -1145,7 +1147,9 @@ export class Battle {
         let dmg = score.damage + score.fixed;
         if (score.ohko) dmg = e.hp;
         if (score.falseSwipe) dmg = Math.min(dmg, e.hp - 1);
-        if (this.bossRule?.handCap && (dmg > this.handCap(e) || score.capped)) { dmg = Math.min(dmg, this.handCap(e)); this.msg(`BALANCE! The hand was capped at ${dmg} damage.`); }
+        const cap = this.capFor(e);
+        if (cap !== null && (dmg > cap || score.capped)) { dmg = Math.min(dmg, cap); this.msg(this.bossRule?.handCap && cap === this.handCap(e) ? `BALANCE! The hand was capped at ${dmg} damage.` : `VETERAN! ${dmg ? `Only ${dmg} more damage this turn.` : 'No more damage this turn.'}`); }
+        if (e.threat && !this.dry) e.threatDealt = { turn: this.turn, n: (e.threatDealt?.turn === this.turn ? e.threatDealt.n : 0) + dmg };
         if (this.sides.enemy.substitute) {
           const absorbed = Math.min(dmg, this.sides.enemy.subHp);
           this.sides.enemy.subHp -= absorbed; dmg -= absorbed;
@@ -1299,7 +1303,8 @@ export class Battle {
     const bonusMult = TUNING.scoring === 'hybrid' || TUNING.scoring === 'hybridlite' ? (1 + bonus / 100) * (1 + (S.pctTotal - bonus) / 100) : 1 + S.pctTotal / 100;
     const damage = Math.max(0, Math.floor((S.cardTotal + S.flatTotal) * bonusMult * S.timesTotal));
     S.damage = damage;
-    if (this.bossRule?.handCap && S.damage > this.handCap(enemy)) { S.damage = this.handCap(enemy); S.capped = true; } // (LEADER NORMAN's BALANCE; resolveHand says so)
+    const cap = this.capFor(enemy);
+    if (cap !== null && S.damage > cap) { S.damage = cap; S.capped = true; } // (LEADER NORMAN's BALANCE, VETERAN; resolveHand says so)
     if (!this.dry) this.maxHand = Math.max(this.maxHand || 0, damage);
     if (this.run.metrics && !this.dry) this.run.metrics.hands.push({ act: this.run.actIndex, dmg: damage, ehp: enemy.maxHp, kind: this.kind });
     S.effLabel = bestEff === null ? null : bestEff > 1 ? 'super' : bestEff === 0 ? 'none' : bestEff < 1 ? 'weak' : null;
@@ -1538,6 +1543,18 @@ export class Battle {
   healLead(frac, src) { const l = this.lead(); if (l && !isFainted(l)) this.healSide('player', l, frac, src, true); }
   // The most one hand may deal to `e` under a capping boss rule (NORMAN's BALANCE: a share of its max HP).
   handCap(e) { return Math.max(1, Math.floor(e.maxHp * this.bossRule.handCap)); }
+  // The most damage a hand may deal to `e` now, or null (no cap): NORMAN's BALANCE (per hand), VETERAN (v0.5.8, e.threat:
+  // per turn, so in co-op every player's hands share it: e.threatDealt counts what this turn's hands already dealt).
+  capFor(e) {
+    let cap = this.bossRule?.handCap ? this.handCap(e) : null;
+    const frac = e?.threat ? (this.duo ? threatCoopCap(e.threat, this.duo.activeCount()) : e.threat.cap) : null;
+    if (frac) {
+      const used = e.threatDealt?.turn === this.turn ? e.threatDealt.n : 0;
+      const left = Math.max(0, Math.floor(e.maxHp * frac) - used);
+      cap = cap === null ? left : Math.min(cap, left);
+    }
+    return cap;
+  }
   healEnemy(frac) { const e = this.enemy(); const before = e.hp; e.hp = Math.min(e.maxHp, e.hp + Math.floor(e.maxHp * frac)); if (e.hp > before) this.emit({ t: 'heal', side: 'enemy', amount: e.hp - before, hp: e.hp, maxHp: e.maxHp }); }
 
   healSide(side, mon, frac, src, quiet) {
@@ -1853,6 +1870,8 @@ export class Battle {
       if (lead && this.pab(lead) === 'BAD_DREAMS' && e.status === 'SLP' && e.hp > 0) { this.damageEnemy(Math.floor(e.maxHp / (tough ? 12 : 8)), 'BAD_DREAMS'); this.msg(`${this.monName(e)} is tormented by BAD DREAMS!`); }
       if (e.ability === 'UNBURDEN' && !es.unburden && e.hp > 0 && e.hp <= e.maxHp / 2) { es.unburden = true; this.msg(`${this.monName(e)} got lighter! (UNBURDEN)`); }
       if (this.bossRule?.onTurnEnd) this.bossRule.onTurnEnd(this);
+      // VETERAN (v0.5.8): +1 ATTACK and SP. ATK every e.threat.ramp turns (co-op: once per foe, whatever the party size)
+      if (e.threat?.ramp && e.hp > 0 && this.turn % e.threat.ramp === 0) { this.addStage('enemy', 'atk', 1, 'VETERAN'); this.addStage('enemy', 'spa', 1, 'VETERAN'); }
       for (const k of ['reflect', 'lightScreen', 'safeguard', 'mist', 'taunt', 'uproar']) if (es[k] > 0) es[k]--;
       this.checkEnemyFaint(false);
       if (this.result) return true;

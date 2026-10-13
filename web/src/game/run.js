@@ -9,7 +9,7 @@ import { generateMap } from './map.js';
 import { makeEnemy, abilityOf } from './battle.js';
 import { partyAbilityMods, LEGACY_GEN4_ABILITIES } from './abilities.js';
 import { RELICS, BADGES, CONSUMABLES, BALLS, RELIC_PRICE, VITAMIN_COMBO, tmMove, friendCopy } from './items.js';
-import { CHAMPION_RULE_POOL, ELITE_RULE_POOL } from './bosses.js';
+import { CHAMPION_RULE_POOL, ELITE_RULE_POOL, LATE_THREATS } from './bosses.js';
 import { VERSION } from './version.js';
 
 export const ASCENSIONS = [
@@ -763,8 +763,15 @@ export class Run {
     const t = D.trainers[key];
     const rule = t.rule || key.replace('LEADER_', '');
     const enemies = this.makeTrainerEnemies(rng, t, this.bossLevel(), 'boss', 6, { floor: this.act.floors, rule, hpMult: (TUNING.bossHpAct[this.actIndex] ?? 1) * (TUNING.bossHp[rule] ?? 1) });
+    this.addThreat(key, enemies);
     const info = this.trainerInfo(t);
     return { kind: 'boss', trainer: info, enemies, terrain: 'building', music: 'mus_vs_gym_leader', dmgScale: this.dmgScale() * 1.08, rng, bossRule: rule };
+  }
+
+  // VETERAN (v0.5.8, bosses.js LATE_THREATS): the late threat on some act 3+ bosses, on each of their POKéMON. No RNG.
+  addThreat(key, enemies) {
+    const th = this.actIndex >= 2 ? LATE_THREATS[key] : null;
+    if (th) for (const e of enemies) e.threat = { ...th };
   }
 
   gauntletConfig(rng, i) {
@@ -779,6 +786,7 @@ export class Run {
     const rules = champion && !rule ? t.party.map(() => rng.pick(CHAMPION_RULE_POOL)) : null;
     const hp = TUNING.gauntletHp[i] * (TUNING.hpMult ?? 1) / this.hpScaleFor(act.floors, 'boss') * (act.summitHp ? act.summitHp[Math.min(i, act.summitHp.length - 1)] : regionOf(this.summitRegion).summit.hp);
     const enemies = this.makeTrainerEnemies(rng, t, lvl, 'boss', 6, { floor: act.floors, rule, rules, hpMult: hp * TUNING.kindHp.boss });
+    this.addThreat(key, enemies);
     const info = this.trainerInfo(t);
     if (champion) { info.title = `CHAMPION ${info.name}`; info.encounterSong = key === 'RS_CHAMPION' || t.champion ? 'mus_encounter_gym_leader' : 'mus_encounter_rival'; }
     const intro = championRival ? this.rivalIntro('CHAMPION_FIRST', t.party) : undefined;

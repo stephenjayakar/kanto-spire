@@ -7,7 +7,7 @@ import { burst, floatText, drawFx, clearFx, doFlash, drawFlash } from '../engine
 import { D, TYPE_COLORS, speciesName } from '../game/data.js';
 import { Battle, abilityOf } from '../game/battle.js';
 import { COMBOS } from '../game/hands.js';
-import { BOSS_RULES } from '../game/bosses.js';
+import { BOSS_RULES, threatText } from '../game/bosses.js';
 import { CONSUMABLES, BALLS, BADGES } from '../game/items.js';
 import { maxHp, monName, typesOf, isFainted, stats, DECK_RULES, LEGENDARY } from '../game/pokemon.js';
 import { G, saveRun, saveMeta } from '../game/state.js';
@@ -873,7 +873,7 @@ export class BattleScene {
   enemyTooltip(e) {
     const st = e.stats;
     const ab = e.ability ? (D.abilities[e.ability]?.name || e.ability) : '';
-    const rule = (e.bossRule && BOSS_RULES[e.bossRule] ? `\n\n${BOSS_RULES[e.bossRule].name}: ${BOSS_RULES[e.bossRule].desc}` : '') + (e.forme ? `\nNow in its ${e.forme} FORME.` : '');
+    const rule = (e.bossRule && BOSS_RULES[e.bossRule] ? `\n\n${BOSS_RULES[e.bossRule].name}: ${BOSS_RULES[e.bossRule].desc}` : '') + (e.threat ? `\n${threatText(e.threat)}` : '') + (e.forme ? `\nNow in its ${e.forme} FORME.` : '');
     const matchup = matchupText(e.types);
     tip(`${speciesName(e.species)}  Lv${e.level}`, `${e.types.join('/')}  ·  ${ab}${ab && D.abilities[e.ability] ? ': ' + D.abilities[e.ability].desc : ''}\nATK ${st.atk} DEF ${st.def} SPA ${st.spa} SPD ${st.spd} SPE ${st.spe}${stageText(this.b.sides.enemy.stages)}\nMoves: ${G.run.ascension >= 2 ? '??? (hidden at A2+)' : e.moves.map(m => D.moves[m]?.name).join(', ')}${matchup}${rule}`, { width: 230, accent: TYPE_COLORS[e.types[0]] });
   }

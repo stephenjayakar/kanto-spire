@@ -39,13 +39,16 @@ import { RNG } from '../rng.js';
 // frozen as 'v053'.
 // v0.5.7 does: a foe's own CHARGE doubles its next ELECTRIC move, ROAR / WHIRLWIND fail if the same POKéMON made them work
 // last turn, foes skip status moves that would do nothing; v0.5.6 is frozen as 'v056'.
-export const LOGIC_ID = 'v057';
+// v0.5.8 does: VETERAN (a per-turn damage cap and an ATTACK / SP. ATK ramp) on LEADER KOGA, GIOVANNI, CHUCK, JASMINE and
+// ELITE FOUR SIDNEY, and SABRINA's foes no longer hit 15% softer; v0.5.7 is frozen as 'v057'.
+export const LOGIC_ID = 'v058';
 // Actions from before v0.3.6 carry no stamp: they were played on v0.3.5 (or, for older rooms, earlier; the
 // replay checks the clients' logged checksums and tries every frozen engine, see resume.js).
 export const UNSTAMPED = 'v035';
 // Frozen copies, newest first: id -> the versions it covers and its loader (dynamic import: only fetched when a
 // room needs it).
 export const FROZEN = {
+  v057: { versions: 'v0.5.7', load: () => import('../../legacy/v057/engine.js') },
   v056: { versions: 'v0.5.6', load: () => import('../../legacy/v056/engine.js') },
   v053: { versions: 'v0.5.3-v0.5.5', load: () => import('../../legacy/v053/engine.js') },
   v052: { versions: 'v0.5.2', load: () => import('../../legacy/v052/engine.js') },
