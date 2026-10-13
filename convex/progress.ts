@@ -81,6 +81,10 @@ function checkParts(parts: { meta?: string; run?: string | null }) {
 // stored are skipped. -> { updatedAt, wrote: the parts written, missing?: true when a part that wasn't sent has
 // nothing to start from (the client then sends the whole save) }
 async function writeSave(ctx: MutationCtx, user: UserRef, parts: { meta?: string; run?: string | null }) {
+  if (parts.meta !== undefined) {
+    const cur = await readSave(ctx, user);
+    if (cur?.meta) parts = { ...parts, meta: keepRelicsFound(parts.meta, cur.meta) };
+  }
   checkParts(parts);
   const email = normEmail(user.email);
   const now = Date.now();
@@ -120,6 +124,23 @@ async function writeSave(ctx: MutationCtx, user: UserRef, parts: { meta?: string
     await ctx.db.patch(head._id, { ...patch, email, userId: user._id, updatedAt: wrote.length ? now : head.updatedAt });
   }
   return { updatedAt: wrote.length ? now : head.updatedAt, wrote };
+}
+
+// meta.relicsFound only ever grows (v0.5.7): a meta push from a tab opened before keys were added on the server (the held
+// items backfill, or another device) keeps the stored keys it lacks. Anything unparsable is passed through untouched.
+function keepRelicsFound(incoming: string, stored: string): string {
+  try {
+    const inc = JSON.parse(incoming), old = JSON.parse(stored);
+    const have: unknown[] = Array.isArray(old?.relicsFound) ? old.relicsFound : [];
+    if (!inc || typeof inc !== "object" || !have.length) return incoming;
+    const mine: unknown[] = Array.isArray(inc.relicsFound) ? inc.relicsFound : [];
+    const missing = have.filter((k) => typeof k === "string" && !mine.includes(k));
+    if (!missing.length) return incoming;
+    inc.relicsFound = [...mine, ...missing];
+    return JSON.stringify(inc);
+  } catch {
+    return incoming;
+  }
 }
 
 async function replaceIfThere(ctx: MutationCtx, id: Id<"saveBlobs">, doc: Omit<Doc<"saveBlobs">, "_id" | "_creationTime">) {

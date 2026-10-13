@@ -2,9 +2,22 @@
 // Game version and patch notes (shown from the title screen). Versions are major.minor.patch: every production
 // deploy that changes the game bumps the patch (v0.2.0 -> v0.2.1); the owner calls minor bumps (v0.1.x -> v0.2.0);
 // no major bumps yet. Each one gets a new top PATCH_NOTES entry; see AGENTS.md.
-export const VERSION = 'v0.5.6';
+export const VERSION = 'v0.5.7';
 
 export const PATCH_NOTES = [
+  {
+    v: 'v0.5.7',
+    sections: [
+      ['CHANGES', [
+        "ROAR and WHIRLWIND fail if the same POKéMON made them work last turn (no more flinching a foe every turn)",
+        'Foes are smarter with status moves: no boosting a stat that is maxed, no lowering one that is at its lowest, no status on a POKéMON that already has one or is immune, no CHARGE while charged, no screen or weather that is already up',
+      ]],
+      ['FIXES', [
+        "A foe's CHARGE did nothing. Its next ELECTRIC move now deals double damage, like yours",
+        'Held items found on another device (or added since you opened the game) are no longer lost when you save',
+      ]],
+    ],
+  },
   {
     v: 'v0.5.6',
     sections: [

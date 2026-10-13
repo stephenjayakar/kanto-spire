@@ -8,6 +8,7 @@ import { EFFECTS } from '../web/src/game/effects.js';
 import { detectCombo, comboBonus } from '../web/src/game/hands.js';
 import { Run, movePool, MOVE_POOL, FALLBACK_MOVES } from '../web/src/game/run.js';
 import { Battle, makeEnemy, isSelfKO, SELF_KO_HP, withoutSelfKO } from '../web/src/game/battle.js';
+import { DuoBattle as DuoBattleT } from '../web/src/game/coop/duo.js';
 import { makeMon, maxHp, gainExp, defaultMoves, canLearn, defaultCopies, replacedCopies, DECK_RULES, NO_PLAYER_MOVES, movesLearnedAt } from '../web/src/game/pokemon.js';
 import { generateMap, reachable } from '../web/src/game/map.js';
 import { ACTS, STARTERS, GEN3_TYPES, BIRDS, LEGENDS, BIRD_PARTNER, counterStarter, KANTO_FINDS } from '../web/src/game/acts.js';
@@ -2404,6 +2405,76 @@ t('v0.5.2: LEADER NORMAN\'s BALANCE caps every hand at 60% of his POKéMON\'s ma
   const s2 = b.simulate(ids2).damage;
   b.play(ids2);
   assert.ok(s2 < 600 && foe.hp === 400 - s2, 'no cap, no heal');
+});
+
+// ---- v0.5.7: foe CHARGE, ROAR once per two turns, foes skip useless status moves
+const trainerWith = (foe, seed) => { const run = Run.create({ starter: 'CHARMANDER', seed }); run.party[0].level = 30; run.party[0].hp = maxHp(run.party[0]); const b = new Battle(run, { kind: 'trainer', enemies: [foe], rng: new RNG('b' + seed), trainer: { name: 'T', title: 'T', money: 10 } }); b.start(); return { run, b, lead: b.lead() }; };
+t("v0.5.7: a foe's CHARGE doubles its next ELECTRIC move, then wears off", () => {
+  const foe = slowFoe(['THUNDER_SHOCK'], 500); foe.stats.spa = 60;
+  const { b, lead } = soloWith(foe, [], 'CHG57');
+  const ts = b.moveData('THUNDER_SHOCK'), tackle = b.moveData('TACKLE');
+  const plain = b.enemyDamage(ts, foe, lead, 1, false, true), tk = b.enemyDamage(tackle, foe, lead, 1, false, true);
+  b.sides.enemy.charge = true;
+  assert.ok(Math.abs(b.enemyDamage(ts, foe, lead, 1, false, true) - plain * 2) <= 1, 'x2 on ELECTRIC');
+  assert.equal(b.enemyDamage(tackle, foe, lead, 1, false, true), tk, 'other types unchanged');
+  lead.hp = maxHp(lead) + 999; // (survives)
+  b.intent = { move: ts, first: true };
+  b.play(handOf(b, ['GROWL']));
+  assert.equal(b.sides.enemy.charge, false, 'used up by the ELECTRIC move it boosted');
+});
+
+t('v0.5.7: ROAR fails if the same POKéMON made it work last turn (works again the turn after)', () => {
+  const { b } = trainerWith(slowFoe(['GROWL'], 3000), 'ROAR57');
+  const hesitated = (ev) => ev.some(e => e.t === 'msg' && /hesitated/.test(e.text));
+  const failed = (ev) => ev.some(e => e.t === 'msg' && /failed: it worked last turn/.test(e.text));
+  const t1 = b.play(handOf(b, ['ROAR']));
+  assert.ok(hesitated(t1) && !failed(t1), 'turn 1: the foe hesitates');
+  const t2 = b.play(handOf(b, ['ROAR']));
+  assert.ok(failed(t2) && !hesitated(t2), 'turn 2: fails');
+  const t3 = b.play(handOf(b, ['ROAR']));
+  assert.ok(hesitated(t3), 'turn 3: works again (the failure was not a success)');
+  const t4 = b.play(handOf(b, ['WHIRLWIND']));
+  assert.ok(failed(t4), 'WHIRLWIND shares the rule');
+});
+
+t('v0.5.7: foes skip status moves that would do nothing (and fall back to the usual pick when all would)', () => {
+  const foe = slowFoe(['SWORDS_DANCE', 'TACKLE'], 3000);
+  const { b, lead } = trainerWith(foe, 'AI57');
+  const pick = () => b.pickEnemyMove(foe, lead).key;
+  const many = (n = 40) => { const s = new Set(); for (let i = 0; i < n; i++) s.add(pick()); return s; };
+  const es = b.sides.enemy, ps = b.sides.player, mv = (k) => b.moveData(k);
+  assert.ok(many().has('SWORDS_DANCE'), 'a useful boost is still picked');
+  es.stages.atk = 6;
+  assert.ok(b.enemyMoveUseless(mv('SWORDS_DANCE'), foe, lead));
+  assert.deepEqual([...many()], ['TACKLE'], 'never at +6');
+  // lowering a stat at -6, or through MIST
+  assert.ok(!b.enemyMoveUseless(mv('GROWL'), foe, lead)); ps.stages.atk = -6; assert.ok(b.enemyMoveUseless(mv('GROWL'), foe, lead)); ps.stages.atk = 0;
+  ps.mist = 3; assert.ok(b.enemyMoveUseless(mv('GROWL'), foe, lead)); ps.mist = 0;
+  // status: already statused, immune (POISON on a POISON type, THUNDER WAVE on GROUND), SAFEGUARD
+  assert.ok(!b.enemyMoveUseless(mv('THUNDER_WAVE'), foe, lead));
+  lead.status = 'BRN'; assert.ok(b.enemyMoveUseless(mv('THUNDER_WAVE'), foe, lead)); assert.ok(b.enemyMoveUseless(mv('TOXIC'), foe, lead)); lead.status = null;
+  ps.typeOverride = { uid: lead.uid, types: ['POISON'] }; assert.ok(b.enemyMoveUseless(mv('TOXIC'), foe, lead)); assert.ok(!b.enemyMoveUseless(mv('SPORE'), foe, lead));
+  ps.typeOverride = { uid: lead.uid, types: ['GROUND'] }; assert.ok(b.enemyMoveUseless(mv('THUNDER_WAVE'), foe, lead)); ps.typeOverride = null;
+  ps.safeguard = 3; assert.ok(b.enemyMoveUseless(mv('SPORE'), foe, lead)); ps.safeguard = 0;
+  // CHARGE while charged, a screen / weather already up, confusion on a confused lead
+  assert.ok(!b.enemyMoveUseless(mv('CHARGE'), foe, lead)); es.charge = true; assert.ok(b.enemyMoveUseless(mv('CHARGE'), foe, lead)); es.charge = false;
+  es.reflect = 4; assert.ok(b.enemyMoveUseless(mv('REFLECT'), foe, lead)); es.reflect = 0;
+  b.weather = 'RAIN'; assert.ok(b.enemyMoveUseless(mv('RAIN_DANCE'), foe, lead)); assert.ok(!b.enemyMoveUseless(mv('SUNNY_DAY'), foe, lead)); b.weather = null;
+  ps.confused = 2; assert.ok(b.enemyMoveUseless(mv('CONFUSE_RAY'), foe, lead)); ps.confused = 0;
+  assert.ok(b.enemyMoveUseless(mv('SPLASH'), foe, lead), 'SPLASH never does anything');
+  // damaging moves are never "useless"; with nothing useful left, the usual pick
+  assert.ok(!b.enemyMoveUseless(mv('TACKLE'), foe, lead));
+  foe.moves = ['SWORDS_DANCE', 'SPLASH'];
+  assert.ok(['SWORDS_DANCE', 'SPLASH'].includes(pick()), 'all useless: still picks one of its moves');
+});
+
+t('v0.5.7: co-op foes skip useless status moves too (per target player)', () => {
+  const runs = ['CHARMANDER', 'SQUIRTLE'].map((st, i) => { const r = Run.create({ starter: st, seed: 'CO57' + i, coop: true }); r.party[0].level = 30; r.party[0].hp = maxHp(r.party[0]); return r; });
+  const foes = [slowFoe(['THUNDER_WAVE', 'TACKLE'], 3000), slowFoe(['THUNDER_WAVE', 'TACKLE'], 3000)];
+  const d = new DuoBattleT(runs, { kind: 'trainer', enemies: foes, queues: [[0], [1]], slotQueue: [0, 1], slots: 2, rng: new RNG('co57'), trainer: { name: 'T', title: 'T', money: 10 } });
+  d.start();
+  for (const r of runs) r.party[0].status = 'PAR';
+  for (let i = 0; i < 30; i++) { d.chooseIntents(); for (const it of d.intents.filter(Boolean)) assert.equal(it.move.key, 'TACKLE', 'no THUNDER WAVE on a paralyzed lead'); }
 });
 
 console.log(`${pass} passed, ${fail} failed`);

@@ -37,13 +37,16 @@ import { RNG } from '../rng.js';
 // v0.5.6 does: a player may sit out a mythic "?" fight (privateDone sitOut), ESCAPE ROPE (and POKé DOLL / FLUFFY TAIL in
 // wild battles) gets the whole room out of a co-op battle, and the mythics have their own held items; v0.5.3-v0.5.5 is
 // frozen as 'v053'.
-export const LOGIC_ID = 'v056';
+// v0.5.7 does: a foe's own CHARGE doubles its next ELECTRIC move, ROAR / WHIRLWIND fail if the same POKéMON made them work
+// last turn, foes skip status moves that would do nothing; v0.5.6 is frozen as 'v056'.
+export const LOGIC_ID = 'v057';
 // Actions from before v0.3.6 carry no stamp: they were played on v0.3.5 (or, for older rooms, earlier; the
 // replay checks the clients' logged checksums and tries every frozen engine, see resume.js).
 export const UNSTAMPED = 'v035';
 // Frozen copies, newest first: id -> the versions it covers and its loader (dynamic import: only fetched when a
 // room needs it).
 export const FROZEN = {
+  v056: { versions: 'v0.5.6', load: () => import('../../legacy/v056/engine.js') },
   v053: { versions: 'v0.5.3-v0.5.5', load: () => import('../../legacy/v053/engine.js') },
   v052: { versions: 'v0.5.2', load: () => import('../../legacy/v052/engine.js') },
   v051: { versions: 'v0.5.1', load: () => import('../../legacy/v051/engine.js') },

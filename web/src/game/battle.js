@@ -109,6 +109,22 @@ export function makeEnemy(speciesKey, level, opts = {}) {
   };
 }
 
+// The foes' status moves by what they act on, for enemyMoveUseless (v0.5.7): stats the foe raises on itself, your
+// lead's stats it lowers, the status it inflicts, the weather it calls.
+const FOE_SELF_UP = {
+  ATTACK_UP: ['atk'], ATTACK_UP_2: ['atk'], DEFENSE_UP: ['def'], DEFENSE_UP_2: ['def'], SPEED_UP_2: ['spe'], SPECIAL_ATTACK_UP: ['spa'],
+  SPECIAL_ATTACK_UP_2: ['spa'], SPECIAL_DEFENSE_UP_2: ['spd'], EVASION_UP: ['eva'], MINIMIZE: ['eva'], GROWTH: ['spa'], DEFENSE_CURL: ['def'],
+  CALM_MIND: ['spa', 'spd'], BULK_UP: ['atk', 'def'], DRAGON_DANCE: ['atk', 'spe'], COSMIC_POWER: ['def', 'spd'], CURSE: ['atk', 'def'], BELLY_DRUM: ['atk'],
+};
+const FOE_LOWERS = {
+  ATTACK_DOWN: ['atk'], ATTACK_DOWN_2: ['atk'], DEFENSE_DOWN: ['def'], DEFENSE_DOWN_2: ['def'], SPEED_DOWN: ['spe'], SPEED_DOWN_2: ['spe'],
+  SPECIAL_DEFENSE_DOWN_2: ['spd'], ACCURACY_DOWN: ['acc'], EVASION_DOWN: ['eva'], TICKLE: ['atk', 'def'], SPITE: ['atk'], IMPRISON: ['spa'],
+};
+const FOE_INFLICTS = { SLEEP: 'SLP', POISON: 'PSN', TOXIC: 'TOX', PARALYZE: 'PAR', WILL_O_WISP: 'BRN' };
+const WEATHER_MOVES = { SUNNY_DAY: 'SUN', RAIN_DANCE: 'RAIN', SANDSTORM: 'SAND', HAIL: 'HAIL' };
+// Status moves that do nothing at all when a foe uses them (their effects only act for your side).
+const FOE_NO_EFFECT = new Set(['SPLASH', 'FOLLOW_ME', 'RECYCLE', 'TRICK', 'SKILL_SWAP', 'ROLE_PLAY', 'CONVERSION', 'CONVERSION_2', 'CAMOUFLAGE', 'MIMIC', 'SKETCH', 'TRANSFORM', 'BATON_PASS']);
+
 export class Battle {
   constructor(run, cfg) {
     this.run = run;
@@ -651,10 +667,68 @@ export class Battle {
     let usable = options.map((m, i) => i).filter(i => !barred(options[i]));
     // v0.5.2: no FLY / DIG / DIVE / BOUNCE two turns in a row for foes either (if it has another move)
     if (this.ms(e.uid).semiBlock === this.turn) { const grounded = usable.filter(i => options[i].effect !== 'SEMI_INVULNERABLE'); if (grounded.length) usable = grounded; }
+    // v0.5.7: never a status move that would do nothing now (a boost at +6, a status on a POKéMON that has one or is immune,
+    // CHARGE while charged, a screen or weather already up...); if every move is like that, the usual pick
+    const useful = usable.filter(i => !this.enemyMoveUseless(options[i], e, lead));
+    if (useful.length) usable = useful;
     let move = usable.length ? this.rng.weighted(usable, i => weights[i] + 0.0001) : -1;
     move = options[move] || this.moveData('STRUGGLE') || this.moveData('TACKLE');
     if (this.ms(e.uid).recharge > 0) move = { ...this.moveData('TACKLE'), key: 'RECHARGE', name: 'RECHARGE', power: 0, effect: 'RECHARGE_TURN' };
     return move;
+  }
+
+  // Would the foe's status move `m` do nothing at all if used on `lead` now (v0.5.7)? Mirrors what each effect checks
+  // (effects.js: addStage's caps and stat-loss blockers, statusBlock, confuse, the side flags). Damaging moves: never.
+  enemyMoveUseless(m, e, lead) {
+    if (!m || m.power > 0 || FIXED_DAMAGE[m.effect]) return false;
+    const es = this.sides.enemy, ps = this.sides.player, eff = m.effect, pab = lead ? this.pab(lead) : null;
+    if (eff === 'CURSE' && this.typesOfMon('enemy', e).includes('GHOST')) return !!ps.cursed;
+    if (eff === 'BELLY_DRUM' && e.hp <= e.maxHp / 2) return true;
+    if (FOE_SELF_UP[eff]) return FOE_SELF_UP[eff].every(st => es.stages[st] >= 6);
+    if (FOE_LOWERS[eff]) {
+      if (ps.mist || pab === 'CLEAR_BODY' || pab === 'WHITE_SMOKE') return true;
+      return FOE_LOWERS[eff].every(st => ps.stages[st] <= -6 || (st === 'atk' && pab === 'HYPER_CUTTER') || (st === 'acc' && pab === 'KEEN_EYE'));
+    }
+    if (FOE_INFLICTS[eff]) return this.statusBlock('player', FOE_INFLICTS[eff], m.key, lead) !== null;
+    if (WEATHER_MOVES[eff]) return this.weather === WEATHER_MOVES[eff];
+    if (FOE_NO_EFFECT.has(eff)) return true;
+    switch (eff) {
+      case 'YAWN': return !!ps.yawn || this.statusBlock('player', 'SLP', m.key, lead) !== null;
+      case 'CONFUSE': case 'TEETER_DANCE': case 'SWAGGER': case 'FLATTER': return !!ps.confused || pab === 'OWN_TEMPO' || !!this.mods.noConfuse || !!ps.safeguard;
+      case 'ATTRACT': return pab === 'OBLIVIOUS' || ps.infatuated > 0;
+      case 'NIGHTMARE': return lead?.status !== 'SLP' || !!ps.nightmare;
+      case 'LEECH_SEED': return !!ps.seeded || this.ptypes(lead).includes('GRASS');
+      case 'MEAN_LOOK': return !!ps.meanLook;
+      case 'SPIKES': return (ps.spikes || 0) >= 3;
+      case 'CHARGE': return !!es.charge;
+      case 'FOCUS_ENERGY': return es.focus > 0;
+      case 'LOCK_ON': return es.lockOn > 0;
+      case 'FORESIGHT': return !!ps.foresight;
+      case 'HAZE': return [es, ps].every(s => Object.values(s.stages).every(v => !v));
+      case 'PSYCH_UP': return Object.keys(es.stages).every(k => es.stages[k] === ps.stages[k]);
+      case 'MIST': return es.mist > 0;
+      case 'SAFEGUARD': return es.safeguard > 0;
+      case 'REFLECT': return es.reflect > 0;
+      case 'LIGHT_SCREEN': return es.lightScreen > 0;
+      case 'SUBSTITUTE': return !!es.substitute || e.hp <= e.maxHp / 4;
+      case 'INGRAIN': return !!es.ingrain;
+      case 'WISH': return es.wish > 0;
+      case 'STOCKPILE': return (es.stockpile || 0) >= 3;
+      case 'SWALLOW': return !es.stockpile || e.hp >= e.maxHp;
+      case 'RESTORE_HP': case 'SOFTBOILED': case 'MORNING_SUN': case 'SYNTHESIS': case 'MOONLIGHT': case 'REST': return e.hp >= e.maxHp;
+      case 'HEAL_BELL': case 'REFRESH': return !e.status;
+      case 'WATER_SPORT': return !!es.waterSport;
+      case 'MUD_SPORT': return !!es.mudSport;
+      case 'DISABLE': case 'ENCORE': return !!ps.disabled;
+      case 'TAUNT': return ps.taunt > 0;
+      case 'TORMENT': return !!ps.torment;
+      case 'PERISH_SONG': return !!ps.perish;
+      case 'DESTINY_BOND': case 'GRUDGE': return !!es.destinyBond;
+      case 'MAGIC_COAT': case 'SNATCH': return !!es.magicCoat;
+      case 'HELPING_HAND': return !!es.helpingHand;
+      case 'ROAR': case 'TELEPORT': return this.kind !== 'wild'; // (a foe's ROAR only ends wild battles)
+    }
+    return false;
   }
 
   statusMoveValue(m, e, lead) {
@@ -765,6 +839,7 @@ export class Battle {
     if (!crit && ((physical && ps.reflect) || (!physical && ps.lightScreen))) dmg *= 0.5;
     if (ps.mudSport && move.type === 'ELECTRIC') dmg *= 0.5;
     if (ps.waterSport && move.type === 'FIRE') dmg *= 0.5;
+    if (es.charge && move.type === 'ELECTRIC') dmg *= 2; // the foe's own CHARGE (v0.5.7; it used to do nothing for foes)
     let mult = this.dmgScale * (1 + (this.mods.dmgTaken || 0));
     if (!physical && this.mods.spDmgTaken) mult *= 1 + this.mods.spDmgTaken;
     if (target.species === 'DITTO' && this.run.hasRelic('METAL_POWDER')) mult *= 0.6;
@@ -1415,6 +1490,7 @@ export class Battle {
     }
     if (hits > 1 && n > 1) this.msg(`Hit ${n} times!`);
     ps.lastDamage = total;
+    if (total > 0 && es.charge && move.type === 'ELECTRIC') es.charge = false; // (CHARGE: used up by the ELECTRIC move it boosted)
     if (total > 0 && !isFainted(lead) && !(this.defAb('player', lead, e.ability) === 'SHIELD_DUST' && move.chance)) (EFFECTS[move.effect] || EFFECTS.HIT)(ctx);
     if (total > 0 && !isFainted(lead) && e.ability === 'STENCH' && this.rng.chance(0.1)) this.flinch('player'); // (foe STENCH)
     // COLOR CHANGE: your lead becomes the type of the attack that hit it
@@ -1530,23 +1606,33 @@ export class Battle {
     return null;
   }
 
+  // Why status `st` (from move / source `src`) can't land on `mon` of `side` right now: a message ('' = a plain "But it
+  // failed!"), or null when it would. subBlocks: a SUBSTITUTE stops it (not for a specific party POKéMON). inflictStatus
+  // and the foes' move choice (enemyMoveUseless) both read it.
+  statusBlock(side, st, src, mon = this.activeMon(side), subBlocks = true) {
+    if (!mon || isFainted2(mon)) return '';
+    const types = this.typesOfMon(side, mon);
+    const ab = side === 'enemy' ? mon.ability : this.pab(mon);
+    if (mon.status) return `${this.monName(mon)} is already ${st === 'SLP' ? 'asleep' : 'afflicted'}!`;
+    if (ab === 'LEAF_GUARD' && this.wx() === 'SUN' && src !== 'REST') return `${this.monName(mon)}'s LEAF GUARD protects it!`;
+    if (this.sides[side].safeguard && src !== 'REST') return `${this.sideName(side)} is protected by SAFEGUARD!`;
+    if (this.sides[side].substitute && src !== 'REST' && subBlocks) return '';
+    if ((st === 'PSN' || st === 'TOX') && (types.includes('POISON') || types.includes('STEEL') || ab === 'IMMUNITY')) return "It doesn't affect " + this.monName(mon) + '...';
+    if (st === 'BRN' && (types.includes('FIRE') || ab === 'WATER_VEIL')) return "It doesn't affect " + this.monName(mon) + '...';
+    if (st === 'FRZ' && (types.includes('ICE') || ab === 'MAGMA_ARMOR' || this.wx() === 'SUN')) return '';
+    if (st === 'PAR' && (ab === 'LIMBER' || (src === 'THUNDER_WAVE' && types.includes('GROUND')))) return "It doesn't affect " + this.monName(mon) + '...';
+    if (st === 'SLP' && (ab === 'INSOMNIA' || ab === 'VITAL_SPIRIT' || this.sides.player.uproar || this.sides.enemy.uproar) && src !== 'REST') return `${this.monName(mon)} stayed awake!`;
+    if (st === 'SLP' && side === 'player' && this.mods.pokeFlute && src !== 'REST') return `The POKé FLUTE keeps ${monName(mon)} awake!`;
+    if (st === 'SLP' && side === 'enemy' && mon.sleepImmune > 0) return `${this.monName(mon)} is too alert to fall asleep!`;
+    return null;
+  }
+
   inflictStatus(side, st, src, announceFail, specificMon, sleepTurns) {
     const mon = specificMon || this.activeMon(side);
     if (!mon || isFainted2(mon)) return false;
-    const types = this.typesOfMon(side, mon);
     const ab = side === 'enemy' ? mon.ability : this.pab(mon);
-    const fail = (why) => { if (announceFail) this.msg(why || 'But it failed!'); return false; };
-    if (mon.status) return fail(`${this.monName(mon)} is already ${st === 'SLP' ? 'asleep' : 'afflicted'}!`);
-    if (ab === 'LEAF_GUARD' && this.wx() === 'SUN' && src !== 'REST') return fail(`${this.monName(mon)}'s LEAF GUARD protects it!`);
-    if (this.sides[side].safeguard && src !== 'REST') return fail(`${this.sideName(side)} is protected by SAFEGUARD!`);
-    if (this.sides[side].substitute && src !== 'REST' && specificMon === undefined) return fail();
-    if ((st === 'PSN' || st === 'TOX') && (types.includes('POISON') || types.includes('STEEL') || ab === 'IMMUNITY')) return fail("It doesn't affect " + this.monName(mon) + '...');
-    if (st === 'BRN' && (types.includes('FIRE') || ab === 'WATER_VEIL')) return fail("It doesn't affect " + this.monName(mon) + '...');
-    if (st === 'FRZ' && (types.includes('ICE') || ab === 'MAGMA_ARMOR' || this.wx() === 'SUN')) return fail();
-    if (st === 'PAR' && (ab === 'LIMBER' || (src === 'THUNDER_WAVE' && types.includes('GROUND')))) return fail("It doesn't affect " + this.monName(mon) + '...');
-    if (st === 'SLP' && (ab === 'INSOMNIA' || ab === 'VITAL_SPIRIT' || this.sides.player.uproar || this.sides.enemy.uproar) && src !== 'REST') return fail(`${this.monName(mon)} stayed awake!`);
-    if (st === 'SLP' && side === 'player' && this.mods.pokeFlute && src !== 'REST') return fail(`The POKé FLUTE keeps ${monName(mon)} awake!`);
-    if (st === 'SLP' && side === 'enemy' && mon.sleepImmune > 0) return fail(`${this.monName(mon)} is too alert to fall asleep!`);
+    const why = this.statusBlock(side, st, src, mon, specificMon === undefined);
+    if (why !== null) { if (announceFail) this.msg(why || 'But it failed!'); return false; }
     mon.status = st;
     if (st === 'SLP') {
       let turns = sleepTurns ?? (side === 'enemy' ? (mon.isBoss ? this.rng.int(1, 2) : this.rng.int(1, 3)) : this.rng.int(1, 3));
@@ -1643,13 +1729,15 @@ export class Battle {
     this.syncEnemyTypes();
   }
 
+  // -> true if it worked (the foe fled or hesitated / the enemy fled)
   tryEscape(side, roar) {
     if (side === 'player') {
       if (this.kind === 'wild' && !this.enemy().isBoss) { this.msg(`${this.monName(this.enemy())} fled!`); this.end('fled'); }
       else { this.sides.enemy.flinch = true; this.msg(`${this.monName(this.enemy())} hesitated!`); }
-    } else {
-      if (this.kind === 'wild') { this.msg(`${this.monName(this.enemy())} fled!`); this.end('enemyFled'); }
+      return true;
     }
+    if (this.kind === 'wild') { this.msg(`${this.monName(this.enemy())} fled!`); this.end('enemyFled'); return true; }
+    return false;
   }
 
   // ---- faint handling -------------------------------------------------------------------

@@ -257,7 +257,13 @@ export const EFFECTS = {
   PAIN_SPLIT: (ctx) => ctx.b.painSplit(ctx.us, ctx.user),
   BATON_PASS: (ctx) => { if (ctx.us === 'player') { ctx.b.freeSwitches += 1; ctx.b.batonPass = true; ctx.b.msg('Next switch is free and keeps stat changes!'); } },
   TELEPORT: (ctx) => ctx.b.tryEscape(ctx.us),
-  ROAR: (ctx) => { if (ctx.b.abOf?.(ctx.them, ctx.target) === 'SUCTION_CUPS') return ctx.b.msg(`${ctx.b.sideName(ctx.them)} anchors itself with SUCTION CUPS!`); ctx.b.tryEscape(ctx.us, true); },
+  // ROAR / WHIRLWIND (v0.5.7): fails if the same POKéMON made it work last turn (no flinch-locking a foe turn after turn)
+  ROAR: (ctx) => {
+    const b = ctx.b, side = ctx.userSide, uid = ctx.user?.uid;
+    if (b.abOf?.(ctx.them, ctx.target) === 'SUCTION_CUPS') return b.msg(`${b.sideName(ctx.them)} anchors itself with SUCTION CUPS!`);
+    if (side?.lastRoar && side.lastRoar.uid === uid && side.lastRoar.turn === b.turn - 1) return b.msg(`${ctx.move.name || 'ROAR'} failed: it worked last turn!`);
+    if (b.tryEscape(ctx.us, true) && side && uid !== undefined) side.lastRoar = { uid, turn: b.turn };
+  },
   SUNNY_DAY: (ctx) => ctx.b.setWeather('SUN'), RAIN_DANCE: (ctx) => ctx.b.setWeather('RAIN'),
   SANDSTORM: (ctx) => ctx.b.setWeather('SAND'), HAIL: (ctx) => ctx.b.setWeather('HAIL'),
   WATER_SPORT: (ctx) => { ctx.b.sides[ctx.us].waterSport = true; ctx.b.msg("FIRE's power was weakened!"); },
