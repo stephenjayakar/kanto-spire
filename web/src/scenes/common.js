@@ -1,5 +1,5 @@
 // Shared drawing: cards, mon sprites, HUD, party panel, modals.
-import { Engine, W, H, hover, clicked, inRect, pushOverlay, popOverlay, keyPressed } from '../engine/core.js';
+import { Engine, W, H, hover, clicked, inRect, pushOverlay, popOverlay, keyPressed, Ease } from '../engine/core.js';
 import { img, ready, draw, itemPath, typePath, trainerPath, tinted, setFallback } from '../engine/assets.js';
 import { text, measure, textFit, wrap, textBlock, COLORS } from '../engine/font.js';
 import { panel, pixBox, rect, button, tip, hpBar, THEME, shade, windowFrame, drawTips, closeButton } from '../engine/ui.js';
@@ -36,6 +36,15 @@ export function foeSprite(species, shiny = false, region = null, anim = false) {
 }
 // Emerald's send-out animation, roughly: the 2nd frame for a moment just after the foe appears (outAt: its time)
 export const foeAnimFrame = (t, outAt) => outAt !== undefined && t - outAt > 0.12 && t - outAt < 0.42;
+// A foe's battle entrance (scenes/battle.js 'enemyOut'): it slides in from dx GBA pixels to the right (ease) over dur
+// seconds, with its cry (and the shiny sparkle). The starter pickers replay it on a clicked POKéMON (cosmetic only).
+export const FOE_ENTRY = { dx: 120, dur: 0.4, ease: Ease.outBack };
+// The entrance's x offset (GBA pixels) `elapsed` seconds after it started: 0 before and after it.
+export const foeEntryX = (elapsed) => !(elapsed >= 0 && elapsed < FOE_ENTRY.dur) ? 0 : FOE_ENTRY.dx * (1 - FOE_ENTRY.ease(elapsed / FOE_ENTRY.dur));
+export function foeEntrySound(species, shiny = false) {
+  Sound.playCry(species);
+  if (shiny) Sound.playSE('se_shiny');
+}
 
 // 32x32 party icon (2 frames stacked vertically), animated.
 export function drawIcon(ctx, species, x, y, opts = {}) {

@@ -16,7 +16,7 @@ import { coopWorldFor, coopWorldRegions, isSpireWorld } from '../../game/regions
 // A room's world in the REJOIN list: SPIRE, or KANTO / HOENN for a room started before v0.1.0.
 const coopWorldLabel = (w) => (String(w || 'kanto').startsWith('spire') ? 'SPIRE' : String(w || 'kanto').toUpperCase());
 import { Sound } from '../../audio/sound.js';
-import { drawMon, drawIcon, drawMonCentered, ChoiceModal } from '../common.js';
+import { drawMon, drawIcon, drawMonCentered, ChoiceModal, foeEntryX, foeEntrySound } from '../common.js';
 import { loadNet } from './net.js';
 import { CoopSession } from './session.js';
 import { MAX_PLAYERS } from '../../game/coop/coop.js';
@@ -315,14 +315,21 @@ export class CoopLobbyScene {
       const hot = hover(cx, cy, tw, th);
       pixBox(ctx, cx, cy, tw, th, sel ? '#4a5c88' : hot ? '#38445e' : '#262c3c', sel ? '#f8d038' : '#141820', 3);
       const bob = sel ? Math.sin(this.t * 6) * 1.5 : 0;
+      // a clicked starter replays its battle entrance (cosmetic, local only; a click restarts it)
+      const ex = this.entry?.sp === sp ? Math.round(foeEntryX(this.t - this.entry.at)) : 0;
       if (big) {
-        drawMon(ctx, sp, cx - 1, cy + 2 + bob);
+        if (ex) { ctx.save(); ctx.beginPath(); ctx.rect(cx + 3, cy + 3, tw - 6, th - 6); ctx.clip(); }
+        drawMon(ctx, sp, cx - 1 + ex, cy + 2 + bob);
+        if (ex) ctx.restore();
         text(ctx, D.species[sp].name, cx + 31, cy + 62, { align: 'center', color: 'white', font: 'small' });
-      } else { ctx.save(); ctx.beginPath(); ctx.rect(cx + 2, cy + 2, tw - 4, th - 4); ctx.clip(); drawMonCentered(ctx, sp, cx + tw / 2, cy + th / 2 + Math.round(bob)); ctx.restore(); }
+      } else { ctx.save(); ctx.beginPath(); ctx.rect(cx + 2, cy + 2, tw - 4, th - 4); ctx.clip(); drawMonCentered(ctx, sp, cx + tw / 2 + ex, cy + th / 2 + Math.round(bob)); ctx.restore(); }
       const takers = v.members.filter(x => x.slot !== me && x.starter === sp).map(x => `P${x.slot + 1}`);
       if (taken) text(ctx, big ? takers.join(' ') : 'P', big ? cx + 31 : cx + tw - 6, cy + 2, { align: 'center', color: 'orange', font: 'small' });
       if (!big && hot) tip(D.species[sp].name, taken ? `${takers.join(', ')} picked this one too.` : 'Click to bring it.');
-      if (hot && clicked(cx, cy, tw, th) && !this.busy && !sel) { Sound.playCry(sp); this.act(net => net.setStarter(this.roomId, sp, ascUnlocked(G.meta, sp))); }
+      if (hot && clicked(cx, cy, tw, th)) {
+        this.entry = { sp, at: this.t }; foeEntrySound(sp);
+        if (!this.busy && !sel) this.act(net => net.setStarter(this.roomId, sp, ascUnlocked(G.meta, sp)));
+      }
     });
     if (list.length <= 3) text(ctx, 'Clear acts (solo or co-op) to unlock more starters.', 425, 160, { align: 'center', color: 'gray', font: 'small' });
     // settings

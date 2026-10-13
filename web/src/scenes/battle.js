@@ -12,7 +12,7 @@ import { CONSUMABLES, BALLS, BADGES } from '../game/items.js';
 import { maxHp, monName, typesOf, isFainted, stats, DECK_RULES, LEGENDARY } from '../game/pokemon.js';
 import { G, saveRun, saveMeta } from '../game/state.js';
 import { Sound } from '../audio/sound.js';
-import { drawTrainer, drawHUD, drawCard, drawCardBack, cardTooltip, drawPartyPanel, drawMon, drawIcon, CARD_W, CARD_H, MessageBox, ChoiceModal, PartyPicker, DeckModal, matchupText, monTooltip, openBattleMenu, consumableDesc, monSprite, drawNoComboTag, STATUS_SEL, ordinal, orderTagWidth, drawOrderTag, ORDER_RULE, foeSprite, foeAnimFrame } from './common.js';
+import { drawTrainer, drawHUD, drawCard, drawCardBack, cardTooltip, drawPartyPanel, drawMon, drawIcon, CARD_W, CARD_H, MessageBox, ChoiceModal, PartyPicker, DeckModal, matchupText, monTooltip, openBattleMenu, consumableDesc, monSprite, drawNoComboTag, STATUS_SEL, ordinal, orderTagWidth, drawOrderTag, ORDER_RULE, foeSprite, foeAnimFrame, FOE_ENTRY, foeEntrySound } from './common.js';
 import { battleFinished } from './flow.js';
 import { STAT_NAMES, PROTECT_EFFECTS } from '../game/effects.js';
 import { MoveAnims } from '../anim/player.js';
@@ -143,11 +143,11 @@ export class BattleScene {
         const en = b.enemies[e.index];
         // the trainer lingers before throwing out its first POKéMON (a click/tap cuts it short)
         if (this.cfg.trainer && e.index === 0) { this.trainerX = 0; await skippableWait(this, TRAINER_LINGER * this.speed); tween(this, { trainerX: 140 }, 0.5 * this.speed); }
-        this.enemyDisp = { hp: en.hp, maxHp: en.maxHp, x: 120, alpha: 1, flash: 0, shake: 0, faint: 0, species: en.species, shiny: en.shiny, level: en.level, uid: en.uid, outAt: this.t };
+        this.enemyDisp = { hp: en.hp, maxHp: en.maxHp, x: FOE_ENTRY.dx, alpha: 1, flash: 0, shake: 0, faint: 0, species: en.species, shiny: en.shiny, level: en.level, uid: en.uid, outAt: this.t };
         if (this.cfg.trainer) { this.ballAnim = { x: SCENE_X + 360, y: SCENE_Y + 70, t: 0 }; Sound.playSE('se_ball_open'); }
-        tween(this.enemyDisp, { x: 0 }, 0.4 * this.speed, Ease.outBack);
-        Sound.playCry(en.species);
-        if (en.shiny) { Sound.playSE('se_shiny'); burst(SCENE_X + 360, SCENE_Y + 70, { color: ['#fff', '#f8f080'], n: 16, speed: 60, grav: 0 }); }
+        tween(this.enemyDisp, { x: 0 }, FOE_ENTRY.dur * this.speed, FOE_ENTRY.ease);
+        foeEntrySound(en.species, en.shiny);
+        if (en.shiny) burst(SCENE_X + 360, SCENE_Y + 70, { color: ['#fff', '#f8f080'], n: 16, speed: 60, grav: 0 });
         await this.wait(0.35);
         break;
       }
