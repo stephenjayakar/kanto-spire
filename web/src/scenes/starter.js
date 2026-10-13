@@ -9,7 +9,8 @@ import { Run, ASCENSIONS, familyOf } from '../game/run.js';
 import { STARTERS } from '../game/acts.js';
 import { RELICS } from '../game/items.js';
 import { Sound } from '../audio/sound.js';
-import { drawMonCentered, typeIcon, ChoiceModal, foeEntryX, foeEntrySound } from './common.js';
+import { drawStarterMon, typeIcon, ChoiceModal } from './common.js';
+import { FrontAnim } from '../anim/front_anim.js';
 import { goToMap } from './flow.js';
 import { isStarterUnlocked, ascUnlocked, ascDefault } from '../game/unlocks.js';
 import { unlockedRegions, regionOf, SPIRE, orList, JOHTO_WINS } from '../game/regions.js';
@@ -22,7 +23,7 @@ export class StarterScene {
     this.sel = 1;
     this.ascFor = null; // the ascension picker follows the selected starter (set in draw)
     this.t = 0;
-    this.entry = null; // { i, at }: a clicked starter replays its battle entrance (cosmetic; a click restarts it)
+    this.anim = null; // { i, fa, at }: a clicked starter plays Emerald's front animation (cosmetic; a click restarts it)
     Sound.playBGM('mus_oak_lab');
     showPendingStarterOffer(); // an act-clear choice left open (e.g. the page was reloaded)
   }
@@ -34,7 +35,13 @@ export class StarterScene {
   }
   update(dt) { this.t += dt; }
   // x offset of starter i's battle entrance (0 when it isn't playing)
-  entryX(i) { return this.entry?.i === i ? Math.round(foeEntryX(this.t - this.entry.at)) : 0; }
+  // starter i's front animation, stepped to now (null when it isn't playing)
+  animOf(i) {
+    const a = this.anim;
+    if (!a || a.i !== i) return null;
+    if (a.fa.at((this.t - a.at) * 60).done) { this.anim = null; return null; }
+    return a.fa;
+  }
   draw(ctx) {
     swirlBackground(ctx, BG_THEMES.map, 0.5);
     draw(ctx, 'gfx/misc/oak_speech/oak.png', 14, 10, { scale: 2 });
@@ -55,15 +62,15 @@ export class StarterScene {
       const shiny = ok && this.shinyOn(st.species);
       ctx.save(); ctx.beginPath(); ctx.rect(cx + 2, cy + 2, cw - 4, ch - 4); ctx.clip();
       const my = cy + 2 + (ch - 11) / 2;
-      if (ok) drawMonCentered(ctx, st.species, cx + cw / 2 + this.entryX(i), my + (selected ? Math.round(Math.sin(this.t * 6)) : 0), { shiny });
-      else { drawMonCentered(ctx, st.species, cx + cw / 2, my, { silhouette: '#101018' }); text(ctx, '?', cx + cw / 2, my - 7, { align: 'center', color: 'white' }); }
+      if (ok) drawStarterMon(ctx, st.species, cx + cw / 2, my + (selected ? Math.round(Math.sin(this.t * 6)) : 0), { shiny, anim: this.animOf(i) });
+      else { drawStarterMon(ctx, st.species, cx + cw / 2, my, { silhouette: '#101018' }); text(ctx, '?', cx + cw / 2, my - 7, { align: 'center', color: 'white' }); }
       ctx.restore();
       // the highest ascension unlocked with this starter (each starter unlocks its own)
       if (ok) { const n = ascUnlocked(G.meta, st.species); pixBox(ctx, cx + 3, cy + 3, n >= 10 ? 19 : 14, 11, '#141820', null, 2); text(ctx, 'A' + n, cx + 5, cy + 2, { color: n ? 'gold' : 'gray', font: 'small' }); }
       if (shiny) { const sx = cx + cw - 8, sy = cy + 5, k = Math.sin(this.t * 5) > 0 ? 1 : 0; rect(ctx, sx - 1, sy - 3 - k, 2, 6 + 2 * k, '#f8e060'); rect(ctx, sx - 3 - k, sy - 1, 6 + 2 * k, 2, '#f8e060'); }
       const types = D.species[st.species]?.types || [];
       types.forEach((ty, k) => rect(ctx, cx + 4 + k * (cw - 8) / types.length, cy + ch - 7, (cw - 8) / types.length - (types.length > 1 ? 1 : 0), 4, TYPE_COLORS[ty]));
-      if (hot && clicked(cx, cy, cw, ch)) { this.sel = i; this.entry = { i, at: this.t }; foeEntrySound(st.species, shiny); }
+      if (hot && clicked(cx, cy, cw, ch)) { this.sel = i; this.anim = { i, fa: new FrontAnim(st.species), at: this.t }; Sound.playCry(st.species); }
       if (hover(cx, cy, cw, ch)) tip(ok ? D.species[st.species].name : 'LOCKED', ok ? types.join(' / ') : `${types.join(' / ')}\nClear an act to choose a new starter: each act clear lets you unlock 1 of up to 3 locked POKéMON.`);
     });
     // selected details
@@ -76,7 +83,7 @@ export class StarterScene {
     text(ctx, `HP ${s.stats.hp}  ATK ${s.stats.atk}  DEF ${s.stats.def}  SPA ${s.stats.spa}  SPD ${s.stats.spd}  SPE ${s.stats.spe}`, 160, dy + 21, { color: 'gray', font: 'small' });
     // the selected starter (shiny when picked) and the SHINY toggle: a win at A5+ unlocks its family's shiny
     const ok = this.unlocked(st), shinyOk = ok && shinyUnlocked(st.species);
-    if (ok) { ctx.save(); ctx.beginPath(); ctx.rect(152, dy + 2, 296, ph - 4); ctx.clip(); drawMonCentered(ctx, st.species, 412 + this.entryX(this.sel), dy + ph - 5, { shiny: this.shinyOn(st.species), bottom: true }); ctx.restore(); }
+    if (ok) { ctx.save(); ctx.beginPath(); ctx.rect(152, dy + 2, 296, ph - 4); ctx.clip(); drawStarterMon(ctx, st.species, 412, dy + ph - 5, { shiny: this.shinyOn(st.species), bottom: true, anim: this.animOf(this.sel) }); ctx.restore(); }
     const sy = dy + ph - 27;
     if (shinyOk) {
       const on = this.shinyOn(st.species);

@@ -37,13 +37,43 @@ export function foeSprite(species, shiny = false, region = null, anim = false) {
 // Emerald's send-out animation, roughly: the 2nd frame for a moment just after the foe appears (outAt: its time)
 export const foeAnimFrame = (t, outAt) => outAt !== undefined && t - outAt > 0.12 && t - outAt < 0.42;
 // A foe's battle entrance (scenes/battle.js 'enemyOut'): it slides in from dx GBA pixels to the right (ease) over dur
-// seconds, with its cry (and the shiny sparkle). The starter pickers replay it on a clicked POKéMON (cosmetic only).
+// seconds, with its cry (and the shiny sparkle).
 export const FOE_ENTRY = { dx: 120, dur: 0.4, ease: Ease.outBack };
-// The entrance's x offset (GBA pixels) `elapsed` seconds after it started: 0 before and after it.
-export const foeEntryX = (elapsed) => !(elapsed >= 0 && elapsed < FOE_ENTRY.dur) ? 0 : FOE_ENTRY.dx * (1 - FOE_ENTRY.ease(elapsed / FOE_ENTRY.dur));
 export function foeEntrySound(species, shiny = false) {
   Sound.playCry(species);
   if (shiny) Sound.playSE('se_shiny');
+}
+
+// A starter on the new game screens (scenes/starter.js, coop/lobby.js): Emerald's front art (the optional Emerald pack,
+// as in HOENN battles; FireRed's while that isn't loaded or isn't there), centred on its opaque pixels like
+// drawMonCentered, or with its 64x64 frame at opts.x0/y0. opts.anim (anim/front_anim.js FrontAnim, already stepped)
+// plays Emerald's front animation: anim_front.png's 2nd frame, the motion's offset/scale/rotation and palette blend.
+export function drawStarterMon(ctx, species, cx, cy, opts = {}) {
+  const em = foeSprite(species, opts.shiny, 'hoenn', false), emIm = img(em);
+  const emerald = ready(emIm) && !emIm._fb; // (_fb: the image fell back to FireRed's)
+  const base = emerald ? em : monSprite(species, 'front', opts.shiny);
+  const b = opaqueBounds(base);
+  if (!b) return;
+  const a = opts.anim, s = a?.s;
+  let path = base;
+  if (emerald && a?.frame === 1) { const p = foeSprite(species, opts.shiny, 'hoenn', true), im = img(p); if (ready(im) && !im._fb) path = p; }
+  const src = opts.silhouette ? tinted(path, opts.silhouette, 1) : img(path);
+  if (!src || !ready(img(path))) return;
+  const ox = opts.x0 !== undefined ? Math.round(opts.x0) : Math.round(cx - b.w / 2 - b.x);
+  const oy = opts.y0 !== undefined ? Math.round(opts.y0) : Math.round(opts.bottom ? cy - b.h - b.y : cy - b.h / 2 - b.y);
+  ctx.save();
+  if (opts.alpha !== undefined) ctx.globalAlpha *= opts.alpha;
+  ctx.translate(ox + 32 + (s?.x2 || 0), oy + 32 + (s?.y2 || 0)); // (GBA affine sprites scale/rotate about their centre)
+  if (s?.aff) {
+    // OAM matrix (ObjAffineSet: screen -> texture, 256 = 1.0); the canvas needs its inverse (texture -> screen)
+    const th = s.aff.rot / 65536 * 2 * Math.PI, co = Math.cos(th), si = Math.sin(th);
+    const pa = s.aff.xs * co / 256, pb = -s.aff.xs * si / 256, pc = s.aff.ys * si / 256, pd = s.aff.ys * co / 256;
+    const det = pa * pd - pb * pc;
+    if (Math.abs(det) > 1e-6) ctx.transform(pd / det, -pc / det, -pb / det, pa / det, 0, 0);
+  }
+  ctx.drawImage(src, 0, 0, 64, 64, -32, -32, 64, 64);
+  if (s?.blend && !opts.silhouette) { const t = tinted(path, s.blend.color, 1); if (t) { ctx.globalAlpha *= s.blend.a; ctx.drawImage(t, 0, 0, 64, 64, -32, -32, 64, 64); } }
+  ctx.restore();
 }
 
 // 32x32 party icon (2 frames stacked vertically), animated.
