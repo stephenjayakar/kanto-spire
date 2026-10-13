@@ -235,3 +235,42 @@ export const testRows = internalQuery({
     return { legacy: legacy.map((p) => ({ meta: p.meta, run: p.run, updatedAt: p.updatedAt })), heads: heads.map((h) => ({ metaHash: h.metaHash ?? null, runHash: h.runHash ?? null, updatedAt: h.updatedAt })), blobs };
   },
 });
+
+// ---- held items backfill (v0.5.6, tools/backfill_relics.mjs) ---------------------------------
+// Adds held item keys to an account's meta.relicsFound (the Pokédex's HELD ITEMS page), recovered from its run logs,
+// co-op rooms and saves. Add-only and idempotent: keys already there stay as they are, nothing is ever removed, and a
+// call with nothing new writes nothing. An account without a save is skipped (no meta is made up). dryRun: report only.
+export const backfillRelicsFound = internalMutation({
+  args: { email: v.string(), keys: v.array(v.string()), dryRun: v.optional(v.boolean()) },
+  handler: async (ctx, { email, keys, dryRun }) => {
+    const e = normEmail(email);
+    const player = e ? await ctx.db.query("players").withIndex("by_email", (q) => q.eq("email", e)).first() : null;
+    if (!player) return { status: "no player", before: 0, added: 0, after: 0 };
+    const user = { _id: player.userId, email: e };
+    const save = await readSave(ctx, user);
+    if (!save) return { status: "no save", before: 0, added: 0, after: 0 };
+    const meta = JSON.parse(save.meta);
+    const have: string[] = Array.isArray(meta.relicsFound) ? meta.relicsFound : [];
+    const add = [...new Set(keys.filter((k) => typeof k === "string" && /^[A-Z0-9_]{2,32}$/.test(k)))].filter((k) => !have.includes(k));
+    const res = { before: have.length, added: add.length, after: have.length + add.length };
+    if (!add.length) return { status: "nothing to add", ...res };
+    if (dryRun) return { status: "would add", ...res };
+    meta.relicsFound = [...have, ...add];
+    await writeSave(ctx, user, { meta: JSON.stringify(meta) });
+    return { status: "added", ...res };
+  },
+});
+
+// The held items an account's save lists as found (meta.relicsFound): what the backfill check reads.
+export const relicsFoundOf = internalQuery({
+  args: { email: v.string() },
+  handler: async (ctx, { email }) => {
+    const e = normEmail(email);
+    const player = e ? await ctx.db.query("players").withIndex("by_email", (q) => q.eq("email", e)).first() : null;
+    if (!player) return null;
+    const save = await readSave(ctx, { _id: player.userId, email: e });
+    if (!save) return null;
+    const meta = JSON.parse(save.meta);
+    return Array.isArray(meta.relicsFound) ? meta.relicsFound : [];
+  },
+});
