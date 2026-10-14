@@ -6,6 +6,7 @@ import { G, saveMeta, recordRelics } from '../../game/state.js';
 import { recordCoopDex } from '../../game/coop/dex.js';
 import * as Coop from '../../game/coop/coop.js';
 import { NODE_INFO } from '../../game/map.js';
+import { speciesName } from '../../game/data.js';
 import { actTitle, actBosses, trainerName, orList } from '../../game/regions.js';
 import { RewardScene } from '../reward.js';
 import { ShopScene } from '../shop.js';
@@ -464,6 +465,7 @@ export class CoopSession {
     }
     if (Array.isArray(g.events)) {
       for (const e of g.events.slice(before.events)) {
+        if (e?.t === 'away' && g.wiped?.[e.p]) continue; // (a wiped player gets the 'wiped' toast instead)
         if (e?.t === 'away') coopToast(e.p === this.mySlot ? 'You were sat out (offline).' : `${this.nameOf(e.p)} sits out: carrying on without them`, { t: 4 });
         else if (e?.t === 'back') coopToast(e.p === this.mySlot ? 'You are back in the game!' : `${this.nameOf(e.p)} is back!`, { good: true });
         else if (e?.t === 'sitOut') { // (v0.5.6: players who sat a mythic fight out)
@@ -472,6 +474,17 @@ export class CoopSession {
           coopToast(e.fight ? `${who.charAt(0).toUpperCase() + who.slice(1)} sat this one out: the others take on ${e.foe || 'the mythic'}!` : `Everyone sat it out: ${e.foe || 'the mythic'} is left in peace.`, { t: 5 });
         }
         else if (e?.t === 'softLoss') coopToast(`${e.foe || 'The mythic'} threw every team out! Every team that fought lost 30% HP, but the run goes on.`, { t: 5 }); // (v0.3.25)
+        else if (e?.t === 'released') { // (NUZLOCKE: the POKéMON that fainted in that battle are gone for good)
+          const names = (e.mons || []).map(speciesName);
+          if (!names.length) continue;
+          const list = names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+          if (e.p === this.mySlot) coopToast(`NUZLOCKE: ${list} ${names.length === 1 ? 'was' : 'were'} released. Farewell...`, { bad: true, t: 5 });
+          else coopToast(`${this.nameOf(e.p)}: ${list} ${names.length === 1 ? 'was' : 'were'} released.`, { t: 4 });
+        }
+        else if (e?.t === 'wiped') {
+          if (e.p === this.mySlot) coopToast('Your last POKéMON is gone: you are OUT (NUZLOCKE). You can keep watching.', { bad: true, t: 7 });
+          else coopToast(`${this.nameOf(e.p)} is out of POKéMON for good and now spectates.`, { t: 5 });
+        }
         else if (e?.t === 'revive') coopToast(e.p === this.mySlot ? 'Your team is back on its feet!' : `${this.nameOf(e.p)}'s team is back on its feet!`, { good: true });
         else if (e?.t === 'actClear') {
           // the next act's region and its possible GYM LEADERS (One Spire), so the team can plan for it
@@ -488,10 +501,11 @@ export class CoopSession {
 
   // 3-4 players: carry on without an offline player (game rule: CoopGame.setAway). They come back with
   // their next action; their own client posts one as soon as it sees it was sat out.
-  sitOut(p) { if (this.game && !this.game.away?.[p] && p !== this.mySlot) this.post({ type: 'away', target: p, away: true }); }
+  // (NUZLOCKE: a wiped player (game.wiped) is out for good: never sat out, never back)
+  sitOut(p) { if (this.game && !this.game.away?.[p] && !this.game.wiped?.[p] && p !== this.mySlot) this.post({ type: 'away', target: p, away: true }); }
   checkAway() {
     const g = this.game;
-    if (!g?.away?.[this.mySlot] || !this.synced || this.stopped || this.backPosted === g.seq) return;
+    if (!g?.away?.[this.mySlot] || g.wiped?.[this.mySlot] || !this.synced || this.stopped || this.backPosted === g.seq) return;
     this.backPosted = g.seq;
     this.post({ type: 'away', target: this.mySlot, away: false });
     coopToast('You were sat out while away: you are back in!', { good: true, t: 4 });
@@ -579,10 +593,13 @@ export class CoopSession {
   }
 
   vote(nodeId) {
-    if (!this.game || this.game.phase !== 'map' || this.game.votes?.[this.mySlot] === nodeId) return;
+    if (!this.game || this.game.phase !== 'map' || this.isOut() || this.game.votes?.[this.mySlot] === nodeId) return;
     this.pendingVote = nodeId;
     this.post({ type: 'vote', node: nodeId });
   }
+
+  // NUZLOCKE: my whole team was released (game.wiped): I only watch, and post nothing for myself.
+  isOut(p = this.mySlot) { return !!this.game?.wiped?.[p]; }
 
   // ---- private phases ---------------------------------------------------------------------------
   privateId() { const pv = this.game?.private; return pv ? `${pv.kind}:${pv.node ?? ''}:${pv.key ?? ''}@${this.privateSince}` : null; }
@@ -592,7 +609,7 @@ export class CoopSession {
     const g = this.game;
     if (!g || g.phase !== 'private') return;
     const id = this.privateId();
-    if (this.privatePosted !== id) {
+    if (this.privatePosted !== id && !this.isOut()) {
       this.privatePosted = id;
       const run = g.snapshotRun(G.run);
       const sitOut = this.sitOutId === id; // (v0.5.6: "Sit this one out" at a mythic event, see markSitOut)
@@ -660,7 +677,7 @@ export class CoopSession {
       case 'battle': key = 'battle'; make = () => { G.run = g.runs[p]; return new CoopBattleScene(this); }; break;
       case 'private': {
         const pv = g.private;
-        if (!pv || pv.done?.[p] || this.privatePosted === this.privateId()) { key = 'wait'; make = () => new CoopWaitScene(this); }
+        if (!pv || pv.done?.[p] || this.isOut() || this.privatePosted === this.privateId()) { key = 'wait'; make = () => new CoopWaitScene(this); }
         else { key = 'private:' + this.privateId(); make = () => this.openPrivate(pv); }
         break;
       }
@@ -678,7 +695,7 @@ export class CoopSession {
   // MEWTWO can then show up. Only once in sync on a live room (a replay or a resume must not post).
   postChamp() {
     const g = this.game;
-    if (this.champPosted || !this.synced || !g?.world || g.world.flags?.champ || !G.meta?.unlocks?.win || g.phase === 'over' || g.phase === 'victory' || g.phase === 'init') return;
+    if (this.champPosted || !this.synced || !g?.world || this.isOut() || g.world.flags?.champ || !G.meta?.unlocks?.win || g.phase === 'over' || g.phase === 'victory' || g.phase === 'init') return;
     this.champPosted = true;
     this.post({ type: 'champ' });
   }

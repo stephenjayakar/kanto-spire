@@ -132,6 +132,7 @@ function roomCore(room: Room, members: Member[]) {
     _id: room._id, code: room.code, status: room.status,
     host: host ? host.slot : 0, // host's slot (emails are not shared)
     ascension: room.ascension, world: room.world, seed: room.seed,
+    nuzlocke: !!room.nuzlocke, // co-op Nuzlocke option (its presence tells the client this server supports it)
     createdAt: room.createdAt, gameVersion: room.gameVersion ?? null, progress: room.progress ?? null,
     maxPlayers: roomCap(members), // seats in this room (2 while an older 2-player client is in it)
   };
@@ -177,8 +178,8 @@ const tagV = v.optional(v.string());
 const cleanTag = (s: string | undefined) => (typeof s === "string" && /^[A-Za-z0-9._-]{1,24}$/.test(s) ? s : undefined);
 
 export const create = mutation({
-  args: { ascension: v.optional(v.number()), world: v.optional(worldV), maxPlayers: maxPlayersV, gameVersion: tagV, engine: tagV },
-  handler: async (ctx, { ascension, world, maxPlayers, gameVersion, engine }) => {
+  args: { ascension: v.optional(v.number()), world: v.optional(worldV), nuzlocke: v.optional(v.boolean()), maxPlayers: maxPlayersV, gameVersion: tagV, engine: tagV },
+  handler: async (ctx, { ascension, world, nuzlocke, maxPlayers, gameVersion, engine }) => {
     const user = await requireUser(ctx);
     const email = normEmail(user.email);
     if (!email) throw new Error("Your account has no email.");
@@ -192,6 +193,7 @@ export const create = mutation({
     const roomId = await ctx.db.insert("coopRooms", {
       code, status: "lobby", host: email, ascension: cleanAscension(ascension ?? 0), world: world ?? "spire",
       seed: randomFrom("ABCDEFGHJKLMNPQRSTUVWXYZ23456789", 8), nextSeq: 1, createdAt: now, updatedAt: now,
+      ...(nuzlocke ? { nuzlocke: true } : {}),
       ...(cleanTag(gameVersion) ? { gameVersion: cleanTag(gameVersion) } : {}), ...(cleanTag(engine) ? { engine: cleanTag(engine) } : {}),
     });
     await ctx.db.insert("coopMembers", {
@@ -256,14 +258,15 @@ export const setReady = mutation({
 });
 
 export const configure = mutation({
-  args: { roomId: v.id("coopRooms"), ascension: v.optional(v.number()), world: v.optional(worldV) },
-  handler: async (ctx, { roomId, ascension, world }) => {
+  args: { roomId: v.id("coopRooms"), ascension: v.optional(v.number()), world: v.optional(worldV), nuzlocke: v.optional(v.boolean()) },
+  handler: async (ctx, { roomId, ascension, world, nuzlocke }) => {
     const { room } = await requireLobbyHost(ctx, roomId);
     const patch: Partial<Room> = { updatedAt: Date.now() };
     if (ascension !== undefined) patch.ascension = Math.min(cleanAscension(ascension), ascensionCap(await membersOf(ctx, roomId)));
     if (world !== undefined) patch.world = world;
+    if (nuzlocke !== undefined) patch.nuzlocke = nuzlocke;
     await ctx.db.patch(room._id, patch);
-    return { ascension: patch.ascension ?? room.ascension, world: patch.world ?? room.world };
+    return { ascension: patch.ascension ?? room.ascension, world: patch.world ?? room.world, nuzlocke: !!(patch.nuzlocke ?? room.nuzlocke) };
   },
 });
 
@@ -283,6 +286,7 @@ export const start = mutation({
     for (const [i, m] of members.entries()) if (m.slot !== i) { await ctx.db.patch(m._id, { slot: i }); m.slot = i; }
     const init = {
       type: "init", seed: room.seed, ascension: room.ascension, world: room.world,
+      ...(room.nuzlocke ? { nuzlocke: true } : {}), // only when on: an off room's init stays byte-identical to older ones
       starters: members.map((m) => m.starter!), names: members.map((m) => m.name),
     };
     const nonce = "init";
@@ -633,7 +637,7 @@ export const mine = query({
       if (!room || room.status === "closed" || room.updatedAt < now - (room.status === "playing" ? KEEP_RUNS : DAY)) continue;
       const members = await membersOf(ctx, room._id);
       out.push({
-        roomId: room._id, code: room.code, status: room.status, ascension: room.ascension, world: room.world,
+        roomId: room._id, code: room.code, status: room.status, ascension: room.ascension, world: room.world, nuzlocke: !!room.nuzlocke,
         slot: me.slot, isHost: room.host === email, nextSeq: room.nextSeq, createdAt: room.createdAt, updatedAt: room.updatedAt,
         progress: room.progress ?? null,
         members: members.sort((a, b) => a.slot - b.slot).map((m) => ({ slot: m.slot, name: m.name, starter: m.starter ?? null, left: !!m.left, saved: !!m.left && !!m.savedAt })),
@@ -647,7 +651,7 @@ export const mine = query({
 // A subscription re-runs when a document it read changes, and its client only hears about it when the result changed.
 // So each one reads as little as it can and returns only what its client needs:
 //   coop:head      the room and its members, without what changes per action (nextSeq, updatedAt) or per keepalive
-//                  (lastSeen): status, seats, starters, ready, left / saved, ascension, progress. Changes rarely.
+//                  (lastSeen): status, seats, starters, ready, left / saved, ascension, nuzlocke, progress. Changes rarely.
 //   coop:feed      the actions after a cursor; never reads the room. The client subscribes again from its newest seq
 //                  after every delivery, so a result is just the new actions (usually none).
 //   coop:presence  everyone's keepalive row (coopPresence, written by coop:alive): about twice a minute per player,
@@ -673,7 +677,7 @@ function memberHead(m: Member) {
   return rest;
 }
 
-// -> { room: { _id, code, status, host (slot), ascension, world, seed, createdAt, gameVersion, progress, maxPlayers },
+// -> { room: { _id, code, status, host (slot), ascension, world, seed, nuzlocke, createdAt, gameVersion, progress, maxPlayers },
 //      members: [{ slot, name, starter, ascMax, ready, left, saved, maxPlayers, net }], me, isHost }
 export const head = query({
   args: { roomId: v.id("coopRooms") },
@@ -769,7 +773,7 @@ export const mineLive = query({
       out.push({
         at: room.updatedAt,
         row: {
-          roomId: room._id, code: room.code, status: room.status, ascension: room.ascension, world: room.world,
+          roomId: room._id, code: room.code, status: room.status, ascension: room.ascension, world: room.world, nuzlocke: !!room.nuzlocke,
           slot: me.slot, isHost: room.host === email, progress: room.progress ?? null,
           members: members.sort((a, b) => a.slot - b.slot).map((m) => ({ slot: m.slot, name: m.name, starter: m.starter ?? null, left: !!m.left, saved: !!m.left && !!m.savedAt })),
         },

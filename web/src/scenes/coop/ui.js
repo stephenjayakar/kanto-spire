@@ -45,10 +45,12 @@ const PRIVATE_WHAT = {
 };
 export function privateWhat(kind) { return PRIVATE_WHAT[kind] || "they're busy"; }
 
-// -> { key: 'ready'|'choosing'|'offline'|'down'|'none', label, color, detail }
+// -> { key: 'ready'|'choosing'|'offline'|'down'|'away'|'out'|'none', label, color, detail }
 export function playerStatus(session, p) {
   if (!session) return { key: 'none', label: '—', color: '#506070', detail: '' };
   const g = session.game;
+  // NUZLOCKE: their whole team was released: out for good (they spectate). Before 'away' (a wiped player is away too).
+  if (g?.wiped?.[p]) return { key: 'out', label: 'OUT', color: '#783838', detail: 'team released (NUZLOCKE): spectating' };
   if (g?.away?.[p]) return { key: 'away', label: 'SAT OUT', color: '#606878', detail: 'left the game' };
   if (p !== session.mySlot && session.member(p)?.saved) return { key: 'offline', label: 'SAVED & QUIT', color: '#5870a0', detail: 'saved and quit' };
   if (!session.isOnline(p)) return { key: 'offline', label: 'OFFLINE', color: '#808890', detail: 'not connected' };
@@ -107,7 +109,7 @@ export function drawCoopBanner(ctx, session) {
   if (session.netError && Date.now() - session.netError.since > 4000) msg = `CONNECTION LOST · retrying... (${session.netError.msg || 'network'})`;
   let off = null;
   if (!msg && session.game) {
-    off = session.others.find(p => !session.isOnline(p) && !session.game.away?.[p]) ?? null;
+    off = session.others.find(p => !session.isOnline(p) && !session.game.away?.[p] && !session.game.wiped?.[p]) ?? null;
     if (off !== null && session.member(off)?.saved) msg = `${session.nameOf(off)} SAVED & QUIT · wait for them, or SAVE & QUIT too`;
     else if (off !== null) msg = session.n > 2 ? `${session.nameOf(off)} is OFFLINE · wait, or carry on without them` : `${session.nameOf(off)} is OFFLINE · the game continues when they reconnect`;
   }

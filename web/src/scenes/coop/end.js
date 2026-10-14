@@ -31,6 +31,7 @@ export class CoopEndScene {
       panel(ctx, x, 62, cw, 236);
       textFit(ctx, `P${p + 1} · ${s.nameOf(p)}${p === s.mySlot ? ' (you)' : ''}`, x + 6, 68, cw - 12, { color: PFONT[p] });
       if (!run) continue;
+      if (g.wiped?.[p]) text(ctx, 'OUT (NUZLOCKE)', x + cw / 2, run.party.length ? 238 : 100, { align: 'center', color: '#ff7070', font: 'small' });
       run.party.forEach((m, i) => {
         const cx = x + 8 + (i % 2) * Math.floor((cw - 16) / 2), cy = 86 + Math.floor(i / 2) * 52;
         drawIcon(ctx, m.species, cx, cy, { gray: m.hp <= 0, still: m.hp <= 0 });
@@ -47,7 +48,7 @@ export class CoopEndScene {
     swirlBackground(ctx, this.win ? BG_THEMES.gold : BG_THEMES.boss, 0.4);
     text(ctx, this.win ? 'CHAMPIONS!' : (s.n > 2 ? 'EVERY TEAM FAINTED' : 'BOTH TEAMS FAINTED'), W / 2, 14, { align: 'center', color: this.win ? 'gold' : 'red', scale: 2 });
     const w = g?.world;
-    text(ctx, w ? `${w.act?.name || ''} · A${w.ascension ?? 0} · room ${s.code}` : '', W / 2, 46, { align: 'center', color: 'whiteSoft', font: 'small' });
+    text(ctx, w ? `${w.act?.name || ''} · A${w.ascension ?? 0}${g.nuzlocke ? ' · NUZLOCKE' : ''} · room ${s.code}` : '', W / 2, 46, { align: 'center', color: 'whiteSoft', font: 'small' });
     if (s.n > 2) this.drawMany(ctx);
     for (const p of (s.n > 2 ? [] : [0, 1])) {
       const run = g?.runs?.[p];
@@ -55,6 +56,7 @@ export class CoopEndScene {
       panel(ctx, x, 62, pw, 236);
       text(ctx, `P${p + 1} · ${s.nameOf(p)}${p === s.mySlot ? ' (you)' : ''}`, x + pw / 2, 68, { align: 'center', color: PFONT[p] });
       if (!run) continue;
+      if (g.wiped?.[p]) text(ctx, 'OUT (NUZLOCKE): every POKéMON released', x + pw / 2, run.party.length ? 266 : 140, { align: 'center', color: '#ff7070', font: 'small' });
       run.party.forEach((m, i) => {
         const cx = x + 8 + (i % 3) * 96, cy = 86 + Math.floor(i / 3) * 96;
         drawMon(ctx, m.species, cx + 12, cy, { scale: 1, shiny: m.shiny });

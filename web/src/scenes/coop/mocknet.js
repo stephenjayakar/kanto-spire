@@ -109,7 +109,7 @@ function seenOf(m, now) {
 }
 function roomCore(room) {
   const host = room.members.find(m => m.email === room.host);
-  return { _id: room._id, code: room.code, status: room.status, host: host ? host.slot : 0, ascension: room.ascension, world: room.world, seed: room.seed, createdAt: room.createdAt, gameVersion: room.gameVersion ?? null, progress: room.progress ?? null, maxPlayers: roomCap(room.members) };
+  return { _id: room._id, code: room.code, status: room.status, host: host ? host.slot : 0, ascension: room.ascension, world: room.world, seed: room.seed, nuzlocke: !!room.nuzlocke, createdAt: room.createdAt, gameVersion: room.gameVersion ?? null, progress: room.progress ?? null, maxPlayers: roomCap(room.members) };
 }
 function view(room, mine) {
   const now = Date.now();
@@ -135,7 +135,7 @@ export function createRoom(opts = {}) {
     do { code = Array.from({ length: 5 }, () => ALPHABET[Math.floor(Math.random() * ALPHABET.length)]).join(''); } while (rooms.some(r => r.code === code && r.status !== 'closed'));
     const _id = 'dev_' + randomNonce();
     put({
-      _id, code, status: 'lobby', host: self.email, ascension: opts.ascension ?? 0, world: opts.world ?? 'kanto',
+      _id, code, status: 'lobby', host: self.email, ascension: opts.ascension ?? 0, world: opts.world ?? 'kanto', nuzlocke: !!opts.nuzlocke,
       seed: String(Math.floor(Math.random() * 2 ** 31)), nextSeq: 1, createdAt: now, updatedAt: now, actions: [], checkpoints: [],
       members: [{ email: self.email, name: self.name, slot: 0, ready: false, starter: null, lastSeen: now, lastSeq: 0, joinedAt: now, maxPlayers: opts.maxPlayers ?? CLIENT_MAX }],
     });
@@ -185,7 +185,8 @@ export const configure = (roomId, opts = {}) => withRoom(roomId, (room, mine) =>
   lobbyHost(room, mine);
   if (opts.ascension !== undefined) room.ascension = Math.min(Math.max(0, Math.min(10, opts.ascension | 0)), coopAscCap(room.members));
   if (opts.world !== undefined) room.world = COOP_WORLDS.includes(opts.world) ? opts.world : 'spire';
-  return { ascension: room.ascension, world: room.world };
+  if (opts.nuzlocke !== undefined) room.nuzlocke = !!opts.nuzlocke;
+  return { ascension: room.ascension, world: room.world, nuzlocke: !!room.nuzlocke };
 }, { write: true });
 export const startRoom = (roomId) => withRoom(roomId, (room, mine) => {
   lobbyHost(room, mine);
@@ -196,7 +197,7 @@ export const startRoom = (roomId) => withRoom(roomId, (room, mine) => {
   if (room.ascension > coopAscCap(ms)) throw new Error("No player has that ascension unlocked for their starter.");
   // slots are renumbered 0..n-1 in seat order (a lobby leaver can leave a gap); the init lists them in that order
   ms.forEach((m, i) => { m.slot = i; });
-  room.actions.push({ seq: 1, p: 0, json: JSON.stringify({ type: 'init', seed: room.seed, ascension: room.ascension, world: room.world, starters: ms.map(m => m.starter), names: ms.map(m => m.name), nonce: 'init' }) });
+  room.actions.push({ seq: 1, p: 0, json: JSON.stringify({ type: 'init', seed: room.seed, ascension: room.ascension, world: room.world, ...(room.nuzlocke ? { nuzlocke: true } : {}), starters: ms.map(m => m.starter), names: ms.map(m => m.name), nonce: 'init' }) });
   room.status = 'playing'; room.nextSeq = 2;
   return { seq: 1 };
 }, { write: true });
@@ -221,7 +222,7 @@ export function myRooms() {
   return atomic((rooms, put, del) => {
     for (const r of rooms) if (r.status === 'deleted') del(r);
     const out = rooms.filter(r => r.status !== 'closed' && r.status !== 'deleted' && r.updatedAt > cutoff && r.members.some(m => m.email === self.email && !m.dismissed)).map(r => ({
-      roomId: r._id, code: r.code, status: r.status, ascension: r.ascension, world: r.world, slot: r.members.find(m => m.email === self.email).slot,
+      roomId: r._id, code: r.code, status: r.status, ascension: r.ascension, world: r.world, nuzlocke: !!r.nuzlocke, slot: r.members.find(m => m.email === self.email).slot,
       isHost: r.host === self.email, nextSeq: r.nextSeq, createdAt: r.createdAt, updatedAt: r.updatedAt, progress: r.progress ?? null,
       members: r.members.map(m => ({ slot: m.slot, name: m.name, starter: m.starter ?? null, left: !!m.left, saved: !!m.left && !!m.savedAt })),
     }));

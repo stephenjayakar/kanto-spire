@@ -9,8 +9,11 @@ import { swirlBackground, BG_THEMES, button, panel, pixBox, rect, drawTips, tip,
 import { D } from '../../game/data.js';
 import { G } from '../../game/state.js';
 import { ASCENSIONS, NUZLOCKE_ASC } from '../../game/run.js';
-// Nuzlocke rules are off in co-op (a downed partner is revived after every win, see Run.nuzlocke).
-const coopAscDesc = (x) => (x?.n === NUZLOCKE_ASC ? 'Nuzlocke: no effect in co-op (your partner revives you after a win).' : x?.desc || '');
+// Co-op Nuzlocke is a room option (room.nuzlocke, the host's NUZLOCKE switch; see Run.nuzlocke): raising the
+// ascension to A8 turns it on, and the host can switch it either way. nuzOpt: the server has the option (a room
+// view with the boolean room.nuzlocke); an older server has none, and A8 does nothing in co-op there.
+const coopAscDesc = (x, nuzOpt) => (x?.n === NUZLOCKE_ASC ? (nuzOpt ? 'Nuzlocke: in co-op it is the NUZLOCKE switch (raising to A8 turns it on).' : 'Nuzlocke: no effect in co-op (your partner revives you after a win).') : x?.desc || '');
+const NUZ_TIP = 'Co-op Nuzlocke rules:\n- A POKéMON that faints in battle is released for good.\n- Each player may only catch in their first wild battle of each act.\n- Gift and trade events are hidden, as in solo.\n- A downed partner is not revived after a win.\n- A player whose whole team is released is OUT and spectates while the others carry on.\nThe run is lost only when everyone is down or out.';
 import { availableStarters, ascUnlocked, coopAscCap, MAX_ASC } from '../../game/unlocks.js';
 import { coopWorldFor, coopWorldRegions, isSpireWorld } from '../../game/regions.js';
 // A room's world in the REJOIN list: SPIRE, or KANTO / HOENN for a room started before v0.1.0.
@@ -117,7 +120,7 @@ export class CoopLobbyScene {
   }
   async create() {
     const r = await this.act(net => net.createRoom({ ascension: this.asc, world: coopWorldFor(G.meta) }));
-    if (r) this.openRoom(r.roomId);
+    if (r) { this.newNuz = this.asc >= NUZLOCKE_ASC ? r.roomId : null; this.openRoom(r.roomId); }
   }
   async join(code) {
     const r = await this.act(net => net.joinRoom(code));
@@ -252,7 +255,7 @@ export class CoopLobbyScene {
       if (button(ctx, 'X', dx, y + 6, 18, 18, { color: '#904848', font: 'small', disabled: this.busy })) this.askDelete(r);
       if (overX) tip('DELETE ROOM', r.status === 'playing' ? 'Remove it from your list and leave the run for good. Your partner can keep playing; once you have both deleted it, it is gone.' : r.isHost ? 'Close the room and remove it.' : 'Leave the room and remove it from your list.');
       text(ctx, r.code, rx + 16, y + 3, { color: 'gold' });
-      text(ctx, `${r.status === 'playing' ? 'IN PROGRESS' : 'LOBBY'} · ${coopWorldLabel(r.world)} A${r.ascension}${r.progress ? ' · ' + r.progress : ''}`, rx + 70, y + 5, { color: r.status === 'playing' ? 'lime' : 'whiteSoft', font: 'small' });
+      text(ctx, `${r.status === 'playing' ? 'IN PROGRESS' : 'LOBBY'} · ${coopWorldLabel(r.world)} A${r.ascension}${r.nuzlocke ? ' NUZ' : ''}${r.progress ? ' · ' + r.progress : ''}`, rx + 70, y + 5, { color: r.status === 'playing' ? 'lime' : 'whiteSoft', font: 'small' });
       text(ctx, (r.members || []).map(m => `P${m.slot + 1} ${m.name}${m.saved ? ' (saved)' : ''}`).join(' · '), rx + 16, y + 18, { color: 'gray', font: 'small' });
       if (hot && clicked(rx + 8, y, rw - 16, 32) && !this.busy) { Sound.playSE('se_select'); this.openRoom(r.roomId); }
     });
@@ -331,6 +334,13 @@ export class CoopLobbyScene {
     // opens it (a run already in progress keeps its world).
     // (v0.1.1: also when the host's region pool changed, e.g. JOHTO joined after their 2nd win)
     if (isHost && room.status === 'lobby' && world !== coopWorldFor(G.meta) && !this.busy && !this.respired) { this.respired = true; this.config({ world: coopWorldFor(G.meta) }); }
+    // co-op Nuzlocke (room.nuzlocke is a boolean only on a server that has the option)
+    const nuzOpt = typeof room.nuzlocke === 'boolean';
+    // a room I just created at A8+ starts with NUZLOCKE on, as raising the ascension to A8 would
+    if (this.newNuz === this.roomId && isHost && room.status === 'lobby' && !this.busy) {
+      this.newNuz = null;
+      if (nuzOpt && !room.nuzlocke && (room.ascension || 0) >= NUZLOCKE_ASC) this.config({ nuzlocke: true });
+    }
     // The KANTO three plus the starters this player has unlocked: every one of them must fit (v0.5.x drew only the
     // first 16, so a player with more unlocked could not pick the rest). See starterGrid.
     const list = availableStarters(G.meta, 'spire', s => !!D.species[s]);
@@ -373,13 +383,23 @@ export class CoopLobbyScene {
     text(ctx, 'ASCENSION', 236, 210, { color: 'whiteSoft', font: 'small' });
     if (isHost && button(ctx, '<', 300, 205, 22, 20, { color: '#506080', disabled: a <= 0 || this.busy })) this.config({ ascension: a - 1 });
     text(ctx, 'A' + a, 344, 207, { align: 'center', color: a ? 'red' : 'gold' });
-    if (isHost && button(ctx, '>', 366, 205, 22, 20, { color: '#506080', disabled: a >= maxA || this.busy })) this.config({ ascension: a + 1 });
-    textBlock(ctx, coopAscDesc(ASCENSIONS[a]), 236, 230, 170, { color: 'gray', font: 'small', lineHeight: 10 });
-    if (hover(236, 205, 160, 70)) tip(`ASCENSION ${a}`, (a > 0 ? ASCENSIONS.slice(1, a + 1).map(x => `A${x.n}: ${coopAscDesc(x)}`).join('\n') + '\n\n' : '') + `Ascension unlocks are per starter: this room can go up to A${maxA}, the highest any of you has unlocked with the starter you picked.`, { width: 220 });
+    // raising it to A8 (Nuzlocke) turns NUZLOCKE on too; lowering it never changes the switch
+    if (isHost && button(ctx, '>', 366, 205, 22, 20, { color: '#506080', disabled: a >= maxA || this.busy })) this.config({ ascension: a + 1, ...(nuzOpt && a + 1 === NUZLOCKE_ASC ? { nuzlocke: true } : {}) });
+    textBlock(ctx, coopAscDesc(ASCENSIONS[a], nuzOpt), 236, 230, 170, { color: 'gray', font: 'small', lineHeight: 10 });
+    if (hover(236, 205, 160, 70)) tip(`ASCENSION ${a}`, (a > 0 ? ASCENSIONS.slice(1, a + 1).map(x => `A${x.n}: ${coopAscDesc(x, nuzOpt)}`).join('\n') + '\n\n' : '') + `Ascension unlocks are per starter: this room can go up to A${maxA}, the highest any of you has unlocked with the starter you picked.`, { width: 220 });
     // the region pool (the host's: HOENN acts join once the host has won a run, JOHTO acts after 2 wins)
     text(ctx, 'REGIONS', 430, 210, { color: 'whiteSoft', font: 'small' });
     text(ctx, isSpireWorld(world) ? coopWorldRegions(world) : coopWorldLabel(world), 560, 210, { align: 'center', color: 'gold', font: 'small' });
-    textBlock(ctx, 'Each act draws its region from the run seed. HOENN acts join once the host has won a run, JOHTO acts once the host has won twice.', 430, 226, 186, { color: 'gray', font: 'small', lineHeight: 10 });
+    textBlock(ctx, "Each act draws its region from the run seed. HOENN joins after the host's 1st win, JOHTO after the 2nd.", 430, 226, 186, { color: 'gray', font: 'small', lineHeight: 10 });
+    // the NUZLOCKE switch (host: a button; the others see the host's choice)
+    if (nuzOpt) {
+      const on = !!room.nuzlocke;
+      text(ctx, 'NUZLOCKE', 430, 265, { color: 'whiteSoft', font: 'small' });
+      if (isHost) { if (button(ctx, on ? 'ON' : 'OFF', 480, 261, 40, 18, { color: on ? '#a04848' : '#506080', font: 'small', disabled: this.busy })) this.config({ nuzlocke: !on }); }
+      else text(ctx, on ? 'ON' : 'OFF', 500, 265, { align: 'center', color: on ? 'red' : 'gray', font: 'small' });
+      text(ctx, on ? 'fainted = released' : 'A8+ turns it on', 528, 265, { color: 'gray', font: 'small', maxW: 88 });
+      if (hover(430, 260, 186, 20)) tip(`NUZLOCKE: ${on ? 'ON' : 'OFF'}`, `${NUZ_TIP}\n\n${isHost ? 'Click to switch it. Raising the ascension to A8 turns it on; you can still switch it off, or on at any ascension.' : 'The host picks it (raising the ascension to A8 turns it on).'}`, { width: 240 });
+    }
     // buttons
     const both = v.members.length >= 2 && v.members.every(x => x.starter);
     if (mine && button(ctx, mine.ready ? 'READY ✓' : 'READY?', 224, 292, 120, 26, { color: mine.ready ? THEME.green : '#506080', disabled: this.busy })) this.act(net => net.setReady(this.roomId, !mine.ready));

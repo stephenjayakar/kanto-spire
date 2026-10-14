@@ -36,6 +36,9 @@ export function snapshotGame(g) {
     lastVote: JSON.parse(JSON.stringify(g.lastVote ?? null)),
     down: JSON.parse(JSON.stringify(g.down ?? null)),
     away: JSON.parse(JSON.stringify(g.away ?? null)),
+    // (v0.5.14 NUZLOCKE rooms only, so older code and older checkpoints never see them: the rule and who is out for good)
+    ...(g.nuzlocke ? { nuzlocke: true } : {}),
+    ...(g.wiped?.some?.(Boolean) ? { wiped: [...g.wiped] } : {}),
     result: g.result ?? null,
     // act clears (not part of the checksum): the co-op map grants each player's starter offers from them
     events: (Array.isArray(g.events) ? g.events : []).filter(e => e && e.t === 'actClear').map(e => ({ ...e })),
@@ -74,6 +77,10 @@ export function restoreGame(snap0, eng) {
   g.lastVote = snap.lastVote ?? null;
   g.down = arr(snap.down, false);
   g.away = arr(snap.away, false);
+  // (checkpoints from before v0.5.14 have neither: no NUZLOCKE, nobody out)
+  g.nuzlocke = snap.nuzlocke === true;
+  g.wiped = arr(snap.wiped, false);
+  for (let q = 0; q < n; q++) if (g.wiped[q]) g.away[q] = true;
   g.result = snap.result ?? null;
   g.events = Array.isArray(snap.events) ? snap.events : [];
   g.private = null;

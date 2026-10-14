@@ -32,7 +32,8 @@ export class CoopMapScene extends MapScene {
     this.scroll = this.targetScroll();
     coopStarterOffers(this.s); // an act was cleared: each player picks a new starter (local meta only)
   }
-  canPick() { return !this.s.desync && this.s.game.phase === 'map' && !this.s.stopped; }
+  // (NUZLOCKE: a wiped player, game.wiped, only spectates: no votes, no lead changes, no map items)
+  canPick() { return !this.s.desync && this.s.game.phase === 'map' && !this.s.stopped && !this.s.game.wiped?.[this.s.mySlot]; }
   // sketches: mine go to the partner, theirs show in their colour (session side channel)
   mySketch() { return this.s.mySketch(this.mapRun().actIndex); }
   otherSketches() { return this.s.partnerSketches(this.mapRun().actIndex); }
@@ -82,11 +83,13 @@ export class CoopMapScene extends MapScene {
     const hovered = this.drawMapColumn(ctx, world);
 
     drawHUD(ctx, run, { onDeck: () => pushOverlay(new DeckModal({})), onMenu: () => coopMenu(s), onConsumableClick: (k) => this.useItem(k), noToss: true });
-    panel(ctx, 4, 32, 154, 30 * run.party.length + 22);
+    const out = !!g.wiped?.[me], rows = run.party.length || (out ? 1 : 0);
+    panel(ctx, 4, 32, 154, 30 * rows + 22);
     text(ctx, 'YOUR TEAM', 81, 34, { align: 'center', color: PFONT[me], font: 'small' });
     const m = drawPartyPanel(ctx, run, 8, 48, 146, { showExp: true, tipX: 162, leadUid: run.party[0]?.uid });
-    if (m) this.setLead(m);
-    text(ctx, 'Click to set lead', 81, 52 + 30 * run.party.length, { align: 'center', color: 'gray', font: 'small' });
+    if (m && !out) this.setLead(m);
+    if (!run.party.length && out) text(ctx, 'All released (NUZLOCKE)', 81, 56, { align: 'center', color: '#ff7070', font: 'small' });
+    text(ctx, out ? 'OUT: spectating' : 'Click to set lead', 81, 52 + 30 * rows, { align: 'center', color: out ? '#ff7070' : 'gray', font: 'small' });
     this.drawSketchButtons(ctx);
 
     this.drawBossPanel(ctx);
@@ -128,10 +131,15 @@ export class CoopMapScene extends MapScene {
     const x = 172, w = 296, y = 34;
     let label, col = '#18243a', border = '#2a3a50';
     if (s.desync) label = 'Voting paused: resync first';
+    else if (g.wiped?.[me]) {
+      const waiting = s.others.filter(p => g.votes?.[p] == null && !g.away?.[p] && !g.wiped?.[p]);
+      label = 'OUT (NUZLOCKE): spectating' + (waiting.length ? `  ·  waiting for ${waiting.map(p => 'P' + (p + 1)).join(', ')}` : '');
+      col = '#3a1818'; border = '#c04848';
+    }
     else if (mine != null) {
       const n = g.world.map.nodes[mine];
       const what = n ? (n.type === 'boss' ? 'BOSS' : NODE_INFO[n.type]?.name || n.type) : '?';
-      const waiting = s.others.filter(p => g.votes?.[p] == null && !g.away?.[p]);
+      const waiting = s.others.filter(p => g.votes?.[p] == null && !g.away?.[p] && !g.wiped?.[p]);
       const dots = '...'.slice(0, 1 + Math.floor(this.t * 2) % 3);
       label = !waiting.length ? `You: ${what}  ·  resolving...` : s.n > 2 ? `You: ${what}  ·  waiting for ${waiting.map(p => 'P' + (p + 1)).join(', ')}` + dots : `You: ${what}  ·  WAITING FOR PARTNER` + dots;
       col = '#1c3020'; border = '#38b048';
@@ -141,6 +149,9 @@ export class CoopMapScene extends MapScene {
     }
     pixBox(ctx, x, y, w, 20, col, border, 3);
     text(ctx, label, x + w / 2, y + 4, { align: 'center', color: 'white', font: 'small' });
+    // the room plays NUZLOCKE (a room option): a small tag under the vote bar, its rules on hover
+    if (g.nuzlocke) { pixBox(ctx, x + w - 62, y + 21, 62, 12, '#5a1818', '#c04848', 2); text(ctx, 'NUZLOCKE', x + w - 31, y + 21, { align: 'center', color: 'white', font: 'small' }); }
+    if (g.nuzlocke && (hover(x, y, w, 20) || hover(x + w - 62, y + 21, 62, 12))) tip('NUZLOCKE', 'This room plays Nuzlocke: a POKéMON that faints in battle is released for good, and only the first wild POKéMON of each act can be caught. A player whose whole team is released is OUT and spectates.', { width: 220 });
   }
   drawPartnerPanel(ctx, x, y, w, h) {
     if (this.s.n > 2) return this.drawPartnersPanel(ctx, x, y, w, h);

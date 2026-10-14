@@ -205,6 +205,17 @@ export class SubBattle extends Battle {
   }
 }
 
+// The POKéMON a downed player gets back up with when the room wins (or escapes): the lead, else the first in the party.
+// NUZLOCKE (v0.5.14): never a released one (mon.lost), so a player whose whole team fell gets nobody back (null).
+function reviveTarget(s) {
+  const lead = s.lead() || s.run.party[0];
+  if (!s.run.nuzlocke) return lead;
+  return lead && !lead.lost ? lead : s.run.party.find(m => !m.lost) || null;
+}
+// NUZLOCKE (v0.5.14): each player may only throw balls in their act's first wild battle (CoopGame.startBattle sets
+// sub.cfg.nuzFirst per player, like solo's Run.battleConfig).
+const nuzNoCatch = (s) => !!s.run.nuzlocke && !s.cfg.nuzFirst;
+
 function abilityOfMon(mon) {
   if (mon.ability) return mon.ability;
   const a = D.species[mon.species]?.abilities || [];
@@ -376,7 +387,8 @@ export class DuoBattle {
       for (const s of this.subs) s.faintedAtEnd = s.run.party.filter(isFainted).map(m => m.uid);
       for (const s of this.subs) {
         if (!this.down[s.p]) continue;
-        const lead = s.lead() || s.run.party[0];
+        const lead = reviveTarget(s);
+        if (!lead) continue; // (NUZLOCKE: their whole team is released, CoopGame.releaseFallen)
         lead.hp = Math.max(1, Math.floor(maxHp(lead) * COOP_TUNING.reviveFrac));
         lead.status = null;
         s.ms(lead.uid).faintHandled = false;
@@ -598,7 +610,7 @@ export class DuoBattle {
 
   execBall(a) {
     const s = this.subs[a.p];
-    if (this.out(a.p) || s.caught || !(s.run.balls[a.ball] > 0)) return;
+    if (this.out(a.p) || s.caught || !(s.run.balls[a.ball] > 0) || nuzNoCatch(s)) return;
     const slot = this.normSlot(a.slot);
     if (slot === null) return;
     const ri = this.field[slot];
@@ -757,7 +769,8 @@ export class DuoBattle {
     // like a won fight, a downed player's lead gets back up (nobody walks back to the map with a fainted team)
     for (const t of this.subs) {
       if (!this.down[t.p]) continue;
-      const lead = t.lead() || t.run.party[0];
+      const lead = reviveTarget(t);
+      if (!lead) continue; // (NUZLOCKE: nobody left to get back up)
       lead.hp = Math.max(1, Math.floor(maxHp(lead) * COOP_TUNING.reviveFrac));
       lead.status = null;
       t.ms(lead.uid).faintHandled = false;
@@ -778,7 +791,7 @@ export class DuoBattle {
     let lk = null;
     if (L.pass) lk = { pass: true };
     else if (L.ball) {
-      if (this.kind !== 'wild' || !BALLS[L.ball] || !(s.run.balls[L.ball] > 0) || s.caught) return [];
+      if (this.kind !== 'wild' || !BALLS[L.ball] || !(s.run.balls[L.ball] > 0) || s.caught || nuzNoCatch(s)) return [];
       const slot = this.normSlot(L.target);
       if (slot === null || this.enemyAt(slot).isBoss || s.legendBlocked(this.enemyAt(slot))) return [];
       lk = { ball: L.ball, target: slot };

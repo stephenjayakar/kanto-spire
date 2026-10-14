@@ -43,7 +43,10 @@ import { RNG } from '../rng.js';
 // ELITE FOUR SIDNEY, and SABRINA's foes no longer hit 15% softer; v0.5.7 is frozen as 'v057'.
 // v0.5.13 does: A10 runs end with a second ELITE FOUR + CHAMPION from another region (run.summit2, a full heal before
 // it); v0.5.8-v0.5.12 is frozen as 'v058'.
-export const LOGIC_ID = 'v0513';
+// v0.5.14 does: NUZLOCKE co-op rooms (init.nuzlocke, the host's lobby option): fainted POKéMON are released, one catch per
+// act per player, a player with no POKéMON left is out for good. v0.5.13 is not frozen (a room mid-node when this lands
+// restarts that node from the map).
+export const LOGIC_ID = 'v0514';
 // Actions from before v0.3.6 carry no stamp: they were played on v0.3.5 (or, for older rooms, earlier; the
 // replay checks the clients' logged checksums and tries every frozen engine, see resume.js).
 export const UNSTAMPED = 'v035';

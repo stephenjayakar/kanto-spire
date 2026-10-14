@@ -35,7 +35,7 @@ export function familyOf(sp) {
 
 export const MAX_ASCENSION = ASCENSIONS.length - 1;
 // Nuzlocke rules from this ascension on (v0.0.6: it took the slot of Inflation, which moved into A4).
-// Co-op runs never use them (a downed partner is revived after every win there).
+// Co-op runs use them only in a NUZLOCKE room (v0.5.14: the host's lobby option, run.coopNuzlocke; see Run.nuzlocke).
 export const NUZLOCKE_ASC = 8;
 // Level cap from this ascension on (v0.3.2: it replaced Weary): see Run.levelCap.
 export const LEVEL_CAP_ASC = 5;
@@ -102,7 +102,7 @@ export class Run {
   // to copy a draw, e.g. co-op's player runs), or a legacy 'kanto' / 'hoenn' world (old saves and tests).
   // champ: the player has beaten a CHAMPION in an earlier run (meta.unlocks.win): CERULEAN CAVE's MEWTWO can show up.
   // summit2: A10's second ELITE FOUR region (regions.js pickSummit2; pass it to copy a draw, e.g. co-op's player runs).
-  static create({ starter = 'CHARMANDER', ascension = 0, seed = null, world = 'kanto', shiny = false, coop = false, pool = null, regions = null, rival = null, champ = false, summit2 } = {}) {
+  static create({ starter = 'CHARMANDER', ascension = 0, seed = null, world = 'kanto', shiny = false, coop = false, pool = null, regions = null, rival = null, champ = false, summit2, nuzlocke = false } = {}) {
     const r = new Run();
     r.abilityRules = 1; // (v0.5.0 abilities: Gen 4 mons use the HGSS ability lists)
     r.seed = seed || randomSeedString();
@@ -122,6 +122,7 @@ export class Run {
     }
     if (summit2) r.summit2 = summit2;
     if (coop) r.coop = true;
+    if (coop && nuzlocke) r.coopNuzlocke = true; // (v0.5.14: a co-op NUZLOCKE room; absent everywhere else)
     r.actIndex = 0;
     r.party = [];
     r.relics = [];
@@ -336,8 +337,9 @@ export class Run {
 
   addMoney(n) { this.money += n; if (n > 0) this.stats.moneyEarned += n; }
 
-  // ---- Nuzlocke (A8+, solo only) -----------------------------------------------------------
-  get nuzlocke() { return this.ascension >= NUZLOCKE_ASC && !this.coop; }
+  // ---- Nuzlocke (solo: A8+; co-op: a NUZLOCKE room, v0.5.14) ------------------------------------
+  // (co-op ignores the ascension: the host turns the rule on in the lobby, CoopGame.nuzlocke -> run.coopNuzlocke)
+  get nuzlocke() { return this.coop ? !!this.coopNuzlocke : this.ascension >= NUZLOCKE_ASC; }
   // Releases every POKéMON that fainted in battle (Battle marks them mon.lost). Returns the released.
   releaseLost() {
     const lost = this.party.filter(m => m.lost);
@@ -849,7 +851,9 @@ export class Run {
 
   afterBattle(battle) {
     const r = battle.result;
-    r.released = this.releaseLost();
+    // (co-op NUZLOCKE: the room already released them when the battle ended, CoopGame.releaseFallen, and put them in
+    // result.released for this screen)
+    r.released = [...(r.released || []), ...this.releaseLost()];
     this.stats.battles++;
     if (battle.kind === 'wild') {
       this.stats.wild++;

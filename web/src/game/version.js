@@ -2,9 +2,18 @@
 // Game version and patch notes (shown from the title screen). Versions are major.minor.patch: every production
 // deploy that changes the game bumps the patch (v0.2.0 -> v0.2.1); the owner calls minor bumps (v0.1.x -> v0.2.0);
 // no major bumps yet. Each one gets a new top PATCH_NOTES entry; see AGENTS.md.
-export const VERSION = 'v0.5.13';
+export const VERSION = 'v0.5.14';
 
 export const PATCH_NOTES = [
+  {
+    v: 'v0.5.14',
+    sections: [
+      ['NEW', [
+        "NUZLOCKE in co-op: the host can turn it on in the co-op lobby (it switches on by itself from A8, like solo, and can be turned on at any ascension). Every player plays by solo's NUZLOCKE rules: a POKéMON that faints is released after the battle, you can only catch in your act's first wild battle, and gift and trade events are hidden",
+        'A downed partner is no longer revived after a win in a NUZLOCKE room. A player whose last POKéMON is released is out for the rest of the run and can keep watching; the others carry on. The run is lost when everyone is out (or everyone is down in the same battle)',
+      ]],
+    ],
+  },
   {
     v: 'v0.5.13',
     sections: [
