@@ -25,6 +25,26 @@ import { PCOL, PFONT, PSPRITE, coopToast, drawToasts, OFFLINE_MS } from './ui.js
 
 const CODE_CHARS = /^[A-Z2-9]$/;
 
+// The starter tiles in the lobby's CHOOSE YOUR PARTNER panel (x 232-624, y 78-174): up to 6 big tiles with the front
+// art, up to 16 small ones (8 a row), and past that 2+ rows of narrower tiles with the party icons, so every unlocked
+// starter (21 today) stays on screen and clickable.
+export const STARTER_GRID = { x0: 232, y0: 78, w: 392, h: 96 };
+export function starterGrid(n) {
+  const { x0, y0, w, h } = STARTER_GRID;
+  let big = false, icons = false, per, tw, th, gap = 3, vgap = 3;
+  if (n <= 6) { big = true; per = 6; tw = 62; th = 74; gap = 4; }
+  else if (n <= 16) { per = 8; tw = 46; th = 46; }
+  else {
+    icons = true; gap = 2;
+    const rows = Math.max(2, Math.ceil(n / 11));
+    per = Math.ceil(n / rows);
+    tw = Math.floor((w - (per - 1) * gap) / per);
+    th = Math.min(46, Math.floor((h - (rows - 1) * vgap) / rows));
+  }
+  const left = icons ? x0 + Math.floor((w - (per * (tw + gap) - gap)) / 2) : x0; // (the narrow tiles centred)
+  return { big, icons, per, tw, th, cell: (i) => ({ x: left + (i % per) * (tw + gap), y: y0 + Math.floor(i / per) * (th + vgap) }) };
+}
+
 export class CoopLobbyScene {
   constructor(opts = {}) { this.opts = opts; }
   enter() {
@@ -311,13 +331,15 @@ export class CoopLobbyScene {
     // opens it (a run already in progress keeps its world).
     // (v0.1.1: also when the host's region pool changed, e.g. JOHTO joined after their 2nd win)
     if (isHost && room.status === 'lobby' && world !== coopWorldFor(G.meta) && !this.busy && !this.respired) { this.respired = true; this.config({ world: coopWorldFor(G.meta) }); }
-    // The KANTO three plus the starters this player has unlocked (6 big tiles, or up to 16 small ones).
+    // The KANTO three plus the starters this player has unlocked: every one of them must fit (v0.5.x drew only the
+    // first 16, so a player with more unlocked could not pick the rest). See starterGrid.
     const list = availableStarters(G.meta, 'spire', s => !!D.species[s]);
     panel(ctx, 224, 58, 402, 120);
     text(ctx, 'CHOOSE YOUR PARTNER POKéMON', 425, 64, { align: 'center', color: 'white', font: 'small' });
-    const big = list.length <= 6, tw = big ? 62 : 46, th = big ? 74 : 46, gap = big ? 4 : 3, per = big ? 6 : 8;
-    list.slice(0, 16).forEach((sp, i) => {
-      const cx = 232 + (i % per) * (tw + gap), cy = 78 + Math.floor(i / per) * (th + 3);
+    const grid = starterGrid(list.length), { big, tw, th, icons } = grid;
+    this.grid = grid; // (read by tests)
+    list.forEach((sp, i) => {
+      const { x: cx, y: cy } = grid.cell(i);
       const sel = mine?.starter === sp;
       const taken = v.members.some(x => x.slot !== me && x.starter === sp);
       const hot = hover(cx, cy, tw, th);
@@ -330,7 +352,8 @@ export class CoopLobbyScene {
         drawStarterMon(ctx, sp, 0, 0, { x0: cx - 1, y0: cy + 2 + bob, anim });
         if (anim) ctx.restore();
         text(ctx, D.species[sp].name, cx + 31, cy + 62, { align: 'center', color: 'white', font: 'small' });
-      } else { ctx.save(); ctx.beginPath(); ctx.rect(cx + 2, cy + 2, tw - 4, th - 4); ctx.clip(); drawStarterMon(ctx, sp, cx + tw / 2, cy + th / 2 + Math.round(bob), { anim }); ctx.restore(); }
+      } else if (icons) drawIcon(ctx, sp, cx + (tw - 32) / 2, cy + (th - 32) / 2 + Math.round(bob));
+      else { ctx.save(); ctx.beginPath(); ctx.rect(cx + 2, cy + 2, tw - 4, th - 4); ctx.clip(); drawStarterMon(ctx, sp, cx + tw / 2, cy + th / 2 + Math.round(bob), { anim }); ctx.restore(); }
       const takers = v.members.filter(x => x.slot !== me && x.starter === sp).map(x => `P${x.slot + 1}`);
       if (taken) text(ctx, big ? takers.join(' ') : 'P', big ? cx + 31 : cx + tw - 6, cy + 2, { align: 'center', color: 'orange', font: 'small' });
       if (!big && hot) tip(D.species[sp].name, taken ? `${takers.join(', ')} picked this one too.` : 'Click to bring it.');

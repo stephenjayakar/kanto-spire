@@ -2,9 +2,17 @@
 // Game version and patch notes (shown from the title screen). Versions are major.minor.patch: every production
 // deploy that changes the game bumps the patch (v0.2.0 -> v0.2.1); the owner calls minor bumps (v0.1.x -> v0.2.0);
 // no major bumps yet. Each one gets a new top PATCH_NOTES entry; see AGENTS.md.
-export const VERSION = 'v0.5.11';
+export const VERSION = 'v0.5.12';
 
 export const PATCH_NOTES = [
+  {
+    v: 'v0.5.12',
+    sections: [
+      ['FIXES', [
+        'Co-op: the lobby now shows every starter you have unlocked. With more than 16 unlocked, the last ones (TORCHIC, MUDKIP, DRATINI, LARVITAR, BELDUM) were cut off and could not be picked; past 16 the tiles now use the party icons, 2 rows of up to 11',
+      ]],
+    ],
+  },
   {
     v: 'v0.5.11',
     sections: [
