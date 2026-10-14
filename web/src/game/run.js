@@ -18,7 +18,7 @@ export const ASCENSIONS = [
   { n: 2, name: 'Fog of War', desc: 'Enemy moves are hidden (no intent, no move list). Foes are 1 level higher; you earn 10% less EXP.' },
   { n: 3, name: 'Gym Prep', desc: 'Bosses and the ELITE FOUR are 2 levels higher with 10% more HP.' },
   { n: 4, name: 'Shoestring', desc: 'Start with less money, fewer POKé BALLS and no POTIONS. Shop prices +25% and battles pay 20% less.' },
-  { n: 5, name: 'Level Cap', desc: "Battle EXP stops at each act's level cap: its boss's top level +2. EXP past the cap is lost." },
+  { n: 5, name: 'Level Cap', desc: "Levels stop at each act's level cap: its boss's top level +2. EXP past the cap is lost, and RARE CANDY can't pass it." },
   { n: 6, name: 'Reinforcements', desc: 'From mid Act 1 on, trainers and elites bring one more POKéMON (worth no EXP).' },
   { n: 7, name: 'Bulky Foes', desc: 'Enemies have 15% more HP.' },
   { n: 8, name: 'Nuzlocke', desc: 'A POKéMON that faints in battle is released for good. Only the first wild POKéMON of each act can be caught.' },
@@ -257,7 +257,7 @@ export class Run {
     if (isFainted(mon)) return 'Fainted';
     if (d.evo) return itemEvolution(mon, key) ? null : 'No effect';
     if (d.relearn) return this.relearnable(mon).length ? null : 'Nothing to remember';
-    if (d.levels) return mon.level >= 100 ? 'Max level' : null;
+    if (d.levels) return this.levelUpBlocker(mon);
     const hurt = mon.hp < maxHp(mon);
     const cures = d.cure && mon.status && (d.cure === true || d.cure === mon.status || (d.cure === 'PSN' && mon.status === 'TOX'));
     if (d.heal || d.healFrac) return hurt || cures ? null : 'HP is full';
@@ -383,7 +383,7 @@ export class Run {
       if (mon.status && (def.cure === true || def.cure === mon.status || (def.cure === 'PSN' && mon.status === 'TOX'))) { mon.status = null; used = true; }
       if (def.cure === true && battle && battle.sides.player.confused && mon.uid === battle.leadUid) { battle.sides.player.confused = 0; used = true; }
     }
-    if (def.levels) { this.pendingLevelEvents = { mon, events: addLevels(mon, def.levels) }; used = true; }
+    if (def.levels) { if (this.levelUpBlocker(mon)) return false; this.pendingLevelEvents = { mon, events: this.addLevels(mon, def.levels) }; used = true; }
     if (def.evo) { const into = itemEvolution(mon, key); if (!into) return false; this.pendingEvolution = { mon, into }; used = true; }
     return used;
   }
@@ -811,13 +811,25 @@ export class Run {
   // ---- after battle ---------------------------------------------------------------------
   // A5+ (LEVEL_CAP_ASC): the act's level cap = its boss's top level + TUNING.levelCapOffset: the GYM LEADER's ace (or
   // the legendary / post-game boss), in the ELITE FOUR act the CHAMPION's, with the ascension level bonuses (A3, A10).
-  // Battle EXP stops at the cap; RARE CANDY and other direct level-ups can still pass it. null below A5.
+  // Battle EXP stops at the cap, and so do RARE CANDY and every other direct level-up (v0.5.16). null below A5.
   levelCap() {
     if (this.ascension < LEVEL_CAP_ASC || !this.act) return null;
     const act = this.act;
     const top = act.gauntlet && act.gauntletLevels ? Math.max(...act.gauntletLevels) + (this.ascension >= 3 ? 2 : 0) + (this.ascension >= 10 ? 1 : 0) : this.bossLevel();
     return Math.min(100, top + TUNING.levelCapOffset);
   }
+
+  // Direct level-ups (RARE CANDY, "?" events, the CENTER's training, v0.5.16): never past the A5+ level cap (they used
+  // to go past it, so a candy could take an act 1 POKéMON to Lv20). Returns the level-up events.
+  addLevels(mon, n) { return addLevels(mon, n, this.levelCap() ?? 100); }
+  // Why mon can't gain levels right now (null = it can): Lv100, or at / past this act's level cap.
+  levelUpBlocker(mon) {
+    if (mon.level >= 100) return 'Max level';
+    const cap = this.levelCap();
+    return cap !== null && mon.level >= cap ? `At the level cap (Lv${cap})` : null;
+  }
+  // A level clamped to the level cap (POKéMON that join the team: trades, gifts, catches).
+  capLevel(level) { const cap = this.levelCap(); return cap === null ? level : Math.min(level, cap); }
 
   // Distribute EXP: lead/participants full, bench half (Exp. Share: full), each share scaled by the recipient's level
   // against every defeated foe's (expLevelScale). POKéMON fainted when the battle ended get nothing (Gen 3), even if
@@ -876,7 +888,7 @@ export class Run {
     if (mods.interest) { const i = Math.min(250, Math.floor(this.money / 100) * 5); if (i) { this.addMoney(i); r.interest = i; } }
     if (r.caught) {
       const e = r.caught;
-      const mon = makeMon(e.species, e.level, { rng: this.rng, ivs: e.ivs, moves: e.moves, shiny: e.shiny, caughtAct: this.actIndex });
+      const mon = makeMon(e.species, this.capLevel(e.level), { rng: this.rng, ivs: e.ivs, moves: e.moves, shiny: e.shiny, caughtAct: this.actIndex });
       mon.hp = Math.max(1, Math.round(maxHp(mon) * Math.max(0.3, e.hp / e.maxHp)));
       mon.status = null;
       if (e.friend) friendCopy(mon, D.moves); // (KURT's FRIEND BALL)

@@ -1392,14 +1392,21 @@ export class Battle {
     const move = this.intent?.move || this.moveData('TACKLE');
     if (move.effect === 'RECHARGE_TURN') { this.msg(`${this.monName(e)} must recharge!`); this.ms(e.uid).recharge = 0; return; }
     if (es.flinch) { this.msg(`${this.monName(e)} flinched!`); if (e.ability === 'STEADFAST') this.addStage('enemy', 'spe', 1, 'STEADFAST'); return; }
+    // Co-op 3-4 players (v0.5.16): a foe acting twice in a turn checks sleep / freeze once per turn. If its first
+    // action was lost to it (_slpHeld, set by coop/duo.js), so are its later ones: no second sleep tick, no second thaw roll.
+    if (this._slpHeld && (e.status === 'SLP' || e.status === 'FRZ')) {
+      this.msg(`${this.monName(e)} is ${e.status === 'SLP' ? 'fast asleep.' : 'frozen solid!'}`);
+      this.emit({ t: 'statusAnim', side: 'enemy', status: e.status });
+      return;
+    }
     if (e.status === 'SLP') {
-      if (e.sleepTurns > 0) { e.sleepTurns--; this.msg(`${this.monName(e)} is fast asleep.`); this.emit({ t: 'statusAnim', side: 'enemy', status: 'SLP' }); return; }
+      if (e.sleepTurns > 0) { e.sleepTurns--; this._slpSkip = true; this.msg(`${this.monName(e)} is fast asleep.`); this.emit({ t: 'statusAnim', side: 'enemy', status: 'SLP' }); return; }
       e.status = null; this.msg(`${this.monName(e)} woke up!`); this.emit({ t: 'status', side: 'enemy', status: null });
       if (e.isBoss || e.isElite) e.sleepImmune = 3;
     }
     if (e.status === 'FRZ') {
       if (this.rng.chance(0.2)) { e.status = null; this.msg(`${this.monName(e)} thawed out!`); this.emit({ t: 'status', side: 'enemy', status: null }); }
-      else { this.msg(`${this.monName(e)} is frozen solid!`); return; }
+      else { this._slpSkip = true; this.msg(`${this.monName(e)} is frozen solid!`); return; }
     }
     if (e.ability === 'TRUANT' && this.turn % 2 === 0) { this.msg(`${this.monName(e)} is loafing around!`); return; }
     if (es.confused > 0) {

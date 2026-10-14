@@ -499,9 +499,11 @@ export class BattleScene {
     for (let k = 1; k <= 9; k++) if (keyPressed(String(k)) && this.handIds[k - 1] !== undefined) this.toggle(this.handIds[k - 1]);
   }
 
+  // Selected cards that can't be played (picked to be discarded, v0.5.16): no attack preview, ATTACK greyed out.
+  deadSel() { return this.sel.some(id => { const c = this.b.deck.hand.find(x => x.id === id); return !c || !this.b.cardInfo(c).playable; }); }
   previewSim() {
     const b = this.b;
-    if (this.busy || !this.sel.length) return null;
+    if (this.busy || !this.sel.length || this.deadSel()) return null;
     const key = this.sel.join(',') + '|' + b.previewKey();
     if (this._simKey !== key) { this._simKey = key; this._sim = b.simulate(this.sel); this._prev = b.preview(this.sel); }
     return this._prev ? { ...this._prev, sim: this._sim } : null;
@@ -513,7 +515,8 @@ export class BattleScene {
     if (!card) return;
     const i = this.sel.indexOf(id);
     const info = this.b.cardInfo(card);
-    if (i < 0 && !info.playable) { this.toast = { text: `That card can't be played (${info.reason}).`, t: 1.6 }; Sound.playSE('se_failure'); return; }
+    // v0.5.16: a card that can't be played (e.g. FLY the turn after a FLY: LANDING) can still be picked, to DISCARD it
+    if (i < 0 && !info.playable) this.toast = { text: `Can't play it (${info.reason}), but you can DISCARD it.`, t: 1.6 };
     if (i >= 0) { this.sel.splice(i, 1); Sound.playSE('se_card_flip'); }
     else if (this.sel.length < this.b.maxPlay) { this.sel.push(id); Sound.playSE('se_select'); }
     else Sound.playSE('se_failure');
@@ -972,7 +975,7 @@ DECK: cards left in the draw pile / cards in your lead's deck.`, { width: 200 })
     if (drawAutoButton(ctx, HAND_Y - 32, this.auto, { disabled: !!b.result })) this.autoSet(!this.auto);
     if (!this.stuck && button(ctx, 'HINT', AUTO.hintX, HAND_Y - 32, AUTO.hintW, 26, { color: '#6a5a90', font: 'small', disabled: this.busy || !!b.result || this.auto })) { const h = this.bestHand(); if (h) { this.sel = h.slice(); Sound.playSE('se_select'); } else this.toast = { text: 'No damaging hand: discard or switch.', t: 2 }; }
     if (this.stuck && !this.busy && !b.result) { if (button(ctx, 'PASS', W - 150, HAND_Y - 32, 72, 26, { color: THEME.play })) this.doPass(); }
-    else if (button(ctx, 'ATTACK', W - 150, HAND_Y - 32, 72, 26, { color: THEME.play, disabled: !can, hotkey: null })) this.doPlay();
+    else if (button(ctx, 'ATTACK', W - 150, HAND_Y - 32, 72, 26, { color: THEME.play, disabled: !can || this.deadSel(), hotkey: null })) this.doPlay();
     const freeNow = this.sel.length > 0 && (b.freeDiscardOk(this.sel.length) || b.acroOk(this.sel.length));
     if (button(ctx, freeNow ? 'FREE DISCARD' : 'DISCARD', W - 74, HAND_Y - 32, 70, 26, { color: THEME.discard, disabled: !can || !this.canDiscard(this.sel.length), font: 'small' })) this.doDiscard();
     // cards

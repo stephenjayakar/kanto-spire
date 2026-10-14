@@ -149,7 +149,7 @@ function simulate(i) {
       }
     } else if (node.type === 'center') {
       const r = doCenter(run, SKILL);
-      if (r.train) handleLevelEvents(run, [{ mon: r.train, events: addLevels(r.train, 3) }], SKILL);
+      if (r.train) handleLevelEvents(run, [{ mon: r.train, events: run.addLevels ? run.addLevels(r.train, 3) : addLevels(r.train, 3) }], SKILL);
     } else if (node.type === 'mart') doShop(run, rng, SKILL);
     else if (node.type === 'treasure') {
       gainBotItem(run, run.randomConsumable(rng, run.actIndex + 1), SKILL);

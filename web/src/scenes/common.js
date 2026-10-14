@@ -394,7 +394,7 @@ export function drawHUD(ctx, run, opts = {}) {
   if (cap) {
     const ct = `Lv cap ${cap}`, cw = measure(ct, 'small');
     text(ctx, ct, rx, 3, { color: 'orange', font: 'small' });
-    if (hover(rx - 2, 0, cw + 4, 13)) tip(`LEVEL CAP: Lv${cap}`, `A${LEVEL_CAP_ASC}+: battle EXP stops at Lv${cap} in this act (its boss's top level +${TUNING.levelCapOffset}). EXP past the cap is lost. RARE CANDY can still go past it.`, { width: 200 });
+    if (hover(rx - 2, 0, cw + 4, 13)) tip(`LEVEL CAP: Lv${cap}`, `A${LEVEL_CAP_ASC}+: battle EXP stops at Lv${cap} in this act (its boss's top level +${TUNING.levelCapOffset}). EXP past the cap is lost. RARE CANDY, training and events can't go past it either.`, { width: 200 });
     rx += cw + 4;
   }
   const nb = run.badges.length;
@@ -540,7 +540,7 @@ export function consumableDesc(k) {
   if (c.focus) return 'Battle only: raises critical-hit chance.';
   if (c.mist) return 'Battle only: prevents stat drops.';
   if (c.flee) return c.anyNonBoss ? 'Escape from any non-boss battle (no rewards).' : 'Escape from a wild battle.';
-  if (c.levels) return `Raises a POKéMON by ${c.levels} level${c.levels > 1 ? 's' : ''}.`;
+  if (c.levels) return `Raises a POKéMON by ${c.levels} level${c.levels > 1 ? 's' : ''} (never past the level cap).`;
   if (c.addCopy) return `Adds ${c.addCopy} extra cop${c.addCopy > 1 ? 'ies' : 'y'} of a move card to your deck.`;
   if (c.relearn) return 'Teach a POKéMON a move it could have learned.';
   if (c.evo) return 'Evolves certain POKéMON.';

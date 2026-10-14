@@ -21,7 +21,7 @@
 //   gauntlet (the RADIO TOWER: started right after a win, no heal; null after the last).
 // Labels and texts must be pure functions of the run (no rng): a reload shows the same event the same way.
 import { D, bst, speciesName, itemName, moveName, DEX_MAX } from './data.js';
-import { makeMon, addLevels, maxHp, isFainted, healFrac, monName, canLearn, knowsMove, defaultCopies, typesOf, defaultMoves, NO_PLAYER_MOVES, LEGENDARY } from './pokemon.js';
+import { makeMon, maxHp, isFainted, healFrac, monName, canLearn, knowsMove, defaultCopies, typesOf, defaultMoves, NO_PLAYER_MOVES, LEGENDARY } from './pokemon.js';
 import { makeEnemy } from './battle.js';
 import { RELICS, CONSUMABLES, BALLS, APRICORN_BALLS, isCurse } from './items.js';
 import { BOSS_RULES } from './bosses.js';
@@ -49,7 +49,12 @@ export function hurt(r, frac, mons = r.party) { for (const m of mons) if (!isFai
 function healAll(r, frac, cure = false) { for (const m of r.party) if (!isFainted(m)) { healFrac(m, frac); if (cure) m.status = null; } }
 const flags = (r) => (r.flags ||= {});
 const has = (r, k) => (r.relics || []).some(x => x.key === k);
-const gift = (r, rng, sp, off = 0, minIV = 10) => makeMon(sp, lvl(r, off), { rng, minIV, caughtAct: act(r) });
+const gift = (r, rng, sp, off = 0, minIV = 10) => makeMon(sp, r.capLevel(lvl(r, off)), { rng, minIV, caughtAct: act(r) });
+// Level-ups never pass the A5+ level cap (v0.5.16, Run.addLevels); the picker greys out POKéMON already at it.
+const lvUp = (r, mon, n) => ({ mon, events: r.addLevels(mon, n) });
+const canLevel = (r) => (m) => r.levelUpBlocker(m) || true;
+const anyCanLevel = (r) => alive(r).some(m => !r.levelUpBlocker(m));
+const grewText = (mon, ev) => (ev.events.length ? `${monName(mon)} grew to Lv${mon.level}!` : `${monName(mon)} is already at the level cap.`);
 const found = (r, keys) => keys.filter(k => !r.addConsumable(k)); // what didn't fit: the overflow (the UI offers it)
 const fullNote = (overflow) => (overflow.length ? ' But your BAG is full...' : '');
 const W = { common: { common: 100 }, uncommon: { uncommon: 100 }, rare: { rare: 100 }, mid: { common: 40, uncommon: 60 }, high: { uncommon: 50, rare: 50 } };
@@ -228,18 +233,18 @@ const SHRINES = [
           let pool = Object.values(D.species).filter(s => s.dex && s.dex <= DEX_MAX && Math.abs(bstAll(s) - target) < 40 && !LEGENDARY.has(s.key) && s.key !== mon.species);
           if (!pool.length) pool = Object.values(D.species).filter(s => s.dex && s.dex <= DEX_MAX && bstAll(s) >= target - 60 && !LEGENDARY.has(s.key));
           const s = rng.pick(pool);
-          const nm = makeMon(s.key, mon.level + 1, { rng, minIV: 10, caughtAct: act(r) });
+          const nm = makeMon(s.key, r.capLevel(mon.level + 1), { rng, minIV: 10, caughtAct: act(r) });
           r.party.splice(r.party.indexOf(mon), 1, nm);
           r.addSeen(s.key, true);
           return { text: `${monName(mon)} was traded for ${speciesName(s.key)}!`, traded: nm };
         },
-        nuz: { label: 'Tidy up your PC box (+2 levels)', needsMon: 'alive', ai: () => 0.3, run: (r, rng, mon) => ({ text: `The PC's training program gave ${monName(mon)} 2 levels!`, levelEvents: [{ mon, events: addLevels(mon, 2) }] }) } },
+        nuz: { label: 'Tidy up your PC box (+2 levels)', needsMon: 'alive', monFilter: canLevel, cond: anyCanLevel, ai: () => 0.3, run: (r, rng, mon) => { const ev = lvUp(r, mon, 2); return { text: `The PC's training program: ${grewText(mon, ev)}`, levelEvents: [ev] }; } } },
       { label: r => { const t = postedTrade(r); return t ? `Posted trade: get ${speciesName(t.sp)}${t.item ? ' + ' + itemName(t.item) : ''}` : 'Posted trade (none today)'; },
         show: r => !!postedTrade(r), mon: 'trade', needsMon: 'any', cond: r => r.party.length >= 2, botMon: 'worst', ai: r => (postedTrade(r)?.item ? 0.7 : 0.25),
         tip: 'A known trade: give any POKéMON (not your last) for this one.',
         run: (r, rng, mon) => {
           const t = postedTrade(r);
-          const nm = makeMon(t.sp, Math.max(mon.level, lvl(r)), { rng, minIV: 15, caughtAct: act(r) });
+          const nm = makeMon(t.sp, r.capLevel(Math.max(mon.level, lvl(r))), { rng, minIV: 15, caughtAct: act(r) });
           r.party.splice(r.party.indexOf(mon), 1, nm);
           r.addSeen(t.sp, true);
           if (t.item) r.addRelic(t.item);
@@ -439,7 +444,7 @@ const KANTO = [
     id: 'daycare', title: 'DAY CARE', npc: 'old_man_1', weight: 1,
     text: "OLD MAN: I'm the DAY-CARE MAN. I'll raise one of your POKéMON for a fee. Oh, and my wife found an EGG...",
     choices: [
-      { label: r => `Raise a POKéMON ($${cost(r, 1000)}): +4 levels`, needsMon: 'alive', botMon: 'best', cond: r => canPay(r, 1000), ai: r => (r.money > cost(r, 1000) + 600 ? 0.7 : -1), run: (r, rng, mon) => { pay(r, 1000); return { text: `${monName(mon)} grew 4 levels!`, levelEvents: [{ mon, events: addLevels(mon, 4) }] }; } },
+      { label: r => `Raise a POKéMON ($${cost(r, 1000)}): +4 levels`, needsMon: 'alive', monFilter: canLevel, botMon: 'best', cond: r => canPay(r, 1000) && anyCanLevel(r), ai: r => (r.money > cost(r, 1000) + 600 ? 0.7 : -1), run: (r, rng, mon) => { pay(r, 1000); const ev = lvUp(r, mon, 4); return { text: grewText(mon, ev), levelEvents: [ev] }; } },
       { label: 'Take the EGG', mon: 'gift', ai: r => roomAi(r) * 0.8, run: (r, rng) => {
         const sp = rng.chance(0.1) ? rng.pick(['DRATINI', 'LARVITAR', 'BAGON']) : rng.pick(['PICHU', 'CLEFFA', 'IGGLYBUFF', 'TOGEPI', 'TYROGUE', 'SMOOCHUM', 'ELEKID', 'MAGBY', 'AZURILL'].filter(s => D.species[s]));
         return { text: `The EGG hatched into ${speciesName(sp)}!`, newMon: makeMon(sp, Math.max(5, lvl(r, -3)), { rng, minIV: 15, caughtAct: act(r) }) };
@@ -544,7 +549,7 @@ const KANTO = [
         const extra = r.nuzlocke ? { rewardRelicW: W.uncommon } : { rewardMons: ['HITMONLEE', 'HITMONCHAN'].map(sp => gift(r, rng, sp, 2, 20)) };
         return { text: 'KARATE MASTER: Hwaaah! Prepare yourself!', battle: eliteFight(r, rng, [master], extra) };
       } },
-      { label: 'Train with the disciples (lead +3 Lv, all -20% HP)', ai: r => 0.8 - hpAi(r, 0.2), run: (r) => { hurt(r, 0.2); const lead = alive(r)[0]; return { text: `${lead ? monName(lead) : 'Your lead'} trained hard!`, levelEvents: lead ? [{ mon: lead, events: addLevels(lead, 3) }] : [] }; } },
+      { label: 'Train with the disciples (lead +3 Lv, all -20% HP)', ai: r => 0.8 - hpAi(r, 0.2), run: (r) => { hurt(r, 0.2); const lead = alive(r)[0]; return { text: `${lead ? monName(lead) : 'Your lead'} trained hard!`, levelEvents: lead ? [lvUp(r, lead, 3)] : [] }; } },
       LEAVE('Bow and leave', 'KARATE MASTER: Hmph. Come back when you are ready.'),
     ],
   }),
@@ -596,7 +601,7 @@ const KANTO = [
     id: 'mansion', title: "MANSION: MEW'S JOURNAL", npc: null, item: 'secret_key', weight: 1, music: 'mus_poke_mansion',
     text: 'A diary in the burned-out POKéMON MANSION: "July 5. We named the newly discovered POKéMON MEW..." Beyond it, a sealed lab.',
     choices: [
-      { label: r => `Fund the research (pay $${Math.floor(r.money / 2)}): all +2 levels`, cond: r => r.money >= 600, ai: r => (r.money > 2000 ? 1.4 : 0.4), run: (r) => { const n = Math.floor(r.money / 2); r.money -= n; flags(r).mewJournal = 'funded'; return { text: `You paid $${n}. The research notes make your whole team stronger!`, levelEvents: r.party.filter(m => !isFainted(m)).map(m => ({ mon: m, events: addLevels(m, 2) })) }; } },
+      { label: r => `Fund the research (pay $${Math.floor(r.money / 2)}): all +2 levels`, cond: r => r.money >= 600, ai: r => (r.money > 2000 ? 1.4 : 0.4), run: (r) => { const n = Math.floor(r.money / 2); r.money -= n; flags(r).mewJournal = 'funded'; return { text: `You paid $${n}. The research notes make your whole team stronger!`, levelEvents: r.party.filter(m => !isFainted(m)).map(m => lvUp(r, m, 2)) }; } },
       { label: 'Open the sealed lab (elite: 1 of 3 rare items)', solo: true, minFloor: 4, ai: r => fightAi(r, 1.7, 0.8), run: (r, rng) => ({ text: "The lab's experiments break loose!", battle: eliteFight(r, rng, [...trainersLike(/^SCIENTIST_/), ...trainersLike(/^BURGLAR_/)], { rewardRelicW: W.rare }) }) },
       { label: 'Recreate the experiment (upgrades + curse)', curse: 'HEX_LETTER', ai: r => r.party.reduce((a, m) => a + (bestUpgrade(m, powerCap(r)) ? 0.35 : 0), 0) - curseAi, tip: 'Every POKéMON upgrades its best move. A HEX LETTER (curse: -1 discard, foes +5% damage) seals the deal.',
         run: (r) => { const ups = []; for (const m of r.party) { const b = bestUpgrade(m, powerCap(r)); if (b) { const from = m.moves[b.index].move; upgradeMove(m, b.index, powerCap(r)); ups.push(`${moveName(from)} -> ${moveName(b.into)}`); } } const c = addCurse(r, 'HEX_LETTER'); return { text: (ups.length ? `Upgraded: ${ups.slice(0, 3).join(', ')}${ups.length > 3 ? '...' : ''}.` : 'Nothing could be upgraded.') + (c ? CURSE_TEXT(c) : ''), curse: c }; } },
@@ -693,7 +698,7 @@ const KANTO = [
     text: 'OLD WOMAN: My husband found an EGG! A strong one, I think. Or shall we raise one of yours?',
     choices: [
       { label: 'Take the EGG', mon: 'gift', ai: r => roomAi(r) * 1.2, run: (r, rng) => { const sp = rng.pick(['LARVITAR', 'DRATINI', 'BAGON', 'BELDUM']); return { text: `The EGG hatched into ${speciesName(sp)}!`, newMon: gift(r, rng, sp, -5, 20) }; } },
-      { label: r => `Train a POKéMON ($${cost(r, 2000)}): +5 levels`, needsMon: 'alive', botMon: 'best', cond: r => canPay(r, 2000), ai: () => 0.9, run: (r, rng, mon) => { pay(r, 2000); return { text: `${monName(mon)} grew 5 levels!`, levelEvents: [{ mon, events: addLevels(mon, 5) }] }; } },
+      { label: r => `Train a POKéMON ($${cost(r, 2000)}): +5 levels`, needsMon: 'alive', monFilter: canLevel, botMon: 'best', cond: r => canPay(r, 2000) && anyCanLevel(r), ai: () => 0.9, run: (r, rng, mon) => { pay(r, 2000); const ev = lvUp(r, mon, 5); return { text: grewText(mon, ev), levelEvents: [ev] }; } },
       LEAVE(),
     ],
   }),
@@ -1071,7 +1076,7 @@ const HOENN = [
     text: 'A small POKéMON wakes from its thousand-year sleep. "Make a wish..."',
     choices: [
       { label: 'Wish for treasure (1 of 3 rare items)', ai: () => 1.5, run: (r, rng) => ({ text: 'JIRACHI: Granted!', relicChoices: relics(r, rng, 3, W.rare) }) },
-      { label: 'Wish for strength (all +3 levels)', ai: () => 1.4, run: (r) => ({ text: 'JIRACHI: Granted! Your team grows stronger!', levelEvents: alive(r).map(m => ({ mon: m, events: addLevels(m, 3) })) }) },
+      { label: 'Wish for strength (all +3 levels)', ai: () => 1.4, run: (r) => ({ text: 'JIRACHI: Granted! Your team grows stronger!', levelEvents: alive(r).map(m => lvUp(r, m, 3)) }) },
       { label: 'Wish for rest (full heal + 2 vitamins)', ai: r => 0.9 + (1 - teamHp(r)), run: (r, rng) => { healAll(r, 1, true); return { text: 'JIRACHI: Granted! Sleep well... Pick your vitamins.', itemChoices: { ...vitaminChoice(r, rng, 3), picks: 2 } }; } },
     ],
   }),
@@ -1417,7 +1422,7 @@ const JOHTO = [
         const extra = r.nuzlocke ? { rewardRelicW: W.uncommon } : { rewardMons: [gift(r, rng, 'TYROGUE', 2, 25), gift(r, rng, 'HITMONTOP', -1, 20)] };
         return { text: 'KIYO: Hwaaah! Show me your spirit!', battle: eliteFight(r, rng, [kiyo], extra) };
       } },
-      { label: 'Train with him (lead +3 Lv, all -20% HP)', ai: r => 0.8 - hpAi(r, 0.2), run: (r) => { hurt(r, 0.2); const lead = alive(r)[0]; return { text: `${lead ? monName(lead) : 'Your lead'} trained under the KARATE KING!`, levelEvents: lead ? [{ mon: lead, events: addLevels(lead, 3) }] : [] }; } },
+      { label: 'Train with him (lead +3 Lv, all -20% HP)', ai: r => 0.8 - hpAi(r, 0.2), run: (r) => { hurt(r, 0.2); const lead = alive(r)[0]; return { text: `${lead ? monName(lead) : 'Your lead'} trained under the KARATE KING!`, levelEvents: lead ? [lvUp(r, lead, 3)] : [] }; } },
       LEAVE('Bow and leave', 'KIYO: Come back when you are ready.'),
     ],
   }),
@@ -1465,7 +1470,7 @@ const JOHTO = [
     choices: [
       { label: 'Gather the SACRED ASH (revive all + full heal)', ai: r => (r.party.some(isFainted) ? 2 : (1 - teamHp(r)) * 2), run: (r) => { for (const m of r.party) { m.hp = maxHp(m); m.status = null; } return { text: 'The ash shimmered and your whole team rose, good as new!' }; } },
       { label: 'Take the RAINBOW WING (1 of 3 rare items + curse)', curse: 'HEX_LETTER', ai: () => 1.5 - curseAi, tip: 'A HEX LETTER (curse: -1 discard, foes +5% damage) comes with it.', run: (r, rng) => { const c = addCurse(r, 'HEX_LETTER'); return { text: 'The feather burns with seven colors.' + (c ? CURSE_TEXT(c) : ''), relicChoices: relics(r, rng, 3, W.rare), curse: c }; } },
-      { label: 'Ring the bells (all +2 levels)', ai: () => 1.1, run: (r) => ({ text: 'The bells rang out over ECRUTEAK. Your team feels stronger!', levelEvents: alive(r).map(m => ({ mon: m, events: addLevels(m, 2) })) }) },
+      { label: 'Ring the bells (all +2 levels)', ai: () => 1.1, run: (r) => ({ text: 'The bells rang out over ECRUTEAK. Your team feels stronger!', levelEvents: alive(r).map(m => lvUp(r, m, 2)) }) },
     ],
   }),
   J([4], {
