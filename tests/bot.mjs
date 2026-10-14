@@ -635,6 +635,24 @@ function playMeasured(b, run, best) {
   return evs;
 }
 
+// The pre-fight lead: the POKéMON that deals the most damage to the first foe before it would go down (its deck's
+// damage per card x the turns it survives the foe's strongest move), not just the best deck matchup: a fresh Lv4
+// catch with a good type matchup used to lead against a Lv6 foe and die (NUZLOCKE: released for good).
+function leadPick(b, run, healthy) {
+  const e = b.enemies?.[0];
+  if (!e) return healthy.sort((x, y) => matchup(b, y) - matchup(b, x))[0];
+  const moves = (e.moves || []).map(k => b.moveData(k)).filter(m => m && (m.power > 0));
+  const score = (m) => {
+    let hit = 1;
+    for (const mv of moves) hit = Math.max(hit, previewDamage(b, mv, e, m, 0.925));
+    const turns = Math.min(6, m.hp / hit);
+    return matchup(b, m) * (turns < 1 ? 0.3 : turns) * (run.nuzlocke && turns < 2 ? 0.5 : 1);
+  };
+  let best = null, bs = -Infinity;
+  for (const m of healthy) { const s = score(m); if (s > bs + 1e-9) { bs = s; best = m; } }
+  return best;
+}
+
 // FIGHTLOG=file: one record per fight (pathing analysis), written at exit.
 const FIGHTLOG = process.env.FIGHTLOG ? [] : null;
 if (FIGHTLOG) process.on('exit', () => { fs.writeFileSync(process.env.FIGHTLOG, JSON.stringify(FIGHTLOG)); });
@@ -646,7 +664,7 @@ export function fight(run, cfg, skill, stats) {
   // Lead with the healthy POKéMON whose deck fits this fight best (the map screen lets you set the lead).
   const healthy = run.party.filter(m => !isFainted(m) && m.hp / maxHp(m) > 0.4);
   if (healthy.length) {
-    let pick = skill === 'smart' ? healthy.sort((x, y) => matchup(b, y) - matchup(b, x))[0] : healthy.sort((x, y) => y.level - x.level)[0];
+    let pick = skill === 'smart' ? (modern(b) && !BOTX.has('oldlead') ? leadPick(b, run, healthy) : healthy.sort((x, y) => matchup(b, y) - matchup(b, x))[0]) : healthy.sort((x, y) => y.level - x.level)[0];
     if (skill === 'smart' && BOT_OPTS.rotate) {
       const top = Math.max(...run.party.map(m => m.level)), foe = Math.max(...cfg.enemies.map(x => x.level));
       const easy = cfg.kind === 'wild' || (cfg.kind === 'trainer' && !cfg.rival && top - foe >= 3);
@@ -965,6 +983,7 @@ const KIND_RISK = { wild: 0.035, trainer: 0.12, elite: 0.24, rival: 0.3, boss: 0
 const KIND_COST = { wild: 0.1, trainer: 0.16, elite: 0.28, rival: 0.3, boss: 0.25, legend: 0.35 };
 const KIND_FOE = { wild: 0, trainer: 1, elite: 2, rival: 1, legend: 3 };
 const KIND_EXP = { wild: 0.45, trainer: 0.7, elite: 1.0, rival: 1.0, legend: 1.4 };
+const PV = { grow: +(process.env.PV_GROW ?? 0.5), event: +(process.env.PV_EVENT ?? 0.1), exp: +(process.env.PV_EXP ?? 1), lvl: +(process.env.PV_LVL ?? 0) }; // (tuning knobs)
 // Strength-weighted HP (the carry's HP matters most) and the top level of the standing POKéMON.
 export function teamState(run) {
   let w = 0, h = 0, top = 0, alive = 0;
@@ -1005,7 +1024,7 @@ function pathValue(run, id, s, depth) {
     const costF = Math.pow(2, -(gap - 1) * 0.35);
     hp = Math.max(0.05, hp - KIND_COST[t] * costF + TUNING.postBattleHeal + (run.mods().postHeal || 0));
     if (hp < 0.35 && pots) { hp += 0.3; pots--; }
-    top += (KIND_EXP[t] || 0) * Math.pow(2, -Math.max(-2, gap) / 2.5);
+    top += PV.exp * (KIND_EXP[t] || 0) * Math.pow(2, -Math.max(-2, gap) / 2.5);
     if (t === 'wild') {
       const canCatch = run.totalBalls() > 0 && (!run.nuzlocke || firstWild) && run.party.length < 6;
       if (canCatch) { pw += run.party.length <= 1 ? 0.5 : run.party.length <= 2 ? 0.3 : 0.1; alive++; }
@@ -1021,7 +1040,7 @@ function pathValue(run, id, s, depth) {
     if (hp < 0.85 || alive < run.party.length) { hp = 1; alive = run.party.length; }
     else top += 3;
   } else if (t === 'treasure') { pw += 0.35; pots = Math.min(3, pots + 0.4); }
-  else if (t === 'event') { pw += 0.35; hp = Math.min(1, hp + 0.06); }
+  else if (t === 'event') { pw += PV.event; hp = Math.min(1, hp + 0.06); }
   else if (t === 'mart') { if (money >= 700) { pots = Math.min(3, pots + Math.min(2, Math.floor(money / 900))); pw += money >= 2500 ? 0.4 : 0.1; money = Math.min(money, 300); } }
   const ns = { hp, top, pw, money, alive, firstWild, pots };
   if (depth <= 1 || !n.next.length) {
@@ -1030,8 +1049,8 @@ function pathValue(run, id, s, depth) {
     const F = run.map.floors;
     const rf = rivalFloorOf(run.act);
     let h2 = hp;
-    if (run.act.rival && n.floor < rf) { const g = top + pw + 0.5 * (rf - n.floor) - foeLevel(run, 'rival', rf); q *= 1 - fightRisk(run, 'rival', h2, g, alive, pots); }
-    if (n.type !== 'boss') { const g = top + pw + 0.5 * (F - n.floor) - foeLevel(run, 'boss', F); q *= 1 - fightRisk(run, 'boss', 1, g, alive, pots); }
+    if (run.act.rival && n.floor < rf) { const g = top + pw + PV.grow * (rf - n.floor) - foeLevel(run, 'rival', rf); q *= 1 - fightRisk(run, 'rival', h2, g, alive, pots); }
+    if (n.type !== 'boss') { const g = top + pw + PV.grow * (F - n.floor) - foeLevel(run, 'boss', F); q *= 1 - fightRisk(run, 'boss', 1, g, alive, pots); }
     return p * q * (1 + 0.15 * pw + 0.1 * hp);
   }
   let best = 0;
@@ -1203,7 +1222,20 @@ export function pickEventChoice(run, list, skill) {
   if (!ok.length) return null;
   if (skill !== 'smart') return ok[0];
   let best = ok[0], bv = -Infinity;
-  for (const c of ok) { const v = c.ai ? c.ai(run) : 0; if (v > bv + 1e-9) { bv = v; best = c; } }
+  // fight choices (an elite / boss battle for a prize): the events' ai() hints only check the team's HP, so the bot
+  // weighs in its own chance to lose such a fight (which costs the run, or a POKéMON under NUZLOCKE)
+  let risk = null;
+  const fightRiskNow = () => {
+    if (risk !== null) return risk;
+    if (typeof run.capLevel !== 'function') return (risk = 0); // (frozen co-op engines)
+    const st = teamState(run);
+    return (risk = fightRisk(run, 'elite', st.hp, st.top - foeLevel(run, 'elite', run.floor), st.alive, st.pots));
+  };
+  for (const c of ok) {
+    let v = c.ai ? c.ai(run) : 0;
+    if (!BOTX.has('oldevents') && /\b(fight|battle|challenge)\b/i.test(String(choiceLabel(c, run)))) v -= fightRiskNow() * (run.nuzlocke ? 5 : 4);
+    if (v > bv + 1e-9) { bv = v; best = c; }
+  }
   return best;
 }
 
