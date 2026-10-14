@@ -15,6 +15,7 @@ import { chooseHand } from './bot.mjs';
 import { coopRunPayload } from '../web/src/net/cloud.js';
 import { recordCoopDex, coopDex, mergeDexLists } from '../web/src/game/coop/dex.js';
 import { snapshotGame, restoreGame } from '../web/src/game/coop/snapshot.js';
+import { CURRENT } from '../web/src/game/coop/engines.js';
 
 await loadData(async f => JSON.parse(fs.readFileSync('web/assets/data/' + f, 'utf8')));
 let pass = 0, fail = 0;
@@ -1435,6 +1436,250 @@ t('co-op A10: every run shares the second ELITE FOUR, full heal before it, check
   g.gauntletBreak(n + 1);
   assert.ok(g.runs.every(r => r.party[0].hp === 0), 'a fainted POKéMON stays down on a normal break');
 });
+
+// ------------------------------------------------------------------------------------ v0.5.14: NUZLOCKE in co-op
+{
+const NZ = (seed, extra = {}) => ({ ...INIT(seed), ascension: 8, ...extra });
+// A NUZLOCKE game sitting in a battle of the given node type.
+function nuzInBattle(type, seed0 = 'NZB', n = 2) {
+  for (let i = 0; i < 200; i++) {
+    const starters = ['BULBASAUR', 'CHARMANDER', 'SQUIRTLE', 'PIKACHU'].slice(0, n);
+    const g = CoopGame.fromInit({ ...NZ(seed0 + i), starters, names: starters.map((_, p) => 'P' + p), nuzlocke: true });
+    const id = g.reachable().find(k => g.world.map.nodes[k].type === type);
+    if (!id) continue;
+    for (let p = 0; p < n && g.phase === 'map'; p++) post(g, { p, type: 'vote', node: id });
+    if (g.phase === 'battle') return g;
+  }
+  throw new Error('no ' + type + ' start node');
+}
+// Knock out every POKéMON of player p (through the battle's faint handling).
+function wipeOut(d, p) {
+  const s = d.subs[p];
+  for (const m of s.run.party) if (m.uid !== s.leadUid && m.hp > 0) { m.hp = 0; s.afterPlayerFaint(m); }
+  const lead = s.lead();
+  if (lead && lead.hp > 0) { s.damagePlayer(lead, lead.hp); s.checkLeadFaint(); }
+}
+// The players still standing finish the fight (the foes are left at 1-3 HP first).
+function winWith(g, ps) {
+  const d = g.battle;
+  for (const e of d.enemies) e.hp = Math.min(e.hp, 2);
+  let guard = 0;
+  while (g.phase === 'battle' && guard++ < 60) {
+    for (const p of ps) {
+      if (g.phase !== 'battle' || d.down[p] || d.locks[p]) continue;
+      const slot = d.field[0] !== null ? 0 : 1;
+      const ids = bestHand(d, p, slot);
+      post(g, ids ? { p, type: 'lock', ids, target: slot } : { p, type: 'lock', pass: true });
+    }
+  }
+}
+
+t('nuzlocke: an old room (no init.nuzlocke) at A8 keeps co-op without NUZLOCKE, its state shape unchanged', () => {
+  const g = CoopGame.fromInit(NZ('NZOLD'));
+  assert.equal(g.nuzlocke, false);
+  for (const r of g.runs) { assert.equal(r.nuzlocke, false); assert.ok(!('coopNuzlocke' in r), 'no new run key'); }
+  const dg = g.digest();
+  assert.ok(!('nuz' in dg) && !('wiped' in dg));
+  const s = snapshotGame(g);
+  assert.ok(!('nuzlocke' in s) && !('wiped' in s), 'old-shaped checkpoint');
+  // a checkpoint from before v0.5.14 (no nuzlocke / wiped keys) restores with the rule off and nobody out
+  const r = restoreGame(JSON.parse(JSON.stringify(s)), CURRENT);
+  assert.equal(r.nuzlocke, false);
+  assert.deepEqual(r.wiped, [false, false]);
+  assert.equal(r.checksum(), g.checksum());
+  // solo is untouched: A8 = NUZLOCKE, A7 not
+  assert.equal(Run.create({ starter: 'CHARMANDER', ascension: 8, seed: 'S8' }).nuzlocke, true);
+  assert.equal(Run.create({ starter: 'CHARMANDER', ascension: 7, seed: 'S7' }).nuzlocke, false);
+});
+
+t('nuzlocke: init.nuzlocke turns the rule on for every player at any ascension', () => {
+  const g = CoopGame.fromInit({ ...INIT('NZON'), nuzlocke: true });
+  assert.equal(g.ascension, 0);
+  assert.ok(g.nuzlocke && g.runs.every(r => r.nuzlocke));
+  // a posted private run can't drop the rule (mirror() puts it back)
+  const snap = g.snapshotRun(g.privateRunClone(0));
+  delete snap.coopNuzlocke;
+  g.phase = 'private'; g.private = { kind: 'center', node: g.world.nodeId, done: [false, false] };
+  assert.equal(post(g, { p: 0, type: 'privateDone', run: snap }), true);
+  assert.equal(g.runs[0].nuzlocke, true);
+  // only a literal true counts
+  assert.equal(CoopGame.fromInit({ ...INIT('NZSTR'), nuzlocke: 'yes' }).nuzlocke, false);
+});
+
+t('nuzlocke: a POKéMON that faints is released when the room wins; the reward screen lists it', () => {
+  const g = nuzInBattle('trainer', 'NZR');
+  const d = g.battle, s0 = d.subs[0];
+  const r0 = g.runs[0];
+  // give player 0 a second POKéMON so they stay in after losing the first
+  const extra = Run.create({ starter: 'SQUIRTLE', seed: 'X' }).party[0];
+  extra.uid = 77777; r0.party.push(extra);
+  const lead = s0.lead();
+  s0.damagePlayer(lead, lead.hp);
+  s0.checkLeadFaint();
+  const ev = g.battle.events.concat(g.lastEvents || []);
+  assert.ok(lead.lost, 'marked lost');
+  assert.ok(d.takeEvents().some(e => e.t === 'nuzlocke' && e.uid === lead.uid && e.p === 0) || ev.some(e => e.t === 'nuzlocke'), 'nuzlocke battle event');
+  // a REVIVE can't bring it back
+  r0.consumables.push('REVIVE');
+  g.runs[1].consumables.push('REVIVE');
+  assert.equal(post(g, { p: 1, type: 'item', key: 'REVIVE', uid: lead.uid, toP: 0 }), false, 'no revive on a released POKéMON');
+  winWith(g, [0, 1]);
+  assert.equal(g.phase, 'private', 'reward phase');
+  assert.ok(!r0.party.some(m => m.uid === lead.uid), 'gone from the party');
+  assert.ok(r0.party.length >= 1);
+  assert.ok((r0.released || []).length === 1);
+  const rel = g.events.find(e => e.t === 'released' && e.p === 0);
+  assert.deepEqual(rel?.mons, [lead.species]);
+  assert.ok(!g.events.some(e => e.t === 'wiped'));
+  // the reward screen (run.afterBattle on the private clone) still shows who was released
+  const clone = g.privateRunClone(0);
+  const view = Object.create(g.battleSubs[0]); view.result = { ...g.battleSubs[0].result };
+  const res = clone.afterBattle(view);
+  assert.equal(res.released.length, 1);
+  assert.equal(res.released[0].uid, lead.uid);
+});
+
+t('nuzlocke: a player whose whole team falls is OUT (no revive), the partner carries on alone, the out player only watches', () => {
+  const g = nuzInBattle('trainer', 'NZW');
+  const d = g.battle;
+  wipeOut(d, 1);
+  assert.equal(d.down[1], true);
+  winWith(g, [0]);
+  assert.notEqual(g.phase, 'battle');
+  assert.notEqual(g.phase, 'over', 'the run goes on');
+  assert.deepEqual(g.runs[1].party, [], 'every POKéMON released');
+  assert.deepEqual(g.wiped, [false, true]);
+  assert.equal(g.away[1], true);
+  assert.ok(g.events.some(e => e.t === 'wiped' && e.p === 1));
+  assert.ok(!g.events.some(e => e.t === 'revive' && e.p === 1), 'no revive toast');
+  assert.ok(g.digest().wiped, 'in the checksum');
+  // the reward phase is already done for them
+  if (g.phase === 'private') {
+    assert.equal(g.private.done[1], true);
+    assert.equal(post(g, { p: 1, type: 'privateDone', run: g.snapshotRun(g.privateRunClone(0)) }), false);
+    post(g, { p: 0, type: 'privateDone', run: g.snapshotRun(g.privateRunClone(0)) });
+  }
+  assert.equal(g.phase, 'map');
+  // they can't vote, come back, or be "sat back in"
+  const node = g.reachable()[0];
+  assert.equal(post(g, { p: 1, type: 'vote', node }), false);
+  assert.equal(post(g, { p: 1, type: 'away', target: 1, away: false }), false);
+  assert.equal(post(g, { p: 0, type: 'away', target: 1, away: false }), false);
+  assert.equal(g.away[1], true);
+  // the survivor's vote alone moves the room, and the next battle is fought without P2 (no lead, never targeted)
+  const battleNode = g.reachable().find(k => ['wild', 'trainer'].includes(g.world.map.nodes[k].type)) ?? node;
+  assert.equal(post(g, { p: 0, type: 'vote', node: battleNode }), true);
+  assert.equal(g.world.nodeId, battleNode);
+  if (g.phase === 'battle') {
+    assert.equal(g.battle.away[1], true);
+    assert.equal(g.battle.subs[1].leadUid, null);
+    assert.ok(g.battle.intents.every(it => !it || it.target === 0), 'foes only aim at the survivor');
+    assert.equal(post(g, { p: 1, type: 'lock', pass: true }), false);
+  }
+});
+
+t('nuzlocke: everyone out = the run is lost; a mythic soft loss releases nobody', () => {
+  const g = nuzInBattle('trainer', 'NZALL');
+  wipeOut(g.battle, 0);
+  wipeOut(g.battle, 1);
+  assert.equal(g.battle.result?.outcome, 'lose');
+  g.afterBattle();
+  assert.equal(g.phase, 'over');
+  // (Run.softLoss, NUZLOCKE too: a lost mythic fight throws the team out, nobody is released)
+  const r = Run.create({ starter: 'CHARMANDER', seed: 'SL', coop: true, nuzlocke: true });
+  r.party[0].lost = true; r.party[0].hp = 0;
+  r.softLoss({ preHp: { [r.party[0].uid]: 20 }, enemies: [] });
+  assert.ok(!r.party[0].lost && r.party[0].hp > 0);
+});
+
+t('nuzlocke: each player catches only in their act\'s first wild battle', () => {
+  const g = nuzInBattle('wild', 'NZC');
+  const d = g.battle;
+  for (const s of d.subs) assert.equal(s.cfg.nuzFirst, true, 'first wild battle of the act: catch allowed');
+  for (const r of g.runs) assert.equal(r.nuzEnc[String(g.world.actIndex)], g.world.nodeId);
+  // a later wild battle in the same act: no balls (per player: P1 used the act's catch at an event)
+  const g2 = nuzInBattle('wild', 'NZC2');
+  const d2 = g2.battle;
+  assert.equal(d2.subs[0].cfg.nuzFirst, true);
+  // simulate a second wild battle: the act's catch is claimed by an earlier node
+  for (const r of g2.runs) r.nuzEnc = { [String(g2.world.actIndex)]: 'other' };
+  g2.startBattle(duoConfig(g2.world, g2.world.map.nodes[g2.world.nodeId], 2));
+  const d3 = g2.battle;
+  for (const s of d3.subs) { assert.equal(s.cfg.nuzFirst, false); assert.equal(s.canCatch(), false); assert.match(s.catchBlockReason(), /NUZLOCKE/); }
+  g2.runs[0].balls.POKE_BALL = 5;
+  const slot = d3.field[0] !== null ? 0 : 1;
+  assert.equal(post(g2, { p: 0, type: 'lock', ball: 'POKE_BALL', target: slot }), false, 'ball refused');
+  // per player: P2 still has the act's catch, P1 used it (e.g. an event catch)
+  g2.runs[0].nuzEnc = { [String(g2.world.actIndex)]: 'event:x' };
+  g2.runs[1].nuzEnc = {};
+  g2.startBattle(duoConfig(g2.world, g2.world.map.nodes[g2.world.nodeId], 2));
+  assert.equal(g2.battle.subs[0].cfg.nuzFirst, false);
+  assert.equal(g2.battle.subs[1].cfg.nuzFirst, true);
+  g2.runs[1].balls.POKE_BALL = 5;
+  const sl = g2.battle.field[0] !== null ? 0 : 1;
+  for (const e of g2.battle.enemies) e.hp = 1;
+  assert.equal(post(g2, { p: 1, type: 'lock', ball: 'POKE_BALL', target: sl }), true, 'P2 may throw');
+});
+
+t('nuzlocke: an ESCAPE ROPE with a downed player gets nobody back up; the fallen are released', () => {
+  const g = nuzInBattle('trainer', 'NZE');
+  const d = g.battle;
+  wipeOut(d, 1);
+  g.runs[0].consumables.push('ESCAPE_ROPE');
+  assert.equal(post(g, { p: 0, type: 'item', key: 'ESCAPE_ROPE' }), true);
+  assert.equal(g.phase, 'map');
+  assert.deepEqual(g.runs[1].party, []);
+  assert.equal(g.wiped[1], true);
+});
+
+t('nuzlocke: 3 players, one out: battles scale to the two left, votes need only them', () => {
+  const g = nuzInBattle('trainer', 'NZ3', 3);
+  wipeOut(g.battle, 2);
+  winWith(g, [0, 1]);
+  if (g.phase === 'private') for (const p of [0, 1]) post(g, { p, type: 'privateDone', run: g.snapshotRun(g.privateRunClone(p)) });
+  assert.equal(g.phase, 'map');
+  assert.deepEqual(g.wiped, [false, false, true]);
+  assert.equal(g.activeCount(), 2);
+  // P3 can't be sat out / back (already out), and sitting out P2 would leave one: refused
+  assert.equal(post(g, { p: 0, type: 'away', target: 1, away: true }), false);
+  const node = g.reachable().find(k => g.world.map.nodes[k].type === 'trainer') ?? g.reachable()[0];
+  post(g, { p: 0, type: 'vote', node });
+  assert.equal(g.world.nodeId === node || g.phase === 'map', true);
+  post(g, { p: 1, type: 'vote', node });
+  assert.equal(g.world.nodeId, node);
+});
+
+t('nuzlocke: bot runs replay to identical checksums, and checkpoints (also after a player is out) restore exactly', () => {
+  let sawWipe = 0, points = 0;
+  for (const [seed, n, asc] of [['NZD1', 2, 0], ['NZD2', 3, 0], ['NZD3', 2, 8], ['NZD4', 4, 2]]) {
+    const starters = ['BULBASAUR', 'CHARMANDER', 'SQUIRTLE', 'PIKACHU'].slice(0, n);
+    const cks = [];
+    const { game, log } = playCoop({ seed, starters, ascension: asc, nuzlocke: true, maxActions: 4000, onAction: (a, ok, g) => cks.push(g.checksum()) });
+    assert.ok(!game.lastError, game.lastError);
+    assert.ok(log[0].nuzlocke === true && game.nuzlocke);
+    const b = new CoopGame();
+    for (let i = 0; i < log.length; i++) {
+      b.apply(JSON.parse(JSON.stringify(log[i])));
+      assert.equal(b.checksum(), cks[i], `${seed}: checksum differs after seq ${log[i].seq} (${log[i].type})`);
+      if (b.phase !== 'map' || !b.world || !b.runs.every(Boolean)) continue;
+      const r = restoreGame(JSON.parse(JSON.stringify(snapshotGame(b))), CURRENT);
+      assert.equal(r.checksum(), b.checksum(), `${seed}: restore at #${b.seq}`);
+      assert.equal(r.nuzlocke, true);
+      assert.deepEqual(r.wiped, b.wiped);
+      if (b.wiped.some(Boolean)) {
+        sawWipe++;
+        assert.deepEqual(r.away.map((a, q) => a || !b.wiped[q]), r.away.map(() => true));
+        for (let k = i + 1; k < Math.min(log.length, i + 40); k++) { r.apply(JSON.parse(JSON.stringify(log[k]))); assert.equal(r.checksum(), cks[k], `${seed}: restored game drifts at #${log[k].seq}`); }
+      }
+      points++;
+    }
+    assert.ok(game.runs.every(r => r.nuzlocke));
+    assert.ok(game.events.filter(e => e.t === 'released').every(e => Array.isArray(e.mons) && e.mons.length));
+  }
+  assert.ok(points > 10, 'safe points checked: ' + points);
+  assert.ok(sawWipe > 0, 'some run had a player out');
+});
+}
 
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

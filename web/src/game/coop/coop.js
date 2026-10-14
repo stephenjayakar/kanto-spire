@@ -208,6 +208,8 @@ export class CoopGame {
     this.names = ['P1', 'P2'];
     this.away = [false, false];  // players who left (sat out by the others): skipped by votes, battles, private phases
     this.sitOut = null;          // (v0.5.6) the players sitting out this mythic fight (by choice), or null
+    this.nuzlocke = false;       // (v0.5.14) a NUZLOCKE room (the host's lobby option: init.nuzlocke)
+    this.wiped = [false, false]; // (v0.5.14, NUZLOCKE) players whose whole team was released: out for good (also away)
   }
 
   get n() { return this.runs.length; }
@@ -236,6 +238,7 @@ export class CoopGame {
     if (this.phase === 'init' || this.phase === 'over' || this.phase === 'victory') return false;
     if (!this.inGame(p)) return false;
     if (a.type === 'champ') return this.setChamp(); // (bookkeeping: never brings a sat-out player back)
+    if (this.wiped?.[p]) return false; // (NUZLOCKE: a player with no POKéMON left only watches)
     // anything a sat-out player does brings them back in
     if (this.away[p] && a.type !== 'away') this.setAway(p, false);
     switch (a.type) {
@@ -271,17 +274,20 @@ export class CoopGame {
     this.names = starters.map((_, p) => String(a.names?.[p] ?? `P${p + 1}`));
     this.starters = starters;
     this.rng = new RNG(this.seed + ':coop');
-    // (coop: true turns off the Nuzlocke ascension rules, see Run.nuzlocke)
+    // (coop: true turns off the ascension's Nuzlocke rules; a NUZLOCKE room, v0.5.14, turns them on for every player at
+    // any ascension: init.nuzlocke === true, absent in older rooms; see Run.nuzlocke)
+    this.nuzlocke = a.nuzlocke === true;
     // (the region draw comes from the shared seed; both players' runs copy it, and the rival follows P1's starter)
     this.world = Run.create({ starter: starters[0], ascension: this.ascension, seed: this.seed, world: this.worldName, coop: true, pool });
     this.runs = starters.map((st, p) => {
-      const r = Run.create({ starter: st, ascension: this.ascension, seed: `${this.seed}:p${p}`, world: this.worldName, coop: true, regions: this.world.regions, rival: this.world.rival, summit2: this.world.summit2 ?? null });
+      const r = Run.create({ starter: st, ascension: this.ascension, seed: `${this.seed}:p${p}`, world: this.worldName, coop: true, regions: this.world.regions, rival: this.world.rival, summit2: this.world.summit2 ?? null, nuzlocke: this.nuzlocke });
       r.playerName = this.names[p];
       return r;
     });
     this.votes = starters.map(() => null);
     this.down = starters.map(() => false);
     this.away = starters.map(() => false);
+    this.wiped = starters.map(() => false);
     // (v0.3.25) A room with HOENN acts was opened by a player who has beaten a CHAMPION (regions.js coopWorldFor): the
     // CERULEAN CAVE mythic can show up. Any other player who has posts a 'champ' action (setChamp).
     if ((COOP_POOLS[a.world] || []).length > 1) this.world.flags.champ = true;
@@ -312,6 +318,7 @@ export class CoopGame {
       r.ascension = this.ascension; r.world = this.worldName;
       if (w.regions) { r.regions = w.regions; r.rival = w.rival; }
       if (w.summit2) r.summit2 = w.summit2; // (A10's second ELITE FOUR: the room's draw)
+      if (this.nuzlocke) r.coopNuzlocke = true; // (the room's rule, whatever a posted private run says)
     }
   }
 
@@ -350,6 +357,7 @@ export class CoopGame {
   // A player left: the others carry on without them (they come back with their next action).
   setAway(q, away, by = q) {
     if (!this.inGame(q) || this.away[q] === away) return false;
+    if (this.wiped?.[q]) return false; // (NUZLOCKE: out for good, never back)
     if (away && by === q) return false; // (you can't sit yourself out: just stop playing)
     if (away && this.away.filter(x => !x).length <= 2) return false; // at least two keep playing (co-op stays co-op)
     this.away[q] = away;
@@ -409,8 +417,11 @@ export class CoopGame {
     // The shared event is fixed when the phase opens (a partner who finishes first changes their run's
     // seenEvents). It's derived state, kept out of digest() so clients on the old rule don't desync; a reload
     // replays the log and gets the same pick.
-    if (kind === 'event') this.sharedEvent = { act: this.world.actIndex, node: this.world.nodeId, id: sharedEventId(this.world, this.runs, this.seed) };
+    if (kind === 'event') this.sharedEvent = { act: this.world.actIndex, node: this.world.nodeId, id: sharedEventId(this.world, this.playingRuns(), this.seed) };
   }
+
+  // The runs of the players still in the game: all of them, except (NUZLOCKE) the ones whose whole team was released.
+  playingRuns() { return this.wiped?.some(Boolean) ? this.runs.filter((r, q) => !this.wiped[q]) : this.runs; }
 
   // ---- battle -----------------------------------------------------------------------------------
   startBattle(cfg, sitOut = null) {
@@ -419,6 +430,11 @@ export class CoopGame {
     this.sitOut = sitOut;
     this.battle = new DuoBattle(this.runs, cfg);
     if (this.away.some(Boolean) || sitOut) this.battle.away = this.away.map((a, q) => a || !!sitOut?.[q]);
+    // NUZLOCKE: a player may throw balls only in their act's first wild battle (solo: Run.battleConfig). Entering a wild
+    // node claims it for everyone fighting; a sat-out or out player keeps theirs.
+    if (this.nuzlocke && cfg.coopKind === 'wild') {
+      for (const s of this.battle.subs) if (!this.battle.away[s.p]) s.cfg.nuzFirst = s.run.nuzlockeFirstWild(this.world.nodeId);
+    }
     this.down = this.runs.map(() => false);
     this.result = null;
     this.phase = 'battle';
@@ -440,7 +456,7 @@ export class CoopGame {
     const d = this.battle, cfg = this.battleCfg;
     this.battleSubs = d.subs;
     this.down = d.down.slice();
-    for (let p = 0; p < this.n; p++) if (d.down[p] && d.result.outcome === 'win') this.events.push({ seq: this.seq, t: 'revive', p });
+    for (let p = 0; p < this.n; p++) if (d.down[p] && d.result.outcome === 'win' && !(this.nuzlocke && !d.subs[p].run.party.some(m => !m.lost))) this.events.push({ seq: this.seq, t: 'revive', p });
     if (d.result.outcome === 'lose' && cfg.softLose) {
       // a mythic "?" fight (v0.3.25): the run goes on, every team thrown out with 30% less HP than it came in with
       for (const s of d.subs) if (!d.away[s.p]) s.run.softLoss(s); // (not the ones who sat it out)
@@ -450,10 +466,38 @@ export class CoopGame {
       return;
     }
     if (d.result.outcome === 'lose') { this.phase = 'over'; this.result = 'lose'; this.events.push({ seq: this.seq, t: 'over' }); return; }
+    if (this.nuzlocke && this.releaseFallen()) return;
     const final = (cfg.gauntlet !== undefined && cfg.gauntlet === this.world.act.gauntlet.length - 1) || (cfg.legendBoss && this.world.act.postgame);
     if (final) { this.victory(); return; }
     if (d.subs.every(s => s.result?.outcome === 'fled')) { this.toMap(); return; }
     this.startPrivate('reward', { node: this.world.nodeId });
+  }
+
+  // NUZLOCKE (v0.5.14), after a battle the room won or got away from: every player's fallen POKéMON (Battle marks them
+  // mon.lost) are released for good, here in the shared state (solo does it in the reward screen; here a player with
+  // nobody left must be known before the next phase opens). The reward screen lists them (result.released). A player
+  // whose whole team is gone is OUT: away for good (skipped by votes, battles and private phases, never back), and
+  // spectates; the others carry on. Everyone out: the run is lost. -> true if the run ended.
+  releaseFallen() {
+    for (const s of this.battle.subs) {
+      const p = s.p, r = this.runs[p];
+      const gone = r.releaseLost();
+      if (gone.length) {
+        this.events.push({ seq: this.seq, t: 'released', p, mons: gone.map(m => m.species) });
+        if (s.result) s.result.released = gone;
+      }
+      if (!r.party.length && !this.wiped[p]) {
+        this.wiped[p] = true;
+        this.away[p] = true;
+        this.votes[p] = null;
+        this.events.push({ seq: this.seq, t: 'wiped', p });
+      }
+    }
+    if (!this.wiped.every(Boolean)) return false;
+    this.phase = 'over';
+    this.result = 'lose';
+    this.events.push({ seq: this.seq, t: 'over' });
+    return true;
   }
 
   victory() {
@@ -563,6 +607,8 @@ export class CoopGame {
       world: w ? { a: w.actIndex, n: w.nodeId, f: w.floor, b: w.boss, g: w.gauntletIndex, r: w.rng.state, u: w.usedTrainers, s: w.map?.start, ws: w.wildSeen || [] } : null,
       runs: this.runs.map(r => (r ? runDigest(r) : null)), private: this.private, result: this.result, down: this.down,
       ...(this.away.some(Boolean) ? { away: this.away } : {}),
+      ...(this.nuzlocke ? { nuz: true } : {}),
+      ...(this.wiped?.some(Boolean) ? { wiped: this.wiped } : {}),
       ...(this.sitOut ? { sitOut: this.sitOut } : {}),
       battle: this.phase === 'battle' && this.battle ? this.battle.digest() : null,
     };

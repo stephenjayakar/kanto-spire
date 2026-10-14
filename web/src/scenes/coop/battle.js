@@ -590,6 +590,14 @@ export class CoopBattleScene {
       case 'ball': await this.animateBall(e); break;
       case 'item': Sound.playSE('se_use_item'); if (e.from !== undefined && e.from !== e.p) floatText(`${this.s.nameOf(e.from)} used ${D.items[e.key]?.name || 'an item'}!`, ...this.leadCenter(e.p), { color: 'green', font: 'small', life: 1.4 }); await this.wait(0.2); break;
       case 'partyUpdate': { const p = e.p ?? me; for (const m of this.run(p).party) this.partyHp[p][m.uid] = m.hp; break; }
+      case 'nuzlocke': { // (NUZLOCKE: a fainted POKéMON is released for good; e.p = its player)
+        const p = Number.isInteger(e.p) ? e.p : me;
+        const [cx, cy] = this.leadCenter(p);
+        floatText('RELEASED', cx, cy - 24, { color: 'red', scale: p === me ? 2 : 1, life: 1.4 });
+        Sound.playSE('se_failure');
+        await this.wait(p === me ? 0.3 : 0.15);
+        break;
+      }
       case 'down':
         if (e.p === me) { Sound.playSE('se_faint'); doFlash('#ff2020', 0.25); }
         if (this.leads[e.p]) this.leads[e.p].faint = 1;
@@ -688,10 +696,15 @@ export class CoopBattleScene {
 
   findCard(id, p = this.me) { return this.duo.subs[p].findCardAny(id); }
 
+  // My side can't act: my team fainted (down), I sat out (away), or (NUZLOCKE) my whole team was released (game.wiped:
+  // out for good, I spectate). Nothing is offered and nothing is posted then.
+  meOut() { return this.isOut(this.me); }
+  isOut(p) { const d = this.duo; return !d || !!d.down[p] || !!d.away?.[p] || !!this.g.wiped?.[p] || !d.subs[p]?.run?.party?.length; }
+
   // ---- hand / targets ---------------------------------------------------------------------------
   syncHand() {
     const d = this.duo;
-    if (!d || d.down[this.me]) { this.handIds = []; this.sel = []; return; }
+    if (!d || this.meOut()) { this.handIds = []; this.sel = []; return; }
     const ids = this.sub.deck.hand.map(c => c.id);
     for (const id of ids) if (!this.vis.has(id)) this.vis.set(id, { x: 600, y: H + 10, lift: 0, alpha: 1 });
     const keep = this.handIds.filter(id => ids.includes(id));
@@ -745,7 +758,7 @@ export class CoopBattleScene {
   }
 
   // simulate() is only safe while my side is still in the fight (it reads/restores the sub's result).
-  canSimulate() { const d = this.duo; return !!d && !d.result && !d.down[this.me] && this.g.phase === 'battle'; }
+  canSimulate() { const d = this.duo; return !!d && !d.result && !this.meOut() && this.g.phase === 'battle'; }
 
   info(card, target = this.target) { return this.duo.cardInfo(this.me, card, target); }
 
@@ -812,7 +825,7 @@ export class CoopBattleScene {
   // dropped them silently whenever the partner locked in while the modal was open.
   canChoose() {
     const d = this.duo, g = this.g;
-    return !!d && !this.posting && !this.finishing && g.phase === 'battle' && g.battle === d && !d.result && !d.down[this.me] && !d.locks[this.me] && !g.sitOut?.[this.me] && !this.s.desync && !this.s.stopped;
+    return !!d && !this.posting && !this.finishing && g.phase === 'battle' && g.battle === d && !d.result && !this.meOut() && !d.locks[this.me] && !g.sitOut?.[this.me] && !this.s.desync && !this.s.stopped;
   }
 
   toggle(id) {
@@ -855,7 +868,7 @@ export class CoopBattleScene {
   // resolves and the unlock is refused (log order decides).
   canUnlock() {
     const d = this.duo, g = this.g;
-    return !!d && !!d.locks[this.me] && !this.busy && !this.posting && !this.finishing && g.phase === 'battle' && g.battle === d && !d.result && !d.down[this.me] && !this.s.desync && !this.s.stopped;
+    return !!d && !!d.locks[this.me] && !this.busy && !this.posting && !this.finishing && g.phase === 'battle' && g.battle === d && !d.result && !this.meOut() && !this.s.desync && !this.s.stopped;
   }
   doUnlock() {
     if (!this.canUnlock()) return;
@@ -867,7 +880,7 @@ export class CoopBattleScene {
   // ---- update -----------------------------------------------------------------------------------
   syncLowHpAlarm() {
     const d = this.duo;
-    const lead = d && !d.down[this.me] ? this.sub.lead() : null;
+    const lead = d && !this.meOut() ? this.sub.lead() : null;
     const hp = lead ? (this.partyHp[this.me][lead.uid] ?? lead.hp) : 0;
     const want = !d?.result && lead && hp > 0 && hp / maxHp(lead) < 0.25 && !this.finishing;
     if (want && !this.lowHpOn) { Sound.playSE('se_low_health'); this.lowHpOn = true; this.lowHpAt = Engine.time; }
@@ -1139,7 +1152,7 @@ export class CoopBattleScene {
     const prioOf = (s, cards) => (d.handPriority ? d.handPriority(s, cards) : Math.max(0, ...cards.map(c => D.moves[c.move]?.priority || 0)));
     const actors = [];
     for (const s of d.subs) {
-      if (d.out ? d.out(s.p) : d.down[s.p]) continue;
+      if ((d.out ? d.out(s.p) : d.down[s.p]) || this.isOut(s.p)) continue;
       const L = d.locks[s.p];
       if (L?.pass) continue;
       if (L?.ball) { actors.push({ kind: 'ball', p: s.p, prio: 7, quick: 1, spd: 0, locked: true }); continue; }
@@ -1393,14 +1406,22 @@ export class CoopBattleScene {
     const d = this.duo, sub = d.subs[p];
     const L = this.leads[p];
     const lead = (L && sub.run.party.find(m => m.uid === L.uid)) || sub.lead();
-    const down = d.down[p], away = d.away?.[p] || this.g.away?.[p];
-    pixBox(ctx, x, y, w, h, down || away ? '#c8c0b8' : '#f8f8d8', p === this.me ? '#f8d038' : PCOL[p], 3);
+    const down = d.down[p], away = d.away?.[p] || this.g.away?.[p], out = !!this.g.wiped?.[p]; // (out: NUZLOCKE, team released)
+    pixBox(ctx, x, y, w, h, down || away || out ? '#c8c0b8' : '#f8f8d8', p === this.me ? '#f8d038' : PCOL[p], 3);
     // my team's stat stages above my row, the top one, as above the 2-player healthbox (the partners': their tooltip)
     if (p === this.me) drawStageTags(ctx, sub.sides.player.stages, x + 4, y - 11, { gap: 3, maxW: w - 8 });
     pixBox(ctx, x + 2, y + 2, 24, h - 4, PCOL[p], null, 2);
     text(ctx, p === this.me ? 'YOU' : `P${p + 1}`, x + 14, y + 3, { align: 'center', color: 'white', font: 'small' });
-    if (!lead) return;
     const BW = 38, HW = 34; // badge slot, HP bar
+    if (!lead || out) {
+      if (p !== this.me) textFit(ctx, this.s.nameOf(p), x + 29, y + 3, w - BW - 35, { color: 'dark', font: 'small' });
+      if (out || away || down) {
+        const bx = x + w - BW - 2;
+        pixBox(ctx, bx, y + 2, BW, h - 4, out ? '#783838' : away ? '#505868' : '#801818', null, 2);
+        text(ctx, out ? 'OUT' : away ? 'OFF' : 'DOWN', bx + BW / 2, y + 3, { align: 'center', color: 'white', font: 'small' });
+      }
+      return;
+    }
     const hp = this.partyHp[p][lead.uid] ?? lead.hp;
     const hx = x + w - BW - HW - 4;
     const label = p === this.me ? monName(lead) : `${this.s.nameOf(p).slice(0, 6)}·${monName(lead)}`;
@@ -1426,7 +1447,15 @@ export class CoopBattleScene {
     pixBox(ctx, x, y, w, h, down ? '#c8c0b8' : '#f8f8d8', PCOL[p], 4);
     pixBox(ctx, x + 3, y + 3, 26, 12, PCOL[p], null, 2);
     text(ctx, p === this.me ? 'YOU' : `P${p + 1}`, x + 16, y + 3, { align: 'center', color: 'white', font: 'small' });
-    if (!lead) return;
+    if (this.g.wiped?.[p] || !lead) { // (NUZLOCKE: every POKéMON released: out for good, spectating)
+      if (p !== this.me) textFit(ctx, this.s.nameOf(p), x + 33, y + 2, w - 40, { color: 'dark', font: 'small' });
+      if (this.g.wiped?.[p]) {
+        pixBox(ctx, x + w / 2 - 26, y + 9, 52, 16, '#783838', '#ff6060', 3);
+        text(ctx, 'OUT', x + w / 2, y + 11, { align: 'center', color: 'white', font: 'small' });
+        if (hover(x, y, w, h)) tip('OUT (NUZLOCKE)', `${p === this.me ? 'Your' : `${this.s.nameOf(p)}'s`} whole team was released: out for the rest of the run, spectating.`, { width: 200 });
+      }
+      return;
+    }
     const hp = this.partyHp[p][lead.uid] ?? lead.hp;
     const tw = this.drawOrderTagAt(ctx, { p }, x + 33, y + 4);
     textFit(ctx, (p === this.me ? '' : this.s.nameOf(p).slice(0, 6) + ': ') + monName(lead), x + 33 + tw, y + 2, (lead.status ? w - 88 : w - 70) - tw, { color: 'dark', font: p === this.me ? undefined : 'small' });
@@ -1470,7 +1499,7 @@ export class CoopBattleScene {
     if (name) {
       text(ctx, name, x + w / 2, sc && sc.p !== me ? 44 : 35, { align: 'center', color: 'white', font: sc && sc.p !== me ? 'small' : undefined });
       if (lvl > 1) text(ctx, 'lvl ' + lvl, x + w - 6, 37, { align: 'right', color: 'gold', font: 'small' });
-    } else text(ctx, d.down[me] ? 'Your team is down' : d.locks[me] ? 'Locked in' : 'Select cards', x + w / 2, 35, { align: 'center', color: 'gray', font: 'small' });
+    } else text(ctx, this.g.wiped?.[me] ? 'OUT (NUZLOCKE): spectating' : d.down[me] ? 'Your team is down' : d.away?.[me] ? 'Sitting this one out' : d.locks[me] ? 'Locked in' : 'Select cards', x + w / 2, 35, { align: 'center', color: this.g.wiped?.[me] ? '#ff7070' : 'gray', font: 'small' });
     const base = sc ? Math.round(sc.base) : prev?.sim ? prev.sim.base : 0;
     const bonus = sc ? sc.bonus : prev ? (prev.sim ? prev.sim.bonus : prev.bonus) : 0;
     const times = sc ? sc.times : prev?.sim ? prev.sim.times : 1;
@@ -1503,6 +1532,14 @@ export class CoopBattleScene {
       const hint = PL?.ids && !d.result ? `${this.s.nameOf(o)} aims at ${speciesName(d.enemyAt(d.normSlot(PL.target) ?? 0)?.species || '')}` : 'Pick cards to see the damage';
       textFit(ctx, hint, x + 6, 106, w - 12, { color: PL?.ids ? PFONT[o] : 'gray', font: 'small' });
     }
+    // NUZLOCKE: my whole team was released (or I have no POKéMON at all): nothing of mine to show, I only watch
+    if (this.g.wiped?.[me] || !run.party.length) {
+      panel(ctx, x, 130, w, 52);
+      text(ctx, this.g.wiped?.[me] ? 'OUT (NUZLOCKE)' : 'NO POKéMON', x + w / 2, 136, { align: 'center', color: '#ff7070', font: 'small' });
+      text(ctx, 'Every POKéMON released.', x + w / 2, 150, { align: 'center', color: 'gray', font: 'small' });
+      text(ctx, 'Spectating the team.', x + w / 2, 162, { align: 'center', color: 'gray', font: 'small' });
+      return;
+    }
     // battle info
     panel(ctx, x, 130, w, 52);
     text(ctx, 'DISCARDS', x + 8, 134, { color: 'gray', font: 'small' });
@@ -1533,11 +1570,12 @@ DECK: cards left in the draw pile / cards in your lead's deck.`, { width: 200 })
       const weak = en && (en.hp < en.maxHp * 0.5 || en.status === 'SLP' || en.status === 'FRZ' || (D.species[en.species]?.catchRate || 0) * (this.cfg.catchMult || 1) >= 180);
       const ball = Object.keys(run.balls).find(k => run.balls[k] > 0);
       const blocked = !!en && sub.legendBlocked(en); // (ONE LEGENDARY PER RUN)
-      const can = this.canAct() && !!ball && weak && !sub.caught && !en?.isBoss && !blocked;
+      const nuzBlock = !!sub.run.nuzlocke && !sub.cfg?.nuzFirst; // (NUZLOCKE: only the act's first wild battle)
+      const can = this.canAct() && !!ball && weak && !sub.caught && !en?.isBoss && !blocked && !nuzBlock;
       const pct = can ? Math.round(d.catchChance(me, ball, this.target) * 100) : 0;
       if (button(ctx, can ? `BALL ${pct}%` : 'BALL', x, by, bw, 22, { color: '#d04040', font: 'small', disabled: !can })) this.chooseBall();
       const legend = en && LEGENDARY.has(en.species) && !blocked ? ` ${run.legendRuleText()}` : '';
-      if (en && hover(x, by, bw, 22)) tip('CATCH', blocked ? 'You already have a legendary this run.' : sub.caught ? 'You already caught one this battle.' : !ball ? 'You have no POKé BALLS.' : !weak ? `Weaken ${speciesName(en.species)} below 50% HP (or put it to sleep) first.` : `Throw at your TARGET ${speciesName(en.species)}: about ${Math.round(d.catchChance(me, ball, this.target) * 100)}% with ${D.items[ball]?.name}. Throwing is your action this turn (locks you in).${legend}`);
+      if (en && hover(x, by, bw, 22)) tip('CATCH', nuzBlock ? (sub.catchBlockReason?.() || 'NUZLOCKE: only the first wild POKéMON of each act can be caught.') : blocked ? 'You already have a legendary this run.' : sub.caught ? 'You already caught one this battle.' : !ball ? 'You have no POKé BALLS.' : !weak ? `Weaken ${speciesName(en.species)} below 50% HP (or put it to sleep) first.` : `Throw at your TARGET ${speciesName(en.species)}: about ${Math.round(d.catchChance(me, ball, this.target) * 100)}% with ${D.items[ball]?.name}. Throwing is your action this turn (locks you in).${legend}`);
     }
   }
 
@@ -1549,14 +1587,27 @@ DECK: cards left in the draw pile / cards in your lead's deck.`, { width: 200 })
     // partner status chip + lead HP
     this.partnerStripR = 0;
     if (!this.many) this.drawPartnerStatus(ctx, 164, HAND_Y - 31);
+    // NUZLOCKE: my whole team was released (out for good), or I have no POKéMON at all: I only watch
+    if (this.g.wiped?.[me] || !this.run().party.length) {
+      pixBox(ctx, 164, HAND_Y - 10, 470, 70, '#2a1418', '#c04848', 4);
+      text(ctx, 'OUT (NUZLOCKE): spectating', 399, HAND_Y + 4, { align: 'center', color: 'white' });
+      text(ctx, 'Every POKéMON of yours was released. Your partners carry on.', 399, HAND_Y + 24, { align: 'center', color: 'gray', font: 'small' });
+      this.pileOpen = false;
+      return;
+    }
     if (down && !d.result) {
+      const nuz = !!this.g.nuzlocke; // (NUZLOCKE: no revive at the end of the battle: the fainted POKéMON are released)
       pixBox(ctx, 164, HAND_Y - 10, 470, 70, '#3a1018', '#ff6060', 4);
       text(ctx, this.many ? 'Your team fainted — cheer on your partners!' : 'Your team fainted — cheer on your partner!', 399, HAND_Y + 4, { align: 'center', color: 'white' });
-      text(ctx, this.many ? "You'll be revived if your partners win this battle." : `You'll be revived if ${this.s.nameOf(this.pa)} wins this battle.`, 399, HAND_Y + 24, { align: 'center', color: 'gold', font: 'small' });
-      text(ctx, '(a partner can also bring you back with a REVIVE)', 399, HAND_Y + 38, { align: 'center', color: 'gray', font: 'small' });
+      if (nuz) text(ctx, 'NUZLOCKE: your fainted POKéMON are released after this battle.', 399, HAND_Y + 24, { align: 'center', color: '#ff7070', font: 'small' });
+      else {
+        text(ctx, this.many ? "You'll be revived if your partners win this battle." : `You'll be revived if ${this.s.nameOf(this.pa)} wins this battle.`, 399, HAND_Y + 24, { align: 'center', color: 'gold', font: 'small' });
+        text(ctx, '(a partner can also bring you back with a REVIVE)', 399, HAND_Y + 38, { align: 'center', color: 'gray', font: 'small' });
+      }
       this.pileOpen = false; // (no draw pile on screen)
       return;
     }
+    if (this.meOut()) { this.pileOpen = false; return; } // (sat out: no hand of mine to show)
     drawCardBack(ctx, PILE_X, PILE_Y, { count: sub.deck.draw.length });
     drawPileTip(this, sub.deck, sub.mods.peek); // (my own pile only)
     // buttons
@@ -1659,7 +1710,7 @@ DECK: cards left in the draw pile / cards in your lead's deck.`, { width: 200 })
     this.partnerStripR = x + w + bw + 10;
     pixBox(ctx, x + w + 2, y, bw + 6, 14, '#141a26', '#2c3446', 3);
     hpBar(ctx, x + w + 5, y + 5, bw, d.down[pa] ? 0 : hp / maxHp(l), 4);
-    if (hover(x, y, w + bw + 8, 14)) tip(`${s.nameOf(pa)} · ${st.label}`, `${d.down[pa] ? 'Their team fainted. Win the battle to revive them (or use a REVIVE on them from your bag).' : `Lead ${monName(l)} ${Math.round(hp)}/${maxHp(l)} HP.`}\n${st.key === 'ready' ? 'They have locked in: the turn resolves when you lock in too.' : st.key === 'choosing' ? 'Still picking their cards.' : ''}`, { width: 200 });
+    if (hover(x, y, w + bw + 8, 14)) tip(`${s.nameOf(pa)} · ${st.label}`, `${d.down[pa] ? (this.g.nuzlocke ? 'Their team fainted. NUZLOCKE: their fainted POKéMON are released after this battle.' : 'Their team fainted. Win the battle to revive them (or use a REVIVE on them from your bag).') : `Lead ${monName(l)} ${Math.round(hp)}/${maxHp(l)} HP.`}\n${st.key === 'ready' ? 'They have locked in: the turn resolves when you lock in too.' : st.key === 'choosing' ? 'Still picking their cards.' : ''}`, { width: 200 });
   }
 
   // ---- AUTO: locks in the HINT hand every turn (see ../auto.js). Per player and input only: it posts the same one
@@ -1668,7 +1719,7 @@ DECK: cards left in the draw pile / cards in your lead's deck.`, { width: 200 })
     if (!!this.auto === on) return;
     this.auto = on; this.autoT = 0;
     if (on) {
-      const l = this.duo?.down[this.me] ? null : this.sub?.lead();
+      const l = this.meOut() ? null : this.sub?.lead();
       this.autoLowAck = l && l.hp / maxHp(l) < AUTO.lowHp ? { uid: l.uid, hp: l.hp } : null; // (turned on while already low)
       this.autoFaintOk = !!this.sub?.faintSwitch; // (turned on during a faint pick: keep the lead that was sent out)
       this.autoTurn = this.duo?.locks[this.me] ? this.duo.turn : null;
@@ -1690,10 +1741,10 @@ DECK: cards left in the draw pile / cards in your lead's deck.`, { width: 200 })
   // Called from update() every frame; true = AUTO is on and owns the hand's input this frame.
   autoTick(dt) {
     const d = this.duo, me = this.me;
-    if (!this.auto) { if (autoKey() && !d.locks[me] && !d.result && !d.down[me] && this.g.phase === 'battle') { this.autoSet(true); Sound.playSE('se_select'); return true; } return false; }
+    if (!this.auto) { if (autoKey() && !d.locks[me] && !d.result && !this.meOut() && this.g.phase === 'battle') { this.autoSet(true); Sound.playSE('se_select'); return true; } return false; }
     if (d.result || this.finishing || this.g.phase !== 'battle') { this.auto = false; return false; }
     if (autoKey() || autoStopInput()) { this.autoSet(false); Sound.playSE('se_card_flip'); return true; }
-    if (d.down[me]) { this.autoSet(false); return false; }
+    if (this.meOut()) { this.autoSet(false); return false; }
     // my lock for this turn was taken back (UNLOCK) or refused: hand control back rather than lock again
     if (this.autoTurn === d.turn && !d.locks[me] && !this.posting && !this.busy) { this.autoSet(false); return false; }
     if (!this.canAct() || this.msg.active || this.skipWait || this.drag) { this.autoT = 0; return true; }

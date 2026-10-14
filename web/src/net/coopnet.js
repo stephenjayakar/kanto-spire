@@ -71,8 +71,9 @@ export const watchPresence = (roomId, onList, onError) => subscribe('coop:presen
 // ascMax: the ascension this player has unlocked with that starter (the room is capped by the highest one)
 export const setStarter = (roomId, starter, ascMax) => m('coop:setStarter', { roomId, starter, ...(ascMax !== undefined ? { ascMax } : {}) });
 export const setReady = (roomId, ready) => m('coop:setReady', { roomId, ready: !!ready });
-// host only, lobby only; opts: { ascension?, world? }
-export const configure = (roomId, opts = {}) => m('coop:configure', { roomId, ...(opts.ascension !== undefined ? { ascension: opts.ascension } : {}), ...(opts.world !== undefined ? { world: opts.world } : {}) });
+// host only, lobby only; opts: { ascension?, world?, nuzlocke? } (send nuzlocke only to a server whose room view has the
+// boolean room.nuzlocke: an older server rejects unknown args)
+export const configure = (roomId, opts = {}) => m('coop:configure', { roomId, ...(opts.ascension !== undefined ? { ascension: opts.ascension } : {}), ...(opts.world !== undefined ? { world: opts.world } : {}), ...(opts.nuzlocke !== undefined ? { nuzlocke: !!opts.nuzlocke } : {}) });
 export const startRoom = roomId => m('coop:start', { roomId });
 export const leaveRoom = roomId => m('coop:leave', { roomId });
 // Deletes the room from my REJOIN list (a run in progress: I leave it for good). -> { deleted } (true once nobody has it)

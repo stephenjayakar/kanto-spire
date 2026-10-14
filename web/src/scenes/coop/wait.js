@@ -25,7 +25,7 @@ export class CoopWaitScene {
     }
     // my run: the private clone I just finished until the log hands it back, then the canonical one
     const mine = (g.phase === 'private' && !g.private?.done?.[me] && G.run) || g.runs[me];
-    drawHUD(ctx, mine, { subtitle: s.n > 2 ? 'WAITING FOR THE OTHERS' : 'WAITING FOR PARTNER', onDeck: () => pushOverlay(new DeckModal({})) });
+    drawHUD(ctx, mine, { subtitle: g.wiped?.[me] ? 'OUT: SPECTATING' : s.n > 2 ? 'WAITING FOR THE OTHERS' : 'WAITING FOR PARTNER', onDeck: () => pushOverlay(new DeckModal({})) });
     drawSaveQuit(ctx, s, 8, H - 26, 90);
     if (s.n > 2) { this.drawMany(ctx, mine, dots); drawTips(ctx); drawCoopOverlay(ctx, s); return; }
     const st = playerStatus(s, pa);
@@ -49,17 +49,20 @@ export class CoopWaitScene {
       const run = p === me ? mine : g.runs[p];
       if (!run) continue;
       const x = 8 + p * (cw + 4) + 2, y = 80;
-      panel(ctx, x, y, cw, 30 * run.party.length + 24);
+      panel(ctx, x, y, cw, 30 * Math.max(run.party.length, g.wiped?.[p] ? 1 : 0) + 24);
       drawPartnerChip(ctx, x + 4, y + 3, s, { slot: p, name: p === me ? 'YOU' : s.nameOf(p).slice(0, 7) });
       drawPartyPanel(ctx, run, x + 4, y + 18, cw - 8, { tipX: p < n / 2 ? x + cw + 4 : x - 204 });
+      if (!run.party.length && g.wiped?.[p]) text(ctx, 'OUT: all released', x + cw / 2, y + 26, { align: 'center', color: '#ff7070', font: 'small' });
       draw(ctx, PSPRITE[p], x + cw / 2 - 8, 300 + (waiting.includes(p) ? Math.sin(this.t * 3 + p) * 2 : 0), { sx: 0, sy: 0, sw: 16, sh: 32, alpha: waiting.includes(p) || p === me ? 1 : 0.6 });
     }
   }
   team(ctx, x, y, p, run, label) {
     if (!run) return;
-    panel(ctx, x, y, 220, 30 * run.party.length + 24);
+    const out = !!this.s.game?.wiped?.[p]; // (NUZLOCKE: every POKéMON released, spectating)
+    panel(ctx, x, y, 220, 30 * Math.max(run.party.length, out ? 1 : 0) + 24);
     if (p === this.s.partnerSlot) drawPartnerChip(ctx, x + 6, y + 3, this.s);
-    else text(ctx, `P${p + 1} · ${label}`, x + 110, y + 4, { align: 'center', color: PFONT[p], font: 'small' });
+    else text(ctx, `P${p + 1} · ${label}${out ? ' · OUT' : ''}`, x + 110, y + 4, { align: 'center', color: PFONT[p], font: 'small' });
     drawPartyPanel(ctx, run, x + 6, y + 18, 208, { tipX: x < 300 ? x + 224 : x - 204 });
+    if (!run.party.length && out) text(ctx, 'OUT (NUZLOCKE): all released', x + 110, y + 26, { align: 'center', color: '#ff7070', font: 'small' });
   }
 }

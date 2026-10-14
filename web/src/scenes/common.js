@@ -359,10 +359,13 @@ const HUD_BOXES = { asc: null, relics: {} };
 export function hudAscBox() { return HUD_BOXES.asc; }
 export function hudRelicBox(key) { return HUD_BOXES.relics[key] || null; }
 
-// The ascension tag's tooltip: every active modifier (co-op: NUZLOCKE does nothing there), and the level cap.
+// The ascension tag's tooltip: every active modifier, and the level cap. Co-op: Nuzlocke is the room's NUZLOCKE option
+// (run.nuzlocke), not A8: the A8 line says whether this room plays it, and a room below A8 that plays it says so too.
 export function ascensionTip(run) {
   const a = run.ascension | 0;
-  const lines = ASCENSIONS.slice(1, a + 1).map(x => `A${x.n} ${x.name.toUpperCase()}: ${x.n === NUZLOCKE_ASC && run.coop ? 'no effect in co-op (your partners revive you after a win).' : x.desc}`);
+  const nuzDesc = x => (run.nuzlocke ? x.desc : 'off in this room (the host can turn on NUZLOCKE in the co-op lobby).');
+  const lines = ASCENSIONS.slice(1, a + 1).map(x => `A${x.n} ${x.name.toUpperCase()}: ${x.n === NUZLOCKE_ASC && run.coop ? nuzDesc(x) : x.desc}`);
+  if (run.coop && run.nuzlocke && a < NUZLOCKE_ASC) lines.push(`NUZLOCKE (room option): ${ASCENSIONS[NUZLOCKE_ASC].desc}`);
   const cap = run.levelCap?.();
   return `${run.coop ? "This room's" : "This run's"} active modifiers:\n${lines.join('\n')}${cap ? `\n\nThis act's level cap: Lv${cap}.` : ''}`;
 }

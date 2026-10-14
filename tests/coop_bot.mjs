@@ -14,6 +14,7 @@ export function makeBot(seed, p) { return { p, rng: new RNG(`${seed}:bot${p}`), 
 // The next action this bot wants to post, or null (nothing to do right now).
 export function botAction(game, bot) {
   const p = bot.p;
+  if (game.wiped?.[p]) return null; // (NUZLOCKE: out of POKéMON for good, only watches)
   if (game.phase === 'map') return game.votes[p] === null ? voteAction(game, bot) : null;
   if (game.phase === 'battle') return battleAction(game, bot);
   if (game.phase === 'private') return game.private.done[p] ? null : privateAction(game, bot);
@@ -53,7 +54,8 @@ function bestBall(run, e) {
 }
 
 function wantCatch(run, e, s) {
-  if (!run.totalBalls() || s?.legendBlocked?.(e)) return false; // (ONE LEGENDARY PER RUN; frozen engines have no such rule)
+  if (!run.totalBalls() || s?.legendBlocked?.(e)) return false;
+  if (run.nuzlocke && !s?.cfg?.nuzFirst) return false; // (NUZLOCKE: only in the act's first wild battle) // (ONE LEGENDARY PER RUN; frozen engines have no such rule)
   const minB = Math.min(...run.party.map(m => bst(m.species)));
   if (run.party.length < 6) return run.party.length < 4 || bst(e.species) > minB + 20 || e.legendary;
   return e.legendary || bst(e.species) > minB + 60;
@@ -100,7 +102,7 @@ function battleAction(game, bot) {
         // A downed partner comes back with a revive.
         if (duo.down[o]) {
           const rv = run.consumables.find(k => CONSUMABLES[k]?.revive);
-          const fm = os.run.party.find(isFainted);
+          const fm = os.run.party.find(m => isFainted(m) && !m.lost); // (NUZLOCKE: the fallen can't be revived)
           if (rv && fm) return { p, type: 'item', key: rv, uid: fm.uid, toP: o };
         }
       }
@@ -113,7 +115,7 @@ function battleAction(game, bot) {
     }
     if (duo.kind === 'boss' && !st.revive) {
       st.revive = 1;
-      const fm = run.party.find(isFainted), rv = run.consumables.find(k => CONSUMABLES[k]?.revive);
+      const fm = run.party.find(m => isFainted(m) && !m.lost), rv = run.consumables.find(k => CONSUMABLES[k]?.revive);
       if (fm && rv) return { p, type: 'item', key: rv, uid: fm.uid };
     }
     // Switch when another POKéMON's deck clearly fits the field better (or the lead can't act).
@@ -214,7 +216,7 @@ function privateAction(game, bot) {
 // Plays a whole co-op run with two bots. Every action goes through JSON (like the network) and gets the
 // next seq. onAction(action, applied, game) is called after each one.
 // champ: a player who has beaten a CHAMPION before posts { type: 'champ' } (v0.3.25: CERULEAN CAVE's MEWTWO can show up).
-export function playCoop({ seed = 'COOP', ascension = 0, world = 'kanto', starters = ['BULBASAUR', 'CHARMANDER'], maxActions = 60000 * starters.length / 2, maxTurns = 80, onAction = null, stopWhen = null, champ = false } = {}) {
+export function playCoop({ seed = 'COOP', ascension = 0, world = 'kanto', starters = ['BULBASAUR', 'CHARMANDER'], maxActions = 60000 * starters.length / 2, maxTurns = 80, onAction = null, stopWhen = null, champ = false, nuzlocke = false } = {}) {
   const game = new CoopGame();
   const log = [];
   const post = (a) => {
@@ -224,7 +226,7 @@ export function playCoop({ seed = 'COOP', ascension = 0, world = 'kanto', starte
     if (onAction) onAction(act, ok, game);
     return ok;
   };
-  post({ type: 'init', seed, ascension, world, starters, names: starters.map((_, p) => 'BOT' + (p + 1)) });
+  post({ type: 'init', seed, ascension, world, starters, names: starters.map((_, p) => 'BOT' + (p + 1)), ...(nuzlocke ? { nuzlocke: true } : {}) });
   if (champ) post({ p: 0, type: 'champ' });
   const bots = starters.map((_, p) => makeBot(seed, p));
   let n = 0;

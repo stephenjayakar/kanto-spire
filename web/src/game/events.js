@@ -1677,7 +1677,7 @@ export function coopProbe(world, runs) {
   const relicKeys = [...new Set(rs.flatMap(r => (r.relics || []).map(x => x.key)))];
   return {
     relics: relicKeys.map(key => ({ key })), seen: [...new Set(rs.flatMap(r => r.seen || []))],
-    world: world.world, region: world.region, actIndex: world.actIndex, floor: world.floor, nodeId: world.nodeId, seed: world.seed, coop: true, nuzlocke: false, ascension: world.ascension,
+    world: world.world, region: world.region, actIndex: world.actIndex, floor: world.floor, nodeId: world.nodeId, seed: world.seed, coop: true, nuzlocke: rs.some(r => r.nuzlocke), ascension: world.ascension, // (NUZLOCKE rooms, v0.5.14)
     party: { length: Math.min(...rs.map(r => r.party.length)) },
     relicCount: Math.min(...rs.map(r => relicCountOf(r))),
     seenEvents: [...new Set(rs.flatMap(r => r.seenEvents || []))],

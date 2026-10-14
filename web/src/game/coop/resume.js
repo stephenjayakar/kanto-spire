@@ -79,10 +79,12 @@ export function replayOn(eng, base, actions, { keepCks = CK_KEEP } = {}) {
 }
 
 // The engine stamp of a log segment: the LOGIC_ID most of its player actions carry, UNSTAMPED when none has one.
-export function segmentStamp(actions) {
+// (v0.5.14) A room nobody has acted in yet whose init action carries what only v0.5.14+ servers write (init.nuzlocke) was
+// started on this code: older engines would drop it (the hand-over checkpoint has no NUZLOCKE), so it's `current`.
+export function segmentStamp(actions, current = LOGIC_ID) {
   const n = new Map();
   for (const a of actions) if (a && a.p >= 0 && typeof a.eng === 'string') n.set(a.eng, (n.get(a.eng) || 0) + 1);
-  if (!n.size) return UNSTAMPED;
+  if (!n.size) return actions.some(a => a && a.type === 'init' && a.nuzlocke === true) ? current : UNSTAMPED;
   return [...n.entries()].sort((a, b) => b[1] - a[1])[0][0];
 }
 
@@ -119,7 +121,7 @@ export async function resumeRoom({ checkpoint = null, actions = [], dataLoader =
     out.cks.set(T, out.game.checksum() >>> 0);
     return out;
   }
-  const stamp = out.stamp = segmentStamp(tail);
+  const stamp = out.stamp = segmentStamp(tail, logicId);
   const results = [];
   for (const which of engineOrder(stamp, logicId)) {
     const id = which.current ? 'current' : which.id;

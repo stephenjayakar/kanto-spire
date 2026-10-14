@@ -165,7 +165,8 @@ export class Battle {
     this.bossRule = null;
     this.mods = run.mods();
     this.discardsLeft = Math.max(0, DECK_RULES.discards + (this.mods.discards || 0) + (cfg.discardMod || 0));
-    this.leadUid = (run.party.find(m => !isFainted(m)) || run.party[0]).uid;
+    // (co-op NUZLOCKE, v0.5.14: a player who is out has an empty party and sits the battle out with no lead)
+    this.leadUid = (run.party.find(m => !isFainted(m)) || run.party[0])?.uid ?? null;
     // a mythic fight the run survives losing (Run.softLoss): everyone's HP coming in
     if (cfg.softLose) this.preHp = Object.fromEntries(run.party.map(m => [m.uid, m.hp]));
   }
@@ -2025,7 +2026,7 @@ export class Battle {
         if (this.kind === 'elite' && this.mods.eliteMoney) money *= 2;
       }
       money = Math.floor(money * (1 + (this.mods.moneyMult || 0)));
-      money += Math.min(this.payDay, 20 * Math.max(...this.run.party.map(m => m.level)));
+      money += Math.min(this.payDay, 20 * Math.max(0, ...this.run.party.map(m => m.level)));
     }
     // Clear battle-only statuses on party (sleep/confusion persist? sleep does in the games; we wake them for flow)
     for (const m of this.run.party) { if (m.status === 'SLP' || m.status === 'FRZ') m.status = null; }

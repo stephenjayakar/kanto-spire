@@ -188,6 +188,7 @@ export default defineSchema({
     // v0.1.0: "spire" (KANTO + HOENN acts) / "spire_kanto" (a host without HOENN yet) / v0.1.1 "spire_johto" (all three); older rooms kanto / hoenn
     world: v.union(v.literal("kanto"), v.literal("hoenn"), v.literal("spire"), v.literal("spire_kanto"), v.literal("spire_johto")),
     seed: v.string(),
+    nuzlocke: v.optional(v.boolean()), // co-op Nuzlocke room option (host's choice; absent = off); the init action carries it
     nextSeq: v.number(), // seq the next action gets
     gameVersion: v.optional(v.string()), // v0.3.6+: the game version that created the room (e.g. "v0.3.6")
     engine: v.optional(v.string()), // v0.3.6+: the game-logic id it was created on (web/src/game/coop/engines.js LOGIC_ID)
