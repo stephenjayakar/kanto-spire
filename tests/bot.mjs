@@ -486,10 +486,6 @@ export function postBattle(run, b, rng, skill, metrics) {
     if (cfg.mythic && run.mythicRelicChoices) choices = run.mythicRelicChoices(cfg, choices); // (v0.5.6: the mythic's own item first)
     if (choices.length) {
       const pick = skill === 'smart' ? choices.sort((a, b) => relicScore(run, b) - relicScore(run, a))[0] : choices[0];
-      if (false) {
-        const worst = [...run.relics].sort((a, b) => relicScore(run, a.key) - relicScore(run, b.key))[0];
-        if (relicScore(run, pick) > relicScore(run, worst.key) + 10) { run.removeRelic(worst.key); run.addMoney(500); }
-      }
       if (run.addRelic(pick) && metrics) metrics.relicPicks.push(pick);
     }
   }
