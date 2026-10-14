@@ -75,7 +75,7 @@ const clampStage = (s) => Math.max(-6, Math.min(6, s));
 // Battle.enemyDamage for the bot's own estimates: random-power moves (MAGNITUDE, PRESENT, PSYWAVE) draw from b.rng, so
 // they run on a throwaway RNG. The bot must never touch the battle's RNG (co-op replays the action log without it).
 const DRY_RNG = new RNG('bot-dry');
-function previewDamage(b, m, e, target, rand) {
+export function previewDamage(b, m, e, target, rand) {
   const rng = b.rng;
   b.rng = DRY_RNG;
   try { return b.enemyDamage(m, e, target, rand, false, true); } finally { b.rng = rng; }
