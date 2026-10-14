@@ -1,7 +1,7 @@
 // v0.3.2 EXP tests: node tests/v032_exp.test.mjs
 // - fainted POKéMON (hp <= 0 when the battle ended) get no EXP, level-ups or move prompts, solo and co-op (co-op revives
 //   a downed player's lead at the end of a won battle: that lead still gets nothing);
-// - A5 LEVEL CAP (replaced Weary): battle EXP stops at the act boss's top level +TUNING.levelCapOffset, the rest flows
+// - A5 LEVEL CAP (replaced Weary): battle EXP stops at the act boss's top level +TUNING.levelCapOffsets[act], the rest flows
 //   to the lowest-level teammates under the cap; RARE CANDY can pass it; normal healing at A5+; shinies still at A5+;
 // - Gen 5 scaled EXP: each recipient's share x ((2*Lfoe+10)/(Lfoe+Lmon+10))^TUNING.expCurve, per defeated foe.
 import fs from 'fs';
@@ -194,24 +194,28 @@ t('co-op: the EXP rescale (COOP_TUNING.exp / expScale) keeps the per-foe split c
 // ------------------------------------------------------------------------------------ A5 level cap
 const capsOf = (run) => run.acts.map((a, i) => { run.actIndex = i; return run.levelCap(); });
 const capRun = (asc, extra = {}) => Run.create({ starter: 'CHARMANDER', ascension: asc, seed: 'CAPT', ...extra });
-const off = TUNING.levelCapOffset;
+const off = TUNING.levelCapOffsets; // per act (v0.5.17: +2 / +1 / 0 / 0, post-game +2)
+const plus = (tops) => tops.map((x, i) => x + off[i]);
 
 t('cap: none below A5; A5 = the act boss\'s top level + offset (KANTO: gyms 15/27/41 + A3 bonus, CHAMPION 49, post-game 70)', () => {
   assert.equal(LEVEL_CAP_ASC, 5);
   for (const a of [0, 1, 2, 3, 4]) assert.ok(capsOf(capRun(a, { world: 'kanto' })).every(c => c === null), 'A' + a);
-  assert.deepEqual(capsOf(capRun(5, { world: 'kanto' })), [15 + 1, 27 + 2, 41 + 2, 49 + 2, 70 + 2].map(x => x + off));
+  assert.deepEqual(capsOf(capRun(5, { world: 'kanto' })), plus([15 + 1, 27 + 2, 41 + 2, 49 + 2, 70 + 2]));
   // A10: +1 more level from Act 2 on (bosses and the ELITE FOUR / CHAMPION)
-  assert.deepEqual(capsOf(capRun(10, { world: 'kanto' })), [15 + 1, 27 + 3, 41 + 3, 49 + 3, 70 + 3].map(x => x + off));
+  assert.deepEqual(capsOf(capRun(10, { world: 'kanto' })), plus([15 + 1, 27 + 3, 41 + 3, 49 + 3, 70 + 3]));
+  // v0.5.17: the per-act offsets, as a plain table
+  assert.deepEqual(capsOf(capRun(5, { world: 'kanto' })), [18, 30, 43, 51, 74]);
+  assert.deepEqual(capsOf(capRun(10, { world: 'kanto' })), [18, 31, 44, 52, 75]);
 });
 
 t('cap: per region: spire acts follow the tier levels whatever the region; the legacy HOENN world uses its own', () => {
   const sp = capRun(5, { world: 'spire', regions: { acts: ['hoenn', 'johto', 'kanto', 'hoenn'], summit: 'hoenn', post: 'johto' } });
   assert.deepEqual(sp.regions.acts, ['hoenn', 'johto', 'kanto', 'hoenn']);
-  assert.deepEqual(capsOf(sp), [15 + 1, 27 + 2, 41 + 2, 49 + 2, 70 + 2].map(x => x + off));
+  assert.deepEqual(capsOf(sp), plus([15 + 1, 27 + 2, 41 + 2, 49 + 2, 70 + 2]));
   const ho = capRun(5, { world: 'hoenn' });
-  assert.deepEqual(capsOf(ho), [16 + 1, 28 + 2, 39 + 2, 50 + 2, 70 + 2].map(x => x + off));
+  assert.deepEqual(capsOf(ho), plus([16 + 1, 28 + 2, 39 + 2, 50 + 2, 70 + 2]));
   const jo = capRun(5, { world: 'spire', regions: { acts: ['johto', 'johto', 'johto', 'johto'], summit: 'johto', post: 'johto' } });
-  assert.deepEqual(capsOf(jo), [15 + 1, 27 + 2, 41 + 2, 49 + 2, 70 + 2].map(x => x + off));
+  assert.deepEqual(capsOf(jo), plus([15 + 1, 27 + 2, 41 + 2, 49 + 2, 70 + 2]));
 });
 
 function cappedParty(levels, asc = 5) {
@@ -226,7 +230,7 @@ const res = (run, exp, lvl, parts) => ({ outcome: 'win', exp, foes: [{ level: lv
 t('cap: a POKéMON at the cap gets no battle EXP; one below stops exactly at the cap', () => {
   const run = cappedParty([18, 17]);
   const cap = run.levelCap();
-  assert.equal(cap, 16 + off);
+  assert.equal(cap, 16 + off[0]);
   const [a, b] = run.party;
   const out = run.distributeExp(res(run, 5000, 15, [a, b]), 'trainer');
   const ra = out.find(r => r.mon === a), rb = out.find(r => r.mon === b);
@@ -250,15 +254,18 @@ t('cap: the EXP past the cap is lost (teammates only get their own share)', () =
   assert.ok(!('passed' in rt) && !('extra' in rl));
 });
 
-t('cap: RARE CANDY still goes past the cap', () => {
-  const run = cappedParty([18]);
-  const m = run.party[0];
+t('cap: RARE CANDY stops at the cap (v0.5.16), and is refused at it', () => {
+  const run = cappedParty([18, 15]);
+  const [m, low] = run.party, cap = run.levelCap();
   run.addConsumable('RARE_CANDY');
-  assert.ok(run.applyConsumableToMon('RARE_CANDY', m));
-  assert.equal(m.level, 18 + CONSUMABLES.RARE_CANDY.levels);
-  // and a POKéMON above the cap earns no battle EXP
+  assert.ok(m.level >= cap && run.useBlocker('RARE_CANDY', m), 'at the cap: refused');
+  assert.equal(run.applyConsumableToMon('RARE_CANDY', m), false);
+  assert.ok(run.applyConsumableToMon('RARE_CANDY', low));
+  assert.equal(low.level, Math.min(15 + CONSUMABLES.RARE_CANDY.levels, cap), 'below it: up to the cap, never past');
+  // and a POKéMON at the cap earns no battle EXP
+  const lv = m.level;
   const out = run.distributeExp(res(run, 500, 15, [m]), 'trainer');
-  assert.equal(out[0].gained, 0); assert.equal(m.level, 18 + CONSUMABLES.RARE_CANDY.levels);
+  assert.equal(out.find(r => r.mon === m).gained, 0); assert.equal(m.level, lv);
 });
 
 t('A5: WEARY is gone (normal post-battle heal, full POKéMON CENTER and act-clear heals); the text is LEVEL CAP', () => {
@@ -290,7 +297,7 @@ t('A5+: a win still unlocks the starter\'s shiny (A4 doesn\'t)', () => {
 t('co-op A5: the room\'s ascension caps each player\'s own team (EXP past the cap is lost)', () => {
   const g = CoopGame.fromInit({ ...INIT('XCAP'), ascension: 5 });
   const caps = g.runs.map(r => r.levelCap());
-  assert.ok(caps.every(c => c === 16 + TUNING.levelCapOffset), JSON.stringify(caps));
+  assert.ok(caps.every(c => c === 16 + TUNING.levelCapOffsets[0]), JSON.stringify(caps));
   const r0 = g.privateRunClone(0), r1 = g.privateRunClone(1);
   const top = r0.party[0];
   top.level = caps[0]; top.exp = expForLevel(D.species[top.species].growthRate, top.level);

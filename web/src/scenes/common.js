@@ -9,7 +9,7 @@ import { COMBOS, COMBO_ORDER, comboBonus } from '../game/hands.js';
 import { maxHp, monName, stats, typesOf, isFainted, expProgress } from '../game/pokemon.js';
 import { RELICS, BADGES, CONSUMABLES, badgeIcon } from '../game/items.js';
 import { G } from '../game/state.js';
-import { TUNING, LEVEL_CAP_ASC, ASCENSIONS, NUZLOCKE_ASC } from '../game/run.js';
+import { LEVEL_CAP_ASC, ASCENSIONS, NUZLOCKE_ASC, levelCapOffset } from '../game/run.js';
 import { Sound } from '../audio/sound.js';
 import { drawStatusInfo } from './status_info.js';
 import { drawHeldItemsInfo, closeHeldItemsSearch, clearHeldItemsSearch } from './held_items_info.js';
@@ -394,7 +394,7 @@ export function drawHUD(ctx, run, opts = {}) {
   if (cap) {
     const ct = `Lv cap ${cap}`, cw = measure(ct, 'small');
     text(ctx, ct, rx, 3, { color: 'orange', font: 'small' });
-    if (hover(rx - 2, 0, cw + 4, 13)) tip(`LEVEL CAP: Lv${cap}`, `A${LEVEL_CAP_ASC}+: battle EXP stops at Lv${cap} in this act (its boss's top level +${TUNING.levelCapOffset}). EXP past the cap is lost. RARE CANDY, training and events can't go past it either.`, { width: 200 });
+    if (hover(rx - 2, 0, cw + 4, 13)) tip(`LEVEL CAP: Lv${cap}`, `A${LEVEL_CAP_ASC}+: battle EXP stops at Lv${cap} in this act (its boss's top level +${levelCapOffset(run.actIndex)}). EXP past the cap is lost. RARE CANDY, training and events can't go past it either.`, { width: 200 });
     rx += cw + 4;
   }
   const nb = run.badges.length;
