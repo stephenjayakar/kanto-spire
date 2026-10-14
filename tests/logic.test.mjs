@@ -622,6 +622,21 @@ t('starters: offers never touch the run rng', () => {
   assert.ok(U.soloActKey(run).startsWith('UNL:'));
 });
 
+// ---- v0.5.15: held items (relics) can't be sold anywhere; bag items still can -----------------------------
+{
+  const SHOP = await import('../web/src/game/shop.js');
+  const src = (f) => fs.readFileSync(new URL(`../web/src/${f}`, import.meta.url), 'utf8');
+  t('relics: no sell path in the shop logic or the map / shop / HUD scenes', () => {
+    assert.equal(SHOP.sellRelicValue, undefined);
+    for (const f of ['game/shop.js', 'scenes/shop.js', 'scenes/map.js', 'scenes/common.js', 'scenes/held_items_info.js'])
+      assert.doesNotMatch(src(f), /sellRelic|sellable|onRelicClick|click to sell|can't be sold/i, f);
+    const r = Run.create({ seed: 'NOSELL' }); r.addRelic('CHARCOAL'); r.consumables = ['NUGGET'];
+    const m0 = r.money;
+    assert.equal(r.sellConsumable('NUGGET'), 5000); assert.equal(r.money, m0 + 5000);
+    assert.ok(r.hasRelic('CHARCOAL'));
+  });
+}
+
 // ---- full bag: a found / bought item is never silently thrown away -----------------------------------
 const fullRun = (seed, bag) => { const r = Run.create({ seed }); r.consumables = bag.slice(); return r; };
 const lastBagLog = (r) => (r.runLog?.events || []).filter(e => e.k === 'bagFull').at(-1);
@@ -902,7 +917,6 @@ t('ascension: the shiny unlock (A5+) and Nuzlocke (A8) rules are unchanged', () 
   const EV = await import('../web/src/game/events.js');
   const BOT = await import('./bot.mjs');
   const { CURSES, isCurse } = await import('../web/src/game/items.js');
-  const { sellRelicValue } = await import('../web/src/game/shop.js');
   const evRun = (world, a, o = {}) => {
     const r = Run.create({ seed: o.seed || `EV${world}${a}`, world, ascension: o.asc || 0, coop: !!o.coop });
     if (a) r.startAct(a);

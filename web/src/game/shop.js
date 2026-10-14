@@ -101,8 +101,6 @@ function buyItemInner(run, shop, it, opts) {
   return { ok: true };
 }
 
-export function sellRelicValue(key) { return Math.floor(RELIC_PRICE[RELICS[key]?.rarity || 'common'] / 3); }
-
 // The INDIGO PLATEAU mart between Elite Four rooms: only supplies for the next fight.
 export function plateauShop(run) {
   const items = [];

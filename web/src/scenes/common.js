@@ -481,9 +481,8 @@ export function drawHUD(ctx, run, opts = {}) {
     const def = RELICS[r.key];
     const bn = bonusOf(r), ct = counterOf(r);
     const now = bn ? `\n${bn.tip}` : (r.state?.n ? `\n(Currently: ${r.state.n})` : '');
-    if (def.curse) tip(D.items[r.key]?.name || r.key, def.desc + "\n\nCURSE  ·  can't be sold\nCLEANSE it at a POKéMON CENTER", { accent: '#c050f0' });
-    else tip(D.items[r.key]?.name || r.key, def.desc + now + (ct ? (ct.ready ? '\nYOUR NEXT HAND SETS IT OFF!' : `\n(Hand ${ct.text})`) : '') + `\n\n${def.rarity.toUpperCase()} HELD ITEM  ·  ${n} held${opts.sellable ? '  ·  click to sell' : ''}`, { accent: def.rarity === 'rare' ? '#f8d038' : def.rarity === 'uncommon' ? '#58a8f8' : '#a0a0a0' });
-    if (opts.onRelicClick && (Engine.mouse.rclicked || Engine.mouse.clicked)) opts.onRelicClick(r.key);
+    if (def.curse) tip(D.items[r.key]?.name || r.key, def.desc + "\n\nCURSE  ·  CLEANSE it at a POKéMON CENTER", { accent: '#c050f0' });
+    else tip(D.items[r.key]?.name || r.key, def.desc + now + (ct ? (ct.ready ? '\nYOUR NEXT HAND SETS IT OFF!' : `\n(Hand ${ct.text})`) : '') + `\n\n${def.rarity.toUpperCase()} HELD ITEM  ·  ${n} held`, { accent: def.rarity === 'rare' ? '#f8d038' : def.rarity === 'uncommon' ? '#58a8f8' : '#a0a0a0' });
   }
   // badges sit next to the act title (and the ascension tag) so they never collide with the right-side buttons;
   // packed, the one under the mouse is the topmost (the last drawn)

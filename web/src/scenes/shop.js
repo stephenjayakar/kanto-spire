@@ -13,7 +13,6 @@ import { Sound } from '../audio/sound.js';
 import { drawHUD, drawPartyPanel, consumableDesc, DeckModal } from './common.js';
 import { goToMap } from './flow.js';
 import { useConsumableOutside, teachTM, deleteCard, offerItem } from './items_ui.js';
-import { sellRelicPrompt } from './map.js';
 import { pushOverlay } from '../engine/core.js';
 
 export class ShopScene {
@@ -53,7 +52,7 @@ export class ShopScene {
   draw(ctx) {
     const run = G.run;
     swirlBackground(ctx, BG_THEMES.shop, 0.4);
-    drawHUD(ctx, run, { subtitle: 'POKé MART', onDeck: () => pushOverlay(new DeckModal({})), onConsumableClick: k => useConsumableOutside(k), sellable: true, onRelicClick: k => sellRelicPrompt(k) });
+    drawHUD(ctx, run, { subtitle: 'POKé MART', onDeck: () => pushOverlay(new DeckModal({})), onConsumableClick: k => useConsumableOutside(k) });
     draw(ctx, 'gfx/overworld/people/clerk.png', 14, 30, { sx: 0, sy: 0, sw: 16, sh: 32, scale: 2 });
     panel(ctx, 52, 36, 300, 40, 'paper');
     textBlock(ctx, 'CLERK: ' + this.say, 62, 42, 284, { color: 'dark' });
