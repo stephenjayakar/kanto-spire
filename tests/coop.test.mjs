@@ -14,6 +14,7 @@ import { playCoop, makeBot, botAction } from './coop_bot.mjs';
 import { chooseHand } from './bot.mjs';
 import { coopRunPayload } from '../web/src/net/cloud.js';
 import { recordCoopDex, coopDex, mergeDexLists } from '../web/src/game/coop/dex.js';
+import { snapshotGame, restoreGame } from '../web/src/game/coop/snapshot.js';
 
 await loadData(async f => JSON.parse(fs.readFileSync('web/assets/data/' + f, 'utf8')));
 let pass = 0, fail = 0;
@@ -1396,6 +1397,43 @@ t('v0.5.2: LEADER NORMAN\'s BALANCE caps each co-op hand at 60% of his POKéMON\
   d.lock(1, { ids: h1, target: 1 }); // each player's hand is capped on its own
   assert.equal(n0.hp, 1000 - 600, 'capped at 60%');
   assert.equal(n1.hp, 1000 - 600, 'capped at 60%');
+});
+
+// ------------------------------------------------------------------------------------ v0.5.13 A10 double summit
+t('co-op A10: every run shares the second ELITE FOUR, full heal before it, checkpoints keep it, A0 rooms unchanged', () => {
+  const init = (seed, ascension) => ({ ...INIT(seed), ascension, world: 'spire_johto' });
+  const a0 = CoopGame.fromInit(init('DS0', 0));
+  assert.ok(!('summit2' in a0.world) && a0.runs.every(r => !('summit2' in r)), 'no new field below A10 (checksums unchanged)');
+  const mk = () => CoopGame.fromInit(init('DS10', 10));
+  const g = mk(), h = mk();
+  const s2 = g.world.summit2;
+  assert.ok(s2 && s2 !== g.world.regions.summit, 'a second, different summit region');
+  assert.ok(g.runs.every(r => r.summit2 === s2), "player runs copy the room's draw (not their own seeds')");
+  assert.equal(g.checksum(), h.checksum());
+  // checkpoint round trip at a safe point: same checksum, summit2 kept
+  const back = restoreGame(snapshotGame(g), { CoopGame, Run, RNG });
+  assert.equal(back.checksum(), g.checksum()); assert.ok(back.runs.every(r => r.summit2 === s2));
+  for (const x of [g, h]) { x.world.startAct(3); for (const r of x.runs) r.startAct(3); x.mirror(); }
+  const n = g.world.act.secondSummitAt;
+  assert.equal(n, 5); assert.equal(g.world.act.gauntlet.length, 10);
+  assert.ok(g.runs.every(r => r.act.gauntlet.length === 10 && r.secondSummitAt === 5), 'private scenes see the doubled gauntlet');
+  // the first CHAMPION is not the final fight: its reward leads to the break before room 5, which fully heals
+  for (const x of [g, h]) {
+    for (const r of x.runs) for (const m of r.party) { m.hp = 0; m.status = 'BRN'; }
+    x.battleCfg = { kind: 'boss', gauntlet: n - 1 }; x.phase = 'private'; x.private = { kind: 'reward', done: x.runs.map(() => true) };
+    x.advance();
+  }
+  assert.equal(g.phase, 'private'); assert.equal(g.private.kind, 'plateau'); assert.equal(g.private.next, n);
+  assert.ok(g.runs.every(r => r.party.every(m => m.hp === maxHp(m) && !m.status)), 'everyone fully healed and revived');
+  assert.equal(g.checksum(), h.checksum());
+  // the room after it is the second region's first ELITE FOUR member; the last room ends the run
+  const c = g.world.gauntletConfig(g.world.rng.fork('g' + n), n);
+  assert.equal(c.trainer.key || g.world.act.gauntlet[n], g.world.act.gauntlet[n]);
+  assert.equal(g.world.summitRegionAt(n), s2);
+  // other breaks still give +50% to the standing POKéMON only
+  for (const r of g.runs) { r.party[0].hp = 0; r.party[0].status = null; }
+  g.gauntletBreak(n + 1);
+  assert.ok(g.runs.every(r => r.party[0].hp === 0), 'a fainted POKéMON stays down on a normal break');
 });
 
 console.log(`${pass} passed, ${fail} failed`);

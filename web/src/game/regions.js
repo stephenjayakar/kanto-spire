@@ -182,8 +182,62 @@ export const isSpireWorld = (w) => !!COOP_POOLS[w];
 export const coopWorldFor = (meta) => { const n = unlockedRegions(meta); return n.includes('johto') ? 'spire_johto' : n.length > 1 ? 'spire' : 'spire_kanto'; };
 export const coopWorldRegions = (w) => (COOP_POOLS[w] || [w]).map(id => regionOf(id).name).join(' + ');
 
+// ---- A10 double summit (v0.5.13) --------------------------------------------------------------------------------
+// Like Slay the Spire 2's top ascension (a second boss at the end of the last act): an A10 run's act 4 ends with TWO
+// ELITE FOUR + CHAMPION blocks. The first is the run's summit region as usual; the second (run.summit2) is another
+// region's, so its four members and its CHAMPION are different trainers (KANTO: BLUE, HOENN: WALLACE, JOHTO: LANCE).
+// Between the two blocks the team is fully healed (Run.gauntletBreakHeal). run.summit2 is only set on A10 runs
+// started on v0.5.13+ (older saves and A0-A9 runs have no such field and keep the single gauntlet).
+export const DOUBLE_SUMMIT_ASC = 10;
+// The second summit's region, another region than the first summit's, so a fresh set of trainers: preferably one
+// whose ELITE FOUR / CHAMPION share no trainer with the first (KANTO and JOHTO share BRUNO and LANCE) and that the run
+// visits in acts 1-4, then one from the run's pool, then any. Its own RNG stream: the run's RNG is untouched.
+const summitNames = (id) => new Set((regionOf(id).acts.find(a => a.gauntlet)?.gauntlet || []).map(k => (k === 'CHAMPION_FIRST' ? 'BLUE' : D.trainers?.[k]?.name || k)));
+export function pickSummit2(seed, summit, visited = [], pool = null) {
+  const first = summitNames(summit);
+  const fresh = (id) => ![...summitNames(id)].some(n => first.has(n));
+  const others = (ids, f = () => true) => [...new Set(ids)].filter(id => REGIONS[id] && id !== summit && f(id));
+  const tiers = [others(visited, fresh), others(pool || [], fresh), others(visited), others(pool || []), others(REGION_IDS, fresh), others(REGION_IDS)];
+  const cands = tiers.find(c => c.length) || [];
+  return cands.length ? new RNG(`${seed}:summit2`).pick(cands) : null;
+}
+const doubleCache = new WeakMap();
+// acts with the gauntlet act extended by summit2's ELITE FOUR + CHAMPION (rooms 5-9). Per room: gauntlet keys,
+// gauntletLevels (both blocks at the act's ELITE FOUR levels), summitHp / summitDmg and summits (each room's region).
+// secondSummitAt: the first room of the second block.
+export function doubleSummitActs(acts, summit2) {
+  if (!REGIONS[summit2]) return acts;
+  let byRegion = doubleCache.get(acts);
+  if (!byRegion) doubleCache.set(acts, byRegion = new Map());
+  let out = byRegion.get(summit2);
+  if (out) return out;
+  out = acts.map((a, t) => {
+    if (!a.gauntlet || a.secondSummitAt) return a;
+    const s1 = regionOf(a.summit || a.region), s2 = regionOf(summit2);
+    const b2 = s2.acts[t]?.gauntlet ? s2.acts[t] : s2.acts.find(x => x.gauntlet);
+    if (!b2) return a;
+    const n = a.gauntlet.length, n2 = b2.gauntlet.length;
+    const per = (arr, len, d) => Array.from({ length: len }, (_, i) => (arr ? arr[Math.min(i, arr.length - 1)] : d));
+    return {
+      ...a,
+      gauntlet: [...a.gauntlet, ...b2.gauntlet],
+      gauntletLevels: [...a.gauntletLevels, ...per(a.gauntletLevels, n2)],
+      summitHp: [...per(a.summitHp, n, s1.summit.hp), ...per(s2.summit.spireHp, n2, s2.summit.hp)],
+      summitDmg: [...per(a.summitDmg, n, 1), ...per(s2.summit.spireDmg, n2, 1)],
+      summits: [...per(null, n, s1.id), ...per(null, n2, s2.id)],
+      summit2, secondSummitAt: n,
+    };
+  });
+  byRegion.set(summit2, out);
+  return out;
+}
+
 // A run's act list: a spire run's built list, or a legacy world's fixed one (saves from before v0.1.0 finish in it).
-export function actsForRun(run) { return run.world === SPIRE ? spireActs(run.regions, run.rival) : actsFor(run.world); }
+// A10 runs with a second summit (run.summit2) get act 4's gauntlet doubled (doubleSummitActs).
+export function actsForRun(run) {
+  const acts = run.world === SPIRE ? spireActs(run.regions, run.rival) : actsFor(run.world);
+  return run.summit2 ? doubleSummitActs(acts, run.summit2) : acts;
+}
 
 // The GYM LEADERS an act can end with (the act-clear preview of the next act).
 export const actBosses = (act) => (act?.bosses || []).filter(k => !k.startsWith('LEGEND_'));

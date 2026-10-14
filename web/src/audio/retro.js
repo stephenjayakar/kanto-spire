@@ -144,7 +144,7 @@ export function retroSong(act, name, ctx = null, env = {}) {
   const battle = ctx && ctx.kind ? ctx : null;
   const gauntlet = !!battle && battle.gauntlet !== undefined && battle.gauntlet !== null;
   let region = act ? act.region : 'kanto';
-  if (act && (gauntlet || name === 'mus_hall_of_fame')) region = act.summit || act.region;
+  if (act && (gauntlet || name === 'mus_hall_of_fame')) region = (gauntlet && act.summits?.[battle.gauntlet]) || act.summit || act.region; // (A10: the 2nd ELITE FOUR's region)
   if (ctx && ctx.event && RETRO_EVENT[ctx.event] && region !== 'kanto') return RETRO_EVENT[ctx.event];
 
   if (region === 'hoenn') {

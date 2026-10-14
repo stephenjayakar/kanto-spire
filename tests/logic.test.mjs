@@ -2477,5 +2477,58 @@ t('v0.5.7: co-op foes skip useless status moves too (per target player)', () => 
   for (let i = 0; i < 30; i++) { d.chooseIntents(); for (const it of d.intents.filter(Boolean)) assert.equal(it.move.key, 'TACKLE', 'no THUNDER WAVE on a paralyzed lead'); }
 });
 
+// ------------------------------------------------------------------------------------ v0.5.13 A10 double summit
+{
+  const RGm = await import('../web/src/game/regions.js');
+  t('A10 double summit: two ELITE FOUR + CHAMPION blocks from two regions, full heal between, old saves keep one', () => {
+    const all = ['kanto', 'hoenn', 'johto'];
+    const champs = new Set();
+    for (let i = 0; i < 40; i++) {
+      const r = Run.create({ seed: 'DS' + i, ascension: 10, world: 'spire', pool: all });
+      const s1 = r.regions.summit, s2 = r.summit2;
+      assert.ok(s2 && s2 !== s1, 'a different region');
+      // a fresh set of trainers: KANTO and JOHTO share BRUNO and LANCE, so with all three regions open those two never pair
+      assert.ok(!(['kanto', 'johto'].includes(s1) && ['kanto', 'johto'].includes(s2)), `${s1} + ${s2}`);
+      const before = JSON.stringify(Run.create({ seed: 'DS' + i, ascension: 10, world: 'spire', pool: all, summit2: null }).rng.state);
+      assert.equal(JSON.stringify(r.rng.state), before, "the draw doesn't touch the run's RNG");
+      r.startAct(3);
+      const act = r.act, n = act.secondSummitAt;
+      assert.equal(n, 5); assert.equal(act.gauntlet.length, 10);
+      assert.deepEqual(act.gauntlet.slice(0, 5), RGm.regionOf(s1).acts[3].gauntlet);
+      assert.deepEqual(act.gauntlet.slice(5), RGm.regionOf(s2).acts[3].gauntlet);
+      assert.deepEqual(act.gauntletLevels, [...RGm.GAUNTLET_LEVELS, ...RGm.GAUNTLET_LEVELS]);
+      assert.equal(r.summitRegionAt(4), s1); assert.equal(r.summitRegionAt(5), s2);
+      if (i < 6) for (let g = 0; g < 10; g++) {
+        const c = r.gauntletConfig(r.rng.fork('g' + g), g);
+        assert.ok(c.enemies.length >= 1 && c.enemies.every(e => D.species[e.species] && e.maxHp > 0), act.gauntlet[g]);
+        if (g === 4 || g === 9) champs.add(c.trainer.title);
+      }
+      // the second block's rooms ramp like the first (room 5 is no tougher than room 0 of its region)
+      if (i < 6) assert.ok(r.gauntletConfig(new RNG('x'), 5).enemies[0].maxHp <= r.gauntletConfig(new RNG('x'), 9).enemies[0].maxHp * 2);
+    }
+    assert.ok(champs.size >= 3, 'BLUE, WALLACE and LANCE all show up as second CHAMPIONS: ' + [...champs]);
+    // the heal: +50% to standing POKéMON between rooms, a full heal + revive before the second ELITE FOUR
+    const r = Run.create({ seed: 'DSH', ascension: 10, world: 'spire', pool: all }); r.startAct(3);
+    const m = r.party[0];
+    m.hp = 0; assert.equal(r.gauntletBreakHeal(3), false); assert.equal(m.hp, 0);
+    m.hp = 1; r.gauntletBreakHeal(2); assert.equal(m.hp, Math.min(maxHp(m), 1 + Math.floor(maxHp(m) * 0.5)));
+    m.hp = 0; m.status = 'PSN'; assert.equal(r.gauntletBreakHeal(5), true); assert.equal(m.hp, maxHp(m)); assert.equal(m.status, null);
+    // A9 and below: no second summit, no new field (saves and co-op checksums unchanged)
+    const a9 = Run.create({ seed: 'DSH', ascension: 9, world: 'spire', pool: all }); a9.startAct(3);
+    assert.ok(!('summit2' in a9)); assert.equal(a9.act.gauntlet.length, 5); assert.equal(a9.secondSummitAt, null);
+    // an A10 save from before v0.5.13 (no summit2) keeps its single gauntlet; a new one survives a save/load
+    const o = JSON.parse(JSON.stringify(r)); const r2 = Run.fromJSON(JSON.parse(JSON.stringify(o)));
+    assert.equal(r2.summit2, r.summit2); assert.equal(r2.act.gauntlet.length, 10);
+    delete o.summit2; const old = Run.fromJSON(o);
+    assert.equal(old.act.gauntlet.length, 5); assert.ok(!('summit2' in old));
+    // legacy worlds (pre-spire saves, tests) work too: KANTO's second summit is HOENN (JOHTO shares trainers)
+    const k = Run.create({ seed: 'DSK', ascension: 10, world: 'kanto' }); k.startAct(3);
+    assert.equal(k.summit2, 'hoenn'); assert.equal(k.act.gauntlet.length, 10); assert.equal(k.act.gauntlet[9], 'RS_CHAMPION');
+    for (let g = 0; g < 10; g++) assert.ok(k.gauntletConfig(new RNG('k' + g), g).enemies.length >= 1);
+    assert.equal(ACTS[3].gauntlet.length, 5, "the shared act data isn't mutated");
+    assert.match(ASCENSIONS[10].desc, /ELITE FOUR/);
+  });
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -3,7 +3,7 @@ import { RNG, randomSeedString } from './rng.js';
 import { D, expYield, expForLevel, isSpecial, speciesName, typeEffect } from './data.js';
 import { canUseStone, makeMon, maxHp, healFull, healFrac, isFainted, gainExp, addLevels, teachMove, knowsMove, canLearn, typesOf, setUidCounter, nextUid, itemEvolution, evolve, monName, defaultMoves, defaultCopies, DECK_RULES, NO_PLAYER_MOVES, LEGENDARY } from './pokemon.js';
 import { LEGENDS, STARTERS, rivalKey, BIRDS, RIVAL_INTROS, counterStarter, rivalParty , blueParty, MYTHICS, swapBoss } from './acts.js';
-import { actsForRun, regionOf, drawSpire, rivalFor, validSpire, spireCode, SPIRE, timeOfDay, areaPool, withFinds } from './regions.js';
+import { actsForRun, regionOf, drawSpire, rivalFor, validSpire, spireCode, SPIRE, timeOfDay, areaPool, withFinds, pickSummit2, DOUBLE_SUMMIT_ASC } from './regions.js';
 import { HOENN_TRAINER_CLASSES } from './hoenn.js';
 import { generateMap } from './map.js';
 import { makeEnemy, abilityOf } from './battle.js';
@@ -23,7 +23,7 @@ export const ASCENSIONS = [
   { n: 7, name: 'Bulky Foes', desc: 'Enemies have 15% more HP.' },
   { n: 8, name: 'Nuzlocke', desc: 'A POKéMON that faints in battle is released for good. Only the first wild POKéMON of each act can be caught.' },
   { n: 9, name: 'Ruthless Elites', desc: 'From Act 2 on, elite battles have boss rules.' },
-  { n: 10, name: "Champion's Path", desc: 'From Act 2 on, enemies hit 15% harder and are 1 more level higher. Good luck.' },
+  { n: 10, name: "Champion's Path", desc: "From Act 2 on, foes hit 15% harder and are 1 level higher. Double finale: a full heal, then another region's ELITE FOUR and CHAMPION." },
 ];
 // The first stage of a species' evolution line (wild no-repeat counts whole families: WEEDLE, KAKUNA, BEEDRILL).
 let PREVO = null;
@@ -101,7 +101,8 @@ export class Run {
   // world: 'spire' (v0.1.0: each act draws its region; pool = the regions it may draw, or pass regions/rival
   // to copy a draw, e.g. co-op's player runs), or a legacy 'kanto' / 'hoenn' world (old saves and tests).
   // champ: the player has beaten a CHAMPION in an earlier run (meta.unlocks.win): CERULEAN CAVE's MEWTWO can show up.
-  static create({ starter = 'CHARMANDER', ascension = 0, seed = null, world = 'kanto', shiny = false, coop = false, pool = null, regions = null, rival = null, champ = false } = {}) {
+  // summit2: A10's second ELITE FOUR region (regions.js pickSummit2; pass it to copy a draw, e.g. co-op's player runs).
+  static create({ starter = 'CHARMANDER', ascension = 0, seed = null, world = 'kanto', shiny = false, coop = false, pool = null, regions = null, rival = null, champ = false, summit2 } = {}) {
     const r = new Run();
     r.abilityRules = 1; // (v0.5.0 abilities: Gen 4 mons use the HGSS ability lists)
     r.seed = seed || randomSeedString();
@@ -113,6 +114,13 @@ export class Run {
       r.regions = validSpire(regions) ? JSON.parse(JSON.stringify(regions)) : drawSpire(r.seed, pool || ['kanto']);
       r.rival = rival || rivalFor(starter);
     }
+    // (v0.5.13) A10: a second ELITE FOUR + CHAMPION from another region ends the run. Only set at A10, so other runs
+    // (and their co-op checksums) don't change; saves without it keep the single gauntlet.
+    if (summit2 === undefined && ascension >= DOUBLE_SUMMIT_ASC) {
+      const first = r.regions ? r.regions.summit : regionOf(world).id;
+      summit2 = pickSummit2(r.seed, first, r.regions ? r.regions.acts : [], pool);
+    }
+    if (summit2) r.summit2 = summit2;
     if (coop) r.coop = true;
     r.actIndex = 0;
     r.party = [];
@@ -155,6 +163,10 @@ export class Run {
   get region() { return this.act?.region || 'kanto'; }
   get rivalRegion() { return this.rival || this.region; } // (legacy worlds: the world's own rival)
   get summitRegion() { return this.act?.summit || this.region; }
+  // The region of ELITE FOUR room i (A10's second block is summit2's; regions.js doubleSummitActs).
+  summitRegionAt(i = this.gauntletIndex) { return this.act?.summits?.[i] || this.summitRegion; }
+  // A10: the first room of the second ELITE FOUR (null without one).
+  get secondSummitAt() { return this.act?.secondSummitAt ?? null; }
   // JOHTO acts: 'morn' | 'day' | 'nite' by the floor (regions.js timeOfDay), null in regions without day and night.
   timeOfDay(floor = this.floor) { return regionOf(this.region).dayNight ? timeOfDay(floor, this.act.floors) : null; }
 
@@ -784,7 +796,8 @@ export class Run {
     const lvl = act.gauntletLevels[i] + (this.ascension >= 3 ? 2 : 0) + (this.ascension >= 10 ? 1 : 0);
     const rule = t.rule || (key === 'RS_CHAMPION' ? 'WALLACE_CHAMPION' : champion ? null : key.replace('ELITE_FOUR_', '')); // (v0.3.25: EMERALD's WALLACE; was STEVEN)
     const rules = champion && !rule ? t.party.map(() => rng.pick(CHAMPION_RULE_POOL)) : null;
-    const hp = TUNING.gauntletHp[i] * (TUNING.hpMult ?? 1) / this.hpScaleFor(act.floors, 'boss') * (act.summitHp ? act.summitHp[Math.min(i, act.summitHp.length - 1)] : regionOf(this.summitRegion).summit.hp);
+    const j = act.secondSummitAt && i >= act.secondSummitAt ? i - act.secondSummitAt : i; // (A10's second block ramps like the first)
+    const hp = TUNING.gauntletHp[Math.min(j, TUNING.gauntletHp.length - 1)] * (TUNING.hpMult ?? 1) / this.hpScaleFor(act.floors, 'boss') * (act.summitHp ? act.summitHp[Math.min(i, act.summitHp.length - 1)] : regionOf(this.summitRegion).summit.hp);
     const enemies = this.makeTrainerEnemies(rng, t, lvl, 'boss', 6, { floor: act.floors, rule, rules, hpMult: hp * TUNING.kindHp.boss });
     this.addThreat(key, enemies);
     const info = this.trainerInfo(t);
@@ -1034,6 +1047,18 @@ export class Run {
     }
   }
 
+  // Between ELITE FOUR rooms, before room `next`: the standing POKéMON get +50% HP; before A10's second ELITE FOUR
+  // (secondSummitAt) the whole team is fully healed and revived, like a POKéMON CENTER. Returns true for the full heal.
+  gauntletBreakHeal(next) {
+    const full = next === this.secondSummitAt;
+    for (const m of this.party) {
+      if (full) { if (!m.lost) { m.hp = maxHp(m); m.status = null; } }
+      else if (!isFainted(m)) m.hp = Math.min(maxHp(m), m.hp + Math.floor(maxHp(m) * 0.5));
+    }
+    if (full) this.logEvent({ k: 'summit2', region: this.summit2 });
+    return full;
+  }
+
   nextActHeal() {
     this.logEvent({ k: 'actClear', hp: this.teamHpFrac() });
     for (const m of this.party) {
@@ -1086,6 +1111,8 @@ export class Run {
     def('flags', {});
     def('maxConsumables', 3);
     def('gauntletIndex', -1);
+    // (v0.5.13) summit2 (A10's second ELITE FOUR) gets NO default on purpose: only A10 runs started on v0.5.13+ have
+    // it, and a save without it keeps the single gauntlet it was started with (regions.js actsForRun).
     def('finished', false);
     def('victory', false);
     def('moveOffers', {}); // (v0.3.7)

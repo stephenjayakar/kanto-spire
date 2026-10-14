@@ -321,7 +321,9 @@ export class MapScene {
   bossTypeLine() {
     const run = this.mapRun(), g = run.act.gauntlet;
     if (!g) return `Type: ${bossTypeLabel(run.boss)}`;
-    return `Types: ${g.slice(0, 4).map(k => `${D.trainers[k]?.name || k} ${bossTypeLabel(k)}`).join(', ')}; CHAMPION ${bossTypeLabel(g[4])}`;
+    const block = (b) => `${b.slice(0, 4).map(k => `${D.trainers[k]?.name || k} ${bossTypeLabel(k)}`).join(', ')}; CHAMPION ${bossTypeLabel(b[4])}`;
+    const n = run.act.secondSummitAt;
+    return n ? `Types: ${block(g.slice(0, n))}.\nThen: ${block(g.slice(n))}` : `Types: ${block(g)}`;
   }
   drawBanner(ctx, act) {
     if (!this.banner) return;
@@ -333,14 +335,21 @@ export class MapScene {
   }
   bossTitle() {
     const run = this.mapRun();
-    if (run.act.gauntlet) return 'ELITE FOUR';
+    if (run.act.gauntlet) return run.act.secondSummitAt ? 'ELITE FOUR x2' : 'ELITE FOUR';
     if (LEGENDS[run.boss]) return LEGENDS[run.boss].title;
     const t = D.trainers[run.boss];
     return t ? `${t.className} ${t.name}` : 'BOSS';
   }
-  bossDesc() {
+  // short: the right panel's version (A10's two ELITE FOURS don't fit there in full; the tooltip has them)
+  bossDesc(short = false) {
     const run = this.mapRun();
-    if (run.act.gauntlet) return `${run.act.gauntlet.slice(0, 4).map(k => D.trainers[k]?.name).join(', ')} back to back, then the CHAMPION. Each has a rule of their own.`;
+    if (run.act.gauntlet) {
+      if (short && run.act.secondSummitAt) return `The ${regionOf(run.summitRegion).name} ELITE FOUR and CHAMPION, a full heal, then ${regionOf(run.act.summit2).name}'s. Hover the boss for more.`;
+      const g = run.act.gauntlet, n = run.act.secondSummitAt, names = (b) => b.slice(0, 4).map(k => D.trainers[k]?.name).join(', ');
+      const first = `${names(g)} back to back, then the CHAMPION. Each has a rule of their own.`;
+      // A10: a second region's ELITE FOUR and CHAMPION after a full heal
+      return n ? `${first}\nThen a full heal, and the ${regionOf(run.act.summit2).name} ELITE FOUR (${names(g.slice(n))}) and its CHAMPION.` : first;
+    }
     const key = run.boss?.replace('LEADER_', '');
     const r = BOSS_RULES[key] || (LEGENDS[run.boss] ? BOSS_RULES.LEGEND : null);
     return r ? `${r.name}: ${r.desc}` : '';
@@ -360,7 +369,7 @@ export class MapScene {
         if (p) drawPortrait(ctx, trainerPath(p), x + 6 + i * 36, 48, 34, 38);
         drawTypeTags(ctx, bossTypes(k), x + 7 + i * 36, 88);
       });
-      text(ctx, 'ELITE FOUR', x + w / 2, 104, { align: 'center', color: 'gold' });
+      text(ctx, run.act.secondSummitAt ? `ELITE FOUR x2 (+${regionOf(run.act.summit2).name})` : 'ELITE FOUR', x + w / 2, 104, { align: 'center', color: 'gold', ...(run.act.secondSummitAt ? { font: 'small' } : {}) });
     } else if (LEGENDS[run.boss]) {
       import('./common.js').then(() => {});
       draw(ctx, monSprite(LEGENDS[run.boss].species), x + w / 2 - 32, 46);
@@ -376,7 +385,7 @@ export class MapScene {
       if (ts.length > 1) ts.forEach((t, i) => drawTypeTags(ctx, [t], x + w - 38, 82 + i * 14));
       else drawTypeTags(ctx, ts, x + w - 38, 82);
     }
-    textBlock(ctx, this.bossDesc(), x + 8, 126, w - 16, { color: 'whiteSoft', font: 'small', lineHeight: 10 });
+    textBlock(ctx, this.bossDesc(true), x + 8, 126, w - 16, { color: 'whiteSoft', font: 'small', lineHeight: 10 });
   }
   drawLegend(ctx) {
     const run = this.mapRun();

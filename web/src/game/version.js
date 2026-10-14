@@ -2,9 +2,18 @@
 // Game version and patch notes (shown from the title screen). Versions are major.minor.patch: every production
 // deploy that changes the game bumps the patch (v0.2.0 -> v0.2.1); the owner calls minor bumps (v0.1.x -> v0.2.0);
 // no major bumps yet. Each one gets a new top PATCH_NOTES entry; see AGENTS.md.
-export const VERSION = 'v0.5.12';
+export const VERSION = 'v0.5.13';
 
 export const PATCH_NOTES = [
+  {
+    v: 'v0.5.13',
+    sections: [
+      ['ASCENSION', [
+        "A10 CHAMPION'S PATH now has a double finale, like Slay the Spire 2's top ascension: after you beat the CHAMPION, your team is fully healed and revived, then another region's ELITE FOUR and CHAMPION (BLUE, WALLACE or LANCE) stand between you and the win. The second region is one your run visited when it can be. Solo and co-op",
+        'Runs already in progress keep their single ELITE FOUR',
+      ]],
+    ],
+  },
   {
     v: 'v0.5.12',
     sections: [

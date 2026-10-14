@@ -306,7 +306,7 @@ function harvest(G, from, to) {
           if (run.act.postgame) break;
           if (run.act.gauntlet) {
             for (let g = 1; g < run.act.gauntlet.length; g++) {
-              for (const m of run.party) if (!G.isFainted(m)) m.hp = Math.min(G.maxHp(m), m.hp + Math.floor(G.maxHp(m) * 0.5));
+              run.gauntletBreakHeal(g); // (+50% HP; A10: full heal before the second ELITE FOUR)
               run.gauntletIndex = g;
               B.doShop(run, rng.fork('plateau' + g), 'smart');
               const b2 = B.fight(run, run.gauntletConfig(rng.fork('g' + g), g), 'smart', null);

@@ -185,7 +185,7 @@ function simulate(seed, asc, starter) {
             log(`   GAUNTLET ${cfg2.trainer.title} -> ${b2.result.outcome} in ${b2.turn}`);
             if (b2.result.outcome === 'lose') { run.finished = true; return { run, died: `E4 ${cfg2.trainer.title}` }; }
             postBattle(run, b2, rng);
-            for (const m of run.party) if (!isFainted(m)) m.hp = Math.min(maxHp(m), m.hp + Math.floor(maxHp(m) * 0.5));
+            run.gauntletBreakHeal(i + 1); // (+50% HP; A10: full heal before the second ELITE FOUR)
           }
           run.finished = true; run.victory = true; return { run, died: null };
         }
