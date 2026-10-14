@@ -41,13 +41,16 @@ import { RNG } from '../rng.js';
 // last turn, foes skip status moves that would do nothing; v0.5.6 is frozen as 'v056'.
 // v0.5.8 does: VETERAN (a per-turn damage cap and an ATTACK / SP. ATK ramp) on LEADER KOGA, GIOVANNI, CHUCK, JASMINE and
 // ELITE FOUR SIDNEY, and SABRINA's foes no longer hit 15% softer; v0.5.7 is frozen as 'v057'.
-export const LOGIC_ID = 'v058';
+// v0.5.12 does: A10 runs end with a second ELITE FOUR + CHAMPION from another region (run.summit2, a full heal before
+// it); v0.5.8-v0.5.11 is frozen as 'v058'.
+export const LOGIC_ID = 'v0512';
 // Actions from before v0.3.6 carry no stamp: they were played on v0.3.5 (or, for older rooms, earlier; the
 // replay checks the clients' logged checksums and tries every frozen engine, see resume.js).
 export const UNSTAMPED = 'v035';
 // Frozen copies, newest first: id -> the versions it covers and its loader (dynamic import: only fetched when a
 // room needs it).
 export const FROZEN = {
+  v058: { versions: 'v0.5.8-v0.5.11', load: () => import('../../legacy/v058/engine.js') },
   v057: { versions: 'v0.5.7', load: () => import('../../legacy/v057/engine.js') },
   v056: { versions: 'v0.5.6', load: () => import('../../legacy/v056/engine.js') },
   v053: { versions: 'v0.5.3-v0.5.5', load: () => import('../../legacy/v053/engine.js') },

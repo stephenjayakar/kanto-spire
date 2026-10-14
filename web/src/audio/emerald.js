@@ -62,7 +62,7 @@ export function hoennSong(act, name, ctx = null) {
   if (ctx && ctx.kind) {
     // the ELITE FOUR / CHAMPION play their region's music (act 4 can be one region and the summit another)
     const gauntlet = ctx.gauntlet !== undefined && ctx.gauntlet !== null;
-    const region = gauntlet ? act.summit || act.region : act.region;
+    const region = gauntlet ? act.summits?.[ctx.gauntlet] || act.summit || act.region : act.region; // (A10: the 2nd ELITE FOUR's region)
     if (!isHoenn(region)) return null;
     const key = ctx.trainer?.key || '';
     const team = /^(AQUA|MAGMA)_/.test(key) ? (/_LEADER/.test(key) ? 'leader' : 'grunt') : null;

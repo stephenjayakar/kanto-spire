@@ -3,7 +3,7 @@
 import { D } from '../data.js';
 import { RNG } from '../rng.js';
 import { Run } from '../run.js';
-import { setUidCounter, isFainted, maxHp } from '../pokemon.js';
+import { setUidCounter } from '../pokemon.js';
 import { reachable } from '../map.js';
 import { BADGES, CONSUMABLES } from '../items.js';
 import { pickEvent, coopProbe, eventById } from '../events.js';
@@ -275,7 +275,7 @@ export class CoopGame {
     // (the region draw comes from the shared seed; both players' runs copy it, and the rival follows P1's starter)
     this.world = Run.create({ starter: starters[0], ascension: this.ascension, seed: this.seed, world: this.worldName, coop: true, pool });
     this.runs = starters.map((st, p) => {
-      const r = Run.create({ starter: st, ascension: this.ascension, seed: `${this.seed}:p${p}`, world: this.worldName, coop: true, regions: this.world.regions, rival: this.world.rival });
+      const r = Run.create({ starter: st, ascension: this.ascension, seed: `${this.seed}:p${p}`, world: this.worldName, coop: true, regions: this.world.regions, rival: this.world.rival, summit2: this.world.summit2 ?? null });
       r.playerName = this.names[p];
       return r;
     });
@@ -311,6 +311,7 @@ export class CoopGame {
       r.map = w.map; r.actIndex = w.actIndex; r.nodeId = w.nodeId; r.floor = w.floor; r.boss = w.boss; r.gauntletIndex = w.gauntletIndex;
       r.ascension = this.ascension; r.world = this.worldName;
       if (w.regions) { r.regions = w.regions; r.rival = w.rival; }
+      if (w.summit2) r.summit2 = w.summit2; // (A10's second ELITE FOUR: the room's draw)
     }
   }
 
@@ -513,12 +514,11 @@ export class CoopGame {
     return id && MYTHICS[id] ? id : null;
   }
 
-  // Between Elite Four rooms: partial heal, then a private Plateau Mart, then the next room.
+  // Between Elite Four rooms: partial heal (A10: a full heal before the second ELITE FOUR, Run.gauntletBreakHeal),
+  // then a private Plateau Mart, then the next room.
   gauntletBreak(next) {
     this.world.gauntletIndex = next;
-    for (const r of this.runs) {
-      for (const m of r.party) if (!isFainted(m)) m.hp = Math.min(maxHp(m), m.hp + Math.floor(maxHp(m) * 0.5));
-    }
+    for (const r of this.runs) r.gauntletBreakHeal(next);
     this.mirror();
     this.battle = null;
     this.startPrivate('plateau', { key: 'plateau' + next, next });

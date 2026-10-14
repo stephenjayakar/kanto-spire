@@ -130,7 +130,7 @@ function simulate(i) {
         if (run.act.postgame) { const P = (M.post ||= { n: 0, w: 0, deaths: {} }); P.n++; P.w++; P.boss = cfg.trainer?.name || cfg.legend; return finish(null); }
         if (run.act.gauntlet) {
           for (let g = 1; g < run.act.gauntlet.length; g++) {
-            for (const m of run.party) if (!isFainted(m)) m.hp = Math.min(maxHp(m), m.hp + Math.floor(maxHp(m) * 0.5));
+            run.gauntletBreakHeal(g); // (+50% HP; A10: full heal before the second ELITE FOUR)
             run.gauntletIndex = g;
             if (SKILL === 'smart') doShop(run, rng.fork('plateau' + g), SKILL);
             const c2 = run.gauntletConfig(rng.fork('g' + g), g);

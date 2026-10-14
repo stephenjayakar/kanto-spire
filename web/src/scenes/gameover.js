@@ -42,7 +42,7 @@ export class ActClearScene {
     this.t = 0;
     const run = G.run;
     if (this.opts.gauntletBreak && !this.opts.noHeal) {
-      for (const m of run.party) if (!isFainted(m)) m.hp = Math.min(maxHp(m), m.hp + Math.floor(maxHp(m) * 0.5));
+      run.gauntletBreakHeal(this.opts.next); // (+50% HP; A10: a full heal before the second ELITE FOUR)
       saveRun();
     }
     Sound.playBGM(this.opts.gauntletBreak ? 'mus_victory_road' : 'mus_obtain_badge');
@@ -58,13 +58,14 @@ export class ActClearScene {
       const tk = key === 'CHAMPION_FIRST' ? 'CHAMPION_FIRST_SQUIRTLE' : key;
       const names = { [key]: key === 'CHAMPION_FIRST' ? (run.rivalRegion === 'kanto' ? 'YOUR RIVAL' : 'CHAMPION BLUE') : key === 'RS_CHAMPION' ? 'CHAMPION WALLACE' : bossTitle(tk) };
       const pics = { [key]: D.trainers[tk]?.pic };
-      text(ctx, 'ON TO THE NEXT ROOM', W / 2, 50, { align: 'center', color: 'gold', scale: 2 });
+      const second = this.opts.next === run.secondSummitAt; // (A10: the second ELITE FOUR comes next)
+      text(ctx, second ? `${regionOf(run.summitRegionAt(this.opts.next)).name} ELITE FOUR AWAITS` : 'ON TO THE NEXT ROOM', W / 2, 50, { align: 'center', color: 'gold', scale: 2 });
       drawTrainer(ctx, pics[key], W / 2 - 64, 100, { scale: 2, minTop: 70 });
       // the next room's name, then its type
       const nextLine = `Next: ${names[key]}`, ts = bossTypes(key), lw = measure(nextLine), tw = typeTagsWidth(ts), lx = W / 2 - (lw + 8 + tw) / 2;
       text(ctx, nextLine, lx, 240, { color: 'white' });
       drawTypeTags(ctx, ts, lx + lw + 8, 242);
-      text(ctx, `Your team caught its breath (+50% HP).`, W / 2, 258, { align: 'center', color: 'whiteSoft', font: 'small' });
+      text(ctx, second ? 'A second summit! Your team was fully healed and revived.' : `Your team caught its breath (+50% HP).`, W / 2, 258, { align: 'center', color: 'whiteSoft', font: 'small' });
       this.drawReorder(ctx, run);
       // Co-op (the 'plateau' private phase, scenes/coop/session.js): the game already healed both teams; READY hands
       // this player's run (new order and purchases included) back with privateDone, and the next room starts once
@@ -138,7 +139,7 @@ export class ActClearScene {
     // (a post-game act can end with someone who isn't a GYM LEADER: JOHTO's PKMN TRAINER RED)
     const others = !next.gauntlet && leaders.every(k => D.trainers[k] && D.trainers[k].class !== 'LEADER');
     const line = next.gauntlet
-      ? `Then the ${regionOf(next.summit || next.region).name} ELITE FOUR: ${next.gauntlet.slice(0, 4).map(trainerName).join(', ')} and the CHAMPION`
+      ? `Then the ${regionOf(next.summit || next.region).name} ELITE FOUR: ${next.gauntlet.slice(0, 4).map(trainerName).join(', ')} and the CHAMPION${next.summit2 ? `, then the ${regionOf(next.summit2).name} ELITE FOUR and CHAMPION` : ''}`
       : others ? `AT THE TOP: ${orList(leaders.map(bossTitle))}` : `GYM LEADER: ${orList(leaders.map(trainerName))}`;
     text(ctx, line, W / 2, 249, { align: 'center', color: 'gold', font: 'small' });
     // portraits on the right, above the party
