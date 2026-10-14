@@ -21,7 +21,7 @@ export const GROUPS = [
   { id: 'uncommon', label: 'UNCOMMON', color: ['#58a8f8', '#1a3450'] },
   { id: 'rare', label: 'RARE', color: ['#f8d038', '#7a5a10'] },
   { id: 'legendary', label: 'LEGENDARY', color: ['#ff9c30', '#5a3010'], note: 'only from beating its legendary or mythic POKéMON' },
-  { id: 'curse', label: 'CURSE', color: ['#c890ff', '#402060'], note: "the price of some ? events  ·  can't be sold  ·  CLEANSE at a POKéMON CENTER" },
+  { id: 'curse', label: 'CURSE', color: ['#c890ff', '#402060'], note: "the price of some ? events  ·  CLEANSE at a POKéMON CENTER" },
 ];
 export const groupOf = (r) => (r.curse ? 'curse' : r.legendary ? 'legendary' : r.rarity);
 

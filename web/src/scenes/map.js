@@ -9,7 +9,7 @@ import { reachable, NODE_INFO } from '../game/map.js';
 import { LEGENDS, BIRD_PARTNER } from '../game/acts.js';
 import { regionOf, actTitle, TIME_NAMES } from '../game/regions.js';
 import { BOSS_RULES, bossTypes, bossTypeLabel } from '../game/bosses.js';
-import { CONSUMABLES, RELICS } from '../game/items.js';
+import { CONSUMABLES } from '../game/items.js';
 import { Sound } from '../audio/sound.js';
 import { monName } from '../game/pokemon.js';
 import { drawHUD, drawPartyPanel, drawIcon, drawPortrait, drawTrainer, DeckModal, PartyPicker, MessageBox, MoveReplaceModal, ChoiceModal, monTooltip, drawTypeTags, monSprite } from './common.js';
@@ -147,8 +147,6 @@ export class MapScene {
     drawHUD(ctx, run, {
       onDeck: () => pushOverlay(new DeckModal({})),
       onConsumableClick: (k) => useConsumableOutside(k),
-      sellable: true,
-      onRelicClick: (k) => sellRelicPrompt(k),
       onMenu: () => openRunMenu(),
     });
     panel(ctx, 4, 32, 154, 30 * run.party.length + 22);
@@ -521,21 +519,6 @@ export function trail(ctx, edges, color, outline, size, gap, phase) {
   }
   ctx.fillStyle = color;
   for (let i = 0; i < dots.length; i += 2) ctx.fillRect(dots[i], dots[i + 1], size, size);
-}
-
-export function sellRelicPrompt(key) {
-  if (RELICS[key]?.curse) {
-    pushOverlay(new ChoiceModal({ title: `${D.items[key]?.name} is a curse`, body: 'Nobody will buy a curse. A POKéMON CENTER can CLEANSE it for a fee.', options: [{ label: 'OK', value: 0 }] }));
-    return;
-  }
-  import('../game/shop.js').then(({ sellRelicValue }) => {
-    const v = sellRelicValue(key);
-    pushOverlay(new ChoiceModal({
-      title: `Sell ${D.items[key]?.name}?`, body: `You'll receive $${v}.`,
-      options: [{ label: `Sell for $${v}`, value: 1, color: THEME.discard }, { label: 'Keep it', value: 0 }],
-      onClose: (r) => { if (r === 1) { G.run.removeRelic(key); G.run.addMoney(v); Sound.playSE('se_shop'); saveRun(); } },
-    }));
-  });
 }
 
 export function openRunMenu() {
