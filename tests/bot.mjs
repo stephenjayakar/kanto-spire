@@ -702,8 +702,10 @@ export function doCenter(run, skill) {
   const hp = teamHp(run);
   if (hp < (skill === 'smart' ? 0.85 : 0.8) || run.party.some(isFainted)) run.centerHeal();
   else {
-    const m = skill === 'smart' ? [...run.party].sort((a, b) => BOT_OPTS.rotate ? a.level - b.level : b.level - a.level)[0] : run.party[0];
-    import('../web/src/game/pokemon.js').then(() => {});
+    // (v0.5.16: training stops at the A5+ level cap: only POKéMON below it; none -> heal)
+    const ok = run.party.filter(m => !isFainted(m) && !(run.levelUpBlocker ? run.levelUpBlocker(m) : m.level >= 100)); // (frozen engines' Runs lack it)
+    const m = skill === 'smart' ? ok.sort((a, b) => BOT_OPTS.rotate ? a.level - b.level : b.level - a.level)[0] : ok[0];
+    if (!m) { run.centerHeal(); return {}; }
     return { train: m };
   }
   return {};

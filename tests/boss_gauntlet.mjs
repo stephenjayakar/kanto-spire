@@ -320,7 +320,7 @@ function harvest(G, from, to) {
         }
       } else if (node.type === 'center') {
         const r = B.doCenter(run, 'smart');
-        if (r.train) B.handleLevelEvents(run, [{ mon: r.train, events: G.addLevels(r.train, 3) }], 'smart');
+        if (r.train) B.handleLevelEvents(run, [{ mon: r.train, events: run.addLevels ? run.addLevels(r.train, 3) : G.addLevels(r.train, 3) }], 'smart');
       } else if (node.type === 'mart') B.doShop(run, rng, 'smart');
       else if (node.type === 'treasure') {
         B.gainBotItem(run, run.randomConsumable(rng, run.actIndex + 1), 'smart');

@@ -65,6 +65,8 @@ export async function useConsumableNow(key, fromBag = true) {
     return false;
   }
   const filter = (m) => run.useBlocker(key, m) || true;
+  // (v0.5.16) RARE CANDY with the whole team at the level cap: say so instead of opening a picker with nobody in it
+  if (def.levels && !run.canUseNow(key)) { const cap = run.levelCap(); await toastMsg(cap ? `Your POKéMON are all at this act's level cap (Lv${cap}). ${name} can't raise them further.` : `${name} would have no effect.`); return false; }
   const mon = await pick(new PartyPicker({ title: `Use ${name} on...`, filter }));
   if (!mon) return false;
   if (run.applyConsumableToMon(key, mon)) {

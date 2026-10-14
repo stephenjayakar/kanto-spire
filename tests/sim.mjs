@@ -196,7 +196,7 @@ function simulate(seed, asc, starter) {
       }
     } else if (node.type === 'center') {
       if (avgHp < 0.8 || run.party.some(isFainted)) run.centerHeal();
-      else handleLevelEvents(run, [{ mon: run.party[0], events: (await_addLevels(run.party[0])) }]);
+      else handleLevelEvents(run, [{ mon: run.party[0], events: run.addLevels(run.party[0], 2) }]);
     } else if (node.type === 'mart') {
       const shop = generateShop(run, rng);
       for (const it of shop.items) if (run.money > it.price + 500 && (it.kind === 'ball' || it.kind === 'relic' || CONSUMABLES[it.key]?.heal)) buyItem(run, shop, it);
@@ -222,7 +222,6 @@ function simulate(seed, asc, starter) {
 }
 
 import { addLevels } from '../web/src/game/pokemon.js';
-function await_addLevels(mon) { return addLevels(mon, 2); }
 
 const results = [];
 const t0 = Date.now();

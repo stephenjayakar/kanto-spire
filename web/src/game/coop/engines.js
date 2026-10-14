@@ -45,13 +45,16 @@ import { RNG } from '../rng.js';
 // it); v0.5.8-v0.5.12 is frozen as 'v058'.
 // v0.5.14 does: NUZLOCKE co-op rooms (init.nuzlocke, the host's lobby option): fainted POKéMON are released, one catch per
 // act per player, a player with no POKéMON left is out for good; v0.5.13 is frozen as 'v0513'.
-export const LOGIC_ID = 'v0514';
+// v0.5.16 does: a foe acting twice in a turn (3-4 players) checks sleep / freeze once per turn (asleep on its first
+// action = asleep on all of them), and no level-up source passes the act's level cap; v0.5.14-v0.5.15 is frozen as 'v0514'.
+export const LOGIC_ID = 'v0516';
 // Actions from before v0.3.6 carry no stamp: they were played on v0.3.5 (or, for older rooms, earlier; the
 // replay checks the clients' logged checksums and tries every frozen engine, see resume.js).
 export const UNSTAMPED = 'v035';
 // Frozen copies, newest first: id -> the versions it covers and its loader (dynamic import: only fetched when a
 // room needs it).
 export const FROZEN = {
+  v0514: { versions: 'v0.5.14-v0.5.15', load: () => import('../../legacy/v0514/engine.js') },
   v0513: { versions: 'v0.5.13', load: () => import('../../legacy/v0513/engine.js') },
   v058: { versions: 'v0.5.8-v0.5.12', load: () => import('../../legacy/v058/engine.js') },
   v057: { versions: 'v0.5.7', load: () => import('../../legacy/v057/engine.js') },

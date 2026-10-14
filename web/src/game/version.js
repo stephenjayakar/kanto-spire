@@ -2,9 +2,19 @@
 // Game version and patch notes (shown from the title screen). Versions are major.minor.patch: every production
 // deploy that changes the game bumps the patch (v0.2.0 -> v0.2.1); the owner calls minor bumps (v0.1.x -> v0.2.0);
 // no major bumps yet. Each one gets a new top PATCH_NOTES entry; see AGENTS.md.
-export const VERSION = 'v0.5.15';
+export const VERSION = 'v0.5.16';
 
 export const PATCH_NOTES = [
+  {
+    v: 'v0.5.16',
+    sections: [
+      ['FIXES', [
+        "Co-op with 3-4 players: a sleeping or frozen foe that acts twice a turn now loses both actions, as its intent box shows (every row reads ASLEEP / FROZEN). It used to sleep off two turns of sleep per turn and could wake up for its second action and hit someone",
+        "Level cap (A5+): RARE CANDY, the POKéMON CENTER's training, \"?\" events (DAY CARE, JIRACHI, the bells, training...) and gifts, trades and catches no longer take a POKéMON past the act's level cap. RARE CANDY used to go past it, which let an act 1 POKéMON reach Lv20",
+        "A card you can't play this turn (like FLY the turn after a FLY, LANDING) can now be selected so you can DISCARD it, instead of sitting stuck in your hand. Solo and co-op",
+      ]],
+    ],
+  },
   {
     v: 'v0.5.15',
     sections: [

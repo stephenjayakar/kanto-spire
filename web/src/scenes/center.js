@@ -5,7 +5,7 @@ import { text, textBlock } from '../engine/font.js';
 import { swirlBackground, BG_THEMES, button, panel, drawTips, THEME, tip } from '../engine/ui.js';
 import { D } from '../game/data.js';
 import { G, saveRun } from '../game/state.js';
-import { addLevels, monName, isFainted, maxHp } from '../game/pokemon.js';
+import { monName, isFainted, maxHp } from '../game/pokemon.js';
 import { Sound } from '../audio/sound.js';
 import { drawHUD, drawPartyPanel, PartyPicker, DeckModal } from './common.js';
 import { goToMap } from './flow.js';
@@ -31,10 +31,11 @@ export class CenterScene {
     this.done = true; this.busy = false; saveRun();
   }
   async train() {
-    const mon = await pick(new PartyPicker({ title: 'Train which POKéMON? (+3 levels)', filter: m => isFainted(m) ? 'Fainted' : m.level >= 100 ? 'Max level' : true, sub: m => `Lv${m.level} → Lv${Math.min(100, m.level + 3)}` }));
+    const run = G.run, cap = run.levelCap() ?? 100; // (v0.5.16: never past the A5+ level cap)
+    const mon = await pick(new PartyPicker({ title: 'Train which POKéMON? (+3 levels)', filter: m => isFainted(m) ? 'Fainted' : run.levelUpBlocker(m) || true, sub: m => `Lv${m.level} → Lv${Math.min(100, cap, m.level + 3)}` }));
     if (!mon) return;
     this.busy = true;
-    const ev = addLevels(mon, 3);
+    const ev = run.addLevels(mon, 3);
     G.run.inNode = false;
     await Sound.playFanfare('mus_level_up');
     this.say = `${monName(mon)} trained hard and grew to Lv${mon.level}!`;

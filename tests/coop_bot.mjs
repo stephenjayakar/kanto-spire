@@ -199,7 +199,7 @@ function privateAction(game, bot) {
     }
   } else if (kind === 'center') {
     const r = doCenter(run, 'smart');
-    if (r.train) handleLevelEvents(run, [{ mon: r.train, events: addLevels(r.train, 3) }], 'smart');
+    if (r.train) handleLevelEvents(run, [{ mon: r.train, events: run.addLevels ? run.addLevels(r.train, 3) : addLevels(r.train, 3) }], 'smart');
   } else if (kind === 'mart' || kind === 'plateau') doShop(run, rng, 'smart');
   else if (kind === 'treasure') {
     gainBotItem(run, run.randomConsumable(rng, run.actIndex + 1), 'smart');

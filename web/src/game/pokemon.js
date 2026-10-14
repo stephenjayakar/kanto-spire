@@ -105,9 +105,11 @@ export function gainExp(mon, amount) {
   return events;
 }
 
-export function addLevels(mon, n) {
+// cap (v0.5.16): the highest level this may reach (the A5+ level cap, Run.levelCap); a POKéMON at or past it gains nothing.
+export function addLevels(mon, n, cap = 100) {
   const rate = speciesOf(mon).growthRate;
-  const target = Math.min(100, mon.level + n);
+  const target = Math.min(100, cap ?? 100, mon.level + n);
+  if (target <= mon.level) return [];
   const need = expForLevel(rate, target) - mon.exp;
   return gainExp(mon, Math.max(0, need));
 }

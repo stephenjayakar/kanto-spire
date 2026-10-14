@@ -801,8 +801,10 @@ export class CoopBattleScene {
     return (this._hint[key] = best && bv > 0 ? best : null);
   }
 
+  // Selected cards that can't be played (picked to be discarded, v0.5.16): no attack preview, LOCK IN greyed out.
+  deadSel() { return this.sel.some(id => { const c = this.sub.deck.hand.find(x => x.id === id); return !c || !this.info(c).playable; }); }
   previewSim() {
-    if (!this.sel.length || !this.canSimulate() || this.busy) return null;
+    if (!this.sel.length || !this.canSimulate() || this.busy || this.deadSel()) return null;
     const d = this.duo, s = this.sub, slot = this.target, ri = d.field[slot];
     const e = d.enemyAt(slot);
     const key = [this.sel.join(','), slot, ri, e?.hp || 0, s.withFocus(ri, () => s.previewKey()), JSON.stringify(d.locks.filter((L, q) => q !== this.me))].join('|');
@@ -835,7 +837,8 @@ export class CoopBattleScene {
     if (!card) return;
     const i = this.sel.indexOf(id);
     const info = this.info(card);
-    if (i < 0 && !info.playable) { this.toast = { text: `That card can't be played (${info.reason}).`, t: 1.6 }; Sound.playSE('se_failure'); return; }
+    // v0.5.16: a card that can't be played (e.g. FLY the turn after a FLY: LANDING) can still be picked, to DISCARD it
+    if (i < 0 && !info.playable) this.toast = { text: `Can't play it (${info.reason}), but you can DISCARD it.`, t: 1.6, info: true };
     if (i >= 0) { this.sel.splice(i, 1); Sound.playSE('se_card_flip'); }
     else if (this.sel.length < this.sub.maxPlay) { this.sel.push(id); Sound.playSE('se_select'); }
     else Sound.playSE('se_failure');
@@ -1375,7 +1378,7 @@ export class CoopBattleScene {
     const en = d.enemies[f.ri];
     const sleeping = en && (en.status === 'SLP' || en.status === 'FRZ');
     const hidden = this.g.ascension >= 2 || this.run().ascension >= 2;
-    pixBox(ctx, x, y, w, rh * its.length, '#101018d8', hidden ? '#8890a0' : its.some(it => it.lethal && it.target === this.me) ? '#ff3030' : '#ff6060', 3);
+    pixBox(ctx, x, y, w, rh * its.length, '#101018d8', hidden ? '#8890a0' : !sleeping && its.some(it => it.lethal && it.target === this.me) ? '#ff3030' : '#ff6060', 3);
     its.forEach((it, k) => {
       const ry = y + k * rh, tp = it.target, first = this.intentFirst(this.shownIntents().indexOf(it), it);
       const tag = tp === this.me ? 'YOU' : `P${tp + 1}`;
@@ -1383,7 +1386,8 @@ export class CoopBattleScene {
       pixBox(ctx, x + 3, ry + 3, tw, 12, PCOL[tp] || '#606060', null, 2);
       text(ctx, tag, x + 3 + tw / 2, ry + 3, { align: 'center', color: 'white', font: 'small' });
       const mx = x + tw + 6;
-      if (sleeping && k === 0) text(ctx, en.status === 'SLP' ? 'ASLEEP' : 'FROZEN', mx, ry + 3, { color: 'blue', font: 'small' });
+      // (asleep / frozen: every row, the engine checks it once per turn, so a foe that can't move loses all its actions)
+      if (sleeping) text(ctx, en.status === 'SLP' ? 'ASLEEP' : 'FROZEN', mx, ry + 3, { color: 'blue', font: 'small' });
       else if (hidden) text(ctx, '???', mx, ry + 3, { color: 'white', font: 'small' });
       else {
         const dmg = it.kind === 'attack' ? it.text : it.kind === 'buff' ? 'buff' : 'status';
@@ -1395,7 +1399,7 @@ export class CoopBattleScene {
         const lead = d.subs[tp]?.lead();
         const who = tp === this.me ? 'your' : `${this.s.nameOf(tp)}'s`;
         const mv = it.move;
-        tip(hidden ? 'INTENT HIDDEN' : mv.name, `${hidden ? "Ascension 2+: you can't see the foe's move." : `${mv.type} · PWR ${mv.power || '-'} · ACC ${mv.accuracy || '-'}\n${mv.desc || ''}`}\nTargets ${who} ${lead ? monName(lead) : 'lead'}${!hidden && it.kind === 'attack' ? `: ${it.text} HP${it.eff !== 1 ? ` (x${it.eff})` : ''}${it.lethal ? ' — could KO it!' : ''}` : '.'}\n${its.length > 1 ? `With ${this.n} players this foe acts ${its.length} times this turn. ` : ''}${first ? `It acts BEFORE ${tp === this.me ? 'your' : `${this.s.nameOf(tp)}'s`} hand.` : `${tp === this.me ? 'Your' : `${this.s.nameOf(tp)}'s`} hand resolves before it acts.`} (See the move order tags.)`, { width: 220 });
+        tip(hidden ? 'INTENT HIDDEN' : mv.name, `${hidden ? "Ascension 2+: you can't see the foe's move." : `${mv.type} · PWR ${mv.power || '-'} · ACC ${mv.accuracy || '-'}\n${mv.desc || ''}`}\nTargets ${who} ${lead ? monName(lead) : 'lead'}${!hidden && it.kind === 'attack' ? `: ${it.text} HP${it.eff !== 1 ? ` (x${it.eff})` : ''}${it.lethal ? ' — could KO it!' : ''}` : '.'}\n${its.length > 1 ? `With ${this.n} players this foe acts ${its.length} times this turn. ` : ''}${first ? `It acts BEFORE ${tp === this.me ? 'your' : `${this.s.nameOf(tp)}'s`} hand.` : `${tp === this.me ? 'Your' : `${this.s.nameOf(tp)}'s`} hand resolves before it acts.`} (See the move order tags.)${sleeping ? `\nIt is ${en.status === 'SLP' ? 'asleep' : 'frozen'}: if it can't move on its first action, it loses all of them this turn.` : ''}`, { width: 220 });
       }
     });
   }
@@ -1619,7 +1623,7 @@ DECK: cards left in the draw pile / cards in your lead's deck.`, { width: 200 })
       if (hover(W - 150, HAND_Y - 32, 72, 26)) tip('UNLOCK', `Take back your lock-in and change your hand or target. Works until ${this.many ? 'everyone has locked in' : this.s.nameOf(this.pa) + ' locks in too'} (then the turn resolves). Enter / U / Esc.`);
     } else if (this.stuck && act) { if (button(ctx, 'PASS', W - 150, HAND_Y - 32, 72, 26, { color: THEME.play })) this.doPass(); }
     else {
-      if (button(ctx, 'LOCK IN', W - 150, HAND_Y - 32, 72, 26, { color: THEME.play, disabled: !can })) this.doLock();
+      if (button(ctx, 'LOCK IN', W - 150, HAND_Y - 32, 72, 26, { color: THEME.play, disabled: !can || this.deadSel() })) this.doLock();
       if (hover(W - 150, HAND_Y - 32, 72, 26)) tip('LOCK IN', `Locks your selected cards against your TARGET. The turn resolves once ${this.many ? 'everyone still fighting is' : 'both of you are'} locked in (or down). You can UNLOCK until then. Enter / A.`);
     }
     const freeNow = this.sel.length > 0 && (sub.freeDiscardOk(this.sel.length) || sub.acroOk(this.sel.length));

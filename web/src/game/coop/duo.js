@@ -413,6 +413,7 @@ export class DuoBattle {
       es.protect = false; es.endure = false; es.dodge = false; es.flinch = false; es.hitThisTurn = false; es.destinyBond = false;
     }
     this.hits = {};
+    this.slpHeld = {}; // foe ri -> its first action this turn was lost to sleep / freeze (so are the rest, v0.5.16)
     for (const s of this.aliveSubs()) { s.focusAny(); s.subStartTurn(); }
     this.chooseIntents();
     for (const s of this.aliveSubs()) s.focusAny();
@@ -630,7 +631,19 @@ export class DuoBattle {
     const s = this.subs[p];
     s.focus(a.ri);
     this.curIntent = it;
-    try { s.enemyAct(); } finally { this.curIntent = null; }
+    this.foeAct(s, a.ri, () => s.enemyAct());
+  }
+
+  // One foe action: sleep / freeze is checked once per turn (Battle.enemyAct's _slpHeld / _slpSkip), so a foe acting
+  // twice (3-4 players) that sleeps through its first action sleeps through the second one too, as its intents show.
+  foeAct(s, ri, fn) {
+    this.slpHeld ||= {};
+    s._slpHeld = !!this.slpHeld[ri]; s._slpSkip = false;
+    try { fn(); } finally {
+      this.curIntent = null;
+      if (s._slpSkip) this.slpHeld[ri] = true;
+      s._slpHeld = false; s._slpSkip = false;
+    }
   }
 
   // An all-target move: the first player still in takes the full enemyAct (can it move? the move announced), then
@@ -647,7 +660,7 @@ export class DuoBattle {
       s.spreadMoved = false;
       s._spreadFollow = k > 0;
       try {
-        if (k === 0) { s.enemyAct(); moved = !!s.spreadMoved; }
+        if (k === 0) this.foeAct(s, a.ri, () => { s.enemyAct(); moved = !!s.spreadMoved; });
         else if (moved) s.enemyAct();
       } finally { this.curIntent = null; s._spreadFollow = false; s.spreadMoved = false; }
     }
