@@ -561,7 +561,7 @@ export class BattleScene {
 
   // Plays moveKey's FireRed animation (attacker 0 = our lead, 1 = the foe). Resolves to false when there is none.
   async playMoveAnim(moveKey, attacker, moveData) {
-    if (!MoveAnims.ready || G.meta.settings.moveAnims === false) return false;
+    if (!MoveAnims.ready || G.meta.settings.moveAnims === false || Engine.noAnim) return false;
     const move = moveData || this.b.moveData?.(moveKey) || D.moves[moveKey];
     const r = MoveAnims.resolve(moveKey, move, this.cfg.terrain || 'grass');
     if (!r) return false;

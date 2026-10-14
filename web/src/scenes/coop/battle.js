@@ -144,7 +144,7 @@ export class CoopBattleScene {
 
   post(action) {
     if (this.s.desync) { this.toast = { text: 'Resync first (red bar at the top).', t: 2 }; return false; }
-    this.posting = { type: action.type, at: Engine.time };
+    this.posting = { type: action.type, at: performance.now() };
     this.s.post(action);
     return true;
   }
@@ -313,7 +313,7 @@ export class CoopBattleScene {
     ];
   }
   async playCoopAnim(moveKey, p, slot, attacker, moveData) {
-    if (!MoveAnims.ready || G.meta.settings.moveAnims === false || slot === null || slot === undefined || this.q.length > 40) return false;
+    if (!MoveAnims.ready || G.meta.settings.moveAnims === false || Engine.noAnim || slot === null || slot === undefined || this.q.length > 40) return false;
     const move = moveData || (D.moves[moveKey] ? { ...D.moves[moveKey], key: moveKey } : null);
     const r = MoveAnims.resolve(moveKey, move, this.cfg.terrain || 'grass');
     if (!r) return false;
@@ -889,7 +889,7 @@ export class CoopBattleScene {
     if (!this.running && !this.q.length && (this.duo.result || this.g.phase !== 'battle') && !this.finishing) this.idle();
     this.syncLowHpAlarm();
     this.msg.update(dt, this.fast);
-    if (this.posting && Engine.time - this.posting.at > 12) { this.posting = null; }
+    if (this.posting && performance.now() - this.posting.at > 12000) { this.posting = null; }
     if (this.score) { this.score.pulse = approach(this.score.pulse || 1, 1, 8, dt); this.score.pulseB = approach(this.score.pulseB || 1, 1, 8, dt); this.score.pulseT = approach(this.score.pulseT || 1, 1, 6, dt); }
     for (const f of this.foes) if (f) { f.flash = Math.max(0, (f.flash || 0) - dt * 4); f.shake = Math.max(0, (f.shake || 0) - dt * 3); }
     for (const L of this.leads) if (L) L.flash = Math.max(0, (L.flash || 0) - dt * 4);

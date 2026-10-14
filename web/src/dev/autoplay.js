@@ -15,6 +15,7 @@ import { EventScene } from '../scenes/event.js';
 import { TreasureScene } from '../scenes/treasure.js';
 import { ActClearScene, GameOverScene, VictoryScene } from '../scenes/gameover.js';
 import { MoveReplaceModal, PartyPicker, ChoiceModal, DeckModal } from '../scenes/common.js';
+import { BagFullModal } from '../scenes/items_ui.js';
 import { afterRewards, nextAct, startGauntletBattle, goToMap } from '../scenes/flow.js';
 
 export const log = [];
@@ -51,6 +52,7 @@ function step() {
       else if (ov instanceof MoveReplaceModal) ov.close(0);
       else if (ov instanceof PartyPicker) { const ok = G.run.party.find(m => !ov.filter || ov.filter(m) === true); ov.close(ok || null); }
       else if (ov instanceof ChoiceModal) ov.close(ov.options[0]?.value ?? 0);
+      else if (ov instanceof BagFullModal) ov.close({ act: 'leave' });
       else if (ov instanceof DeckModal) ov.close(ov.onPick ? { mon: G.run.party[0], index: 0 } : null);
       else if (ov.close) { if (ov.t > 0.3) ov.close(true); }
       return;
@@ -71,7 +73,7 @@ function step() {
       const e = b.enemy();
       if (b.kind === 'wild' && G.run.party.length < 6 && e.hp < e.maxHp * 0.5 && G.run.totalBalls() > 0) { sc.throw(Object.keys(G.run.balls).find(k => G.run.balls[k] > 0)); return; }
       const best = bestHand(b);
-      if (!best) { if (b.discardsLeft > 0) { sc.sel = b.deck.hand.slice(0, 5).map(c => c.id); sc.doDiscard(); } else { const alt = G.run.party.find(m => !isFainted(m) && m.uid !== b.leadUid); if (alt) sc.runEvents(b.switchLead(alt.uid, true)); } return; }
+      if (!best) { if (b.discardsLeft > 0) { sc.sel = b.deck.hand.slice(0, 5).map(c => c.id); sc.doDiscard(); } else { const alt = G.run.party.find(m => !isFainted(m) && m.uid !== b.leadUid); if (alt) sc.runEvents(b.switchLead(alt.uid, true)); else if (sc.stuck) sc.doPass(); } return; }
       sc.sel = best; sc.doPlay();
     } else if (sc instanceof RewardScene) {
       if (sc.busy) return;
