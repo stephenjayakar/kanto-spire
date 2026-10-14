@@ -1,15 +1,18 @@
 // Player bots for balance testing. skill: 'greedy' (naive) | 'smart' (plays like a competent human).
+import fs from 'fs';
 import { regionOf } from '../web/src/game/regions.js';
-import { D, typeEffect, bst } from '../web/src/game/data.js';
+import { D, typeEffect, bst, isSpecialMove } from '../web/src/game/data.js';
 import { RNG } from '../web/src/game/rng.js';
-import { maxHp, isFainted, teachMove, evolve, stats, typesOf, knowsMove, canLearn, DECK_RULES, replacedCopies } from '../web/src/game/pokemon.js';
+import { maxHp, isFainted, teachMove, evolve, stats, typesOf, knowsMove, canLearn, DECK_RULES, replacedCopies, defaultCopies } from '../web/src/game/pokemon.js';
 import { CONSUMABLES, RELICS, BALLS, VITAMIN_COMBO, APRICORN_BALLS } from '../web/src/game/items.js';
 import { generateShop, buyItem, rerollShop } from '../web/src/game/shop.js';
 import { pickEvent, eventById, eventChoices, choiceLabel, upgradeMove, bestUpgrade, powerCap, markSeen } from '../web/src/game/events.js';
-import { reachable } from '../web/src/game/map.js';
+import { reachable, rivalFloorOf } from '../web/src/game/map.js';
 import { Battle, ballBonus } from '../web/src/game/battle.js';
 import { TUNING } from '../web/src/game/run.js';
 import { detectCombo, comboBonus } from '../web/src/game/hands.js';
+import { stageMult, accStageMult } from '../web/src/game/data.js';
+import { FIXED_DAMAGE } from '../web/src/game/effects.js';
 
 // ---------------------------------------------------------------- hand evaluation
 function subsets(arr, max) {
@@ -22,11 +25,21 @@ function subsets(arr, max) {
   return out;
 }
 
-// Exact score via the real scoring code, with state snapshot/restore and a neutral RNG.
-export function dryScore(b, ids) { return b.simulate(ids)?.damage || 0; }
+// Exact score via the real scoring code (Battle.simulate: a JSON snapshot/restore, the expensive part of a decision),
+// cached per battle state (previewKey) and card list, so repeated looks at the same hand in a turn are free.
+export const SIM_STATS = { n: 0 };
+function simDmg(b, ids) {
+  const k = b.previewKey();
+  if (!b._sc || b._sc.k !== k) b._sc = { k, m: new Map() };
+  const key = ids.join(',');
+  let v = b._sc.m.get(key);
+  if (v === undefined) { v = b.simulate(ids)?.damage || 0; b._sc.m.set(key, v); SIM_STATS.n++; }
+  return v;
+}
+export function dryScore(b, ids) { return simDmg(b, ids); }
 
-// Value of status cards beyond damage, from a human's perspective.
-function statusValue(b, infos) {
+// Old flat status values (fractions of the foe's HP): only used by the catching hand choice now.
+function statusValueLegacy(b, infos) {
   const e = b.enemy(), lead = b.lead();
   let v = 0;
   const intentDmg = b.intent?.damage ? b.intent.damage[1] : 0;
@@ -36,19 +49,189 @@ function statusValue(b, infos) {
     const bossish = e.isBoss || b.kind === 'elite';
     if (['SLEEP', 'PARALYZE', 'TOXIC', 'WILL_O_WISP', 'POISON', 'LEECH_SEED', 'YAWN', 'CONFUSE'].includes(eff) && !e.status) v += bossish ? 0.35 : 0.15;
     else if (eff.startsWith('ATTACK_DOWN') && intentDmg > lead.hp * 0.25) v += 0.12;
-    else if (['ATTACK_UP_2', 'SPECIAL_ATTACK_UP_2', 'DRAGON_DANCE', 'CALM_MIND', 'BULK_UP', 'GROWTH', 'ATTACK_UP', 'FOCUS_ENERGY'].includes(eff) && bossish) v += 0.2;
     else if (['PROTECT', 'REFLECT', 'LIGHT_SCREEN', 'SAFEGUARD'].includes(eff) && intentDmg > lead.hp * 0.4) v += 0.25;
     else if (['RESTORE_HP', 'SOFTBOILED', 'SYNTHESIS', 'MOONLIGHT', 'MORNING_SUN', 'REST'].includes(eff) && i.owner.hp < maxHp(i.owner) * 0.45) v += 0.3;
-    else if (eff.includes('DOWN') && bossish) v += 0.06;
     else v += 0.01;
   }
-  return v; // fraction of enemy HP equivalent
+  return v;
+}
+
+// ---- race model ------------------------------------------------------------------------------------------------
+// Everything is valued in HP of our lead (the run's real currency: HP carries over between fights, and a faint costs a
+// POKéMON for good under NUZLOCKE). dU = what one more turn of this fight costs us (the foe's expected damage per turn),
+// D = our damage per turn, so dealing x damage is worth x / D turns = x / D * dU HP.
+const SELF_STAGES = { ATTACK_UP: [['atk', 1]], ATTACK_UP_2: [['atk', 2]], SPECIAL_ATTACK_UP: [['spa', 1]], SPECIAL_ATTACK_UP_2: [['spa', 2]], CALM_MIND: [['spa', 1], ['spd', 1]], BULK_UP: [['atk', 1], ['def', 1]], DRAGON_DANCE: [['atk', 1], ['spe', 1]], DEFENSE_UP: [['def', 1]], DEFENSE_UP_2: [['def', 2]], DEFENSE_CURL: [['def', 1]], SPECIAL_DEFENSE_UP_2: [['spd', 2]], COSMIC_POWER: [['def', 1], ['spd', 1]], SPEED_UP_2: [['spe', 2]] };
+const FOE_STAGES = { ATTACK_DOWN: [['atk', -1]], ATTACK_DOWN_2: [['atk', -2]], DEFENSE_DOWN: [['def', -1]], DEFENSE_DOWN_2: [['def', -2]], SPECIAL_DEFENSE_DOWN_2: [['spd', -2]], SPEED_DOWN: [['spe', -1]], SPEED_DOWN_2: [['spe', -2]], ACCURACY_DOWN: [['acc', -1]], TICKLE: [['atk', -1], ['def', -1]] };
+const AILMENT = { SLEEP: 'SLP', PARALYZE: 'PAR', TOXIC: 'TOX', POISON: 'PSN', WILL_O_WISP: 'BRN' };
+const HEAL_FX = new Set(['RESTORE_HP', 'SOFTBOILED', 'SYNTHESIS', 'MOONLIGHT', 'MORNING_SUN']);
+const hitsOf = (m) => (m.effect === 'MULTI_HIT' ? 3 : m.effect === 'DOUBLE_HIT' || m.effect === 'TWINEEDLE' || m.effect === 'TRIPLE_KICK' ? 2 : 1);
+const clampStage = (s) => Math.max(-6, Math.min(6, s));
+
+function protectChanceNow(b) {
+  const s = b.sides.player;
+  if (s.protectTurn === b.turn) return 0;
+  return 1 / Math.pow(2, s.protectTurn === b.turn - 1 ? (s.protectChain || 0) : 0);
+}
+
+// The lead's deck vs this foe: average attack card value (what a fresh draw is worth) and the physical share.
+function deckStats(b) {
+  const k = `${b.turn}|${b.leadUid}|${b.enemyIndex}`;
+  if (b._dk?.k === k) return b._dk;
+  let n = 0, tot = 0, ph = 0;
+  for (const c of [...b.deck.draw, ...b.deck.hand, ...b.deck.discard]) { const i = b.cardInfo(c); if (i.status) continue; const v = b.cardValue(i); n++; tot += v; if (i.physical) ph += v; }
+  return (b._dk = { k, avg: n ? tot / n : 0, phys: tot > 0 ? ph / tot : 0.5 });
+}
+
+// Per-turn facts for the race model (cached on the battle state).
+function battleCtx(b) {
+  const lead = b.lead(), e = b.enemy();
+  const it = b.intent, mv = it?.move;
+  const key = `${b.turn}|${b.handsPlayed}|${b.leadUid}|${b.enemyIndex}|${e?.hp}|${lead?.hp}|${e?.status}|${mv?.key}|${it?.damage?.[1]}`;
+  if (b._ctx?.key === key) return b._ctx;
+  const ps = b.sides.player, es = b.sides.enemy, mhp = maxHp(lead);
+  // chance the foe can't act this turn
+  let skip = 0;
+  if (e.status === 'SLP' && e.sleepTurns > 0) skip = 1;
+  else if (e.status === 'FRZ') skip = 0.8;
+  else { if (e.status === 'PAR') skip = 0.25; if (es.confused > 1) skip += (1 - skip) * (e.isBoss || e.isElite ? 0.33 : 0.5); }
+  let dLo = 0, dHi = 0, acc = 1, isAtk = false;
+  if (it?.damage && mv) { isAtk = true; const h = hitsOf(mv); dLo = it.damage[0] * h; dHi = it.damage[1] * h; acc = Math.min(1, (mv.accuracy || 100) / 100) * (1 - skip); }
+  const dNow = isAtk ? Math.min(lead.hp, acc * (dLo + dHi) / 2) : 0;
+  // KO chance: the 85-100% roll, and a 1/16 critical hit (x2)
+  const pRoll = (lo, hi) => (hi < lead.hp ? 0 : Math.min(1, (hi - lead.hp + 1) / Math.max(1, hi - lo + 1)));
+  const pLethal = isAtk ? acc * ((15 / 16) * pRoll(dLo, dHi) + (1 / 16) * pRoll(2 * dLo, 2 * dHi)) : 0;
+  // the foe's average damage per turn on the lead, its moves weighted like pickEnemyMove does
+  let wS = 0, dS = 0, pS = 0;
+  for (const k of e.moves) {
+    const m = b.moveData(k);
+    if (!m) continue;
+    let w, d = 0;
+    if (m.power > 0 || FIXED_DAMAGE[m.effect]) {
+      w = Math.max(1, m.power || 40) * typeEffect(m.type, b.ptypes(lead)) * (e.types.includes(m.type) ? 1.5 : 1);
+      if (e.isBoss) w = w * w / 60;
+      d = b.enemyDamage(m, e, lead, 0.925, false, true) * hitsOf(m) * Math.min(1, (m.accuracy || 100) / 100);
+      if (!isSpecialMove(m.key, m.type)) pS += w * d;
+    } else w = b.statusMoveValue(m, e, lead);
+    wS += w; dS += w * d;
+  }
+  const dFut = (wS > 0 ? dS / wS : 0) * (e.status === 'PAR' ? 0.75 : 1);
+  const dU = Math.max(dFut, mhp * 0.06, 1);
+  let foeLeft = 0, nFoes = 0;
+  for (let i = b.enemyIndex; i < b.enemies.length; i++) { const x = b.enemies[i]; if (x && x.hp > 0) { foeLeft += x.hp; nFoes++; } }
+  const alive = b.run.party.filter(m => !isFainted(m)).length;
+  // what a faint costs on top of the HP: the run (last POKéMON), the POKéMON (NUZLOCKE), else a revive / tempo
+  const F = alive <= 1 ? 6 * mhp + 100 : b.run.nuzlocke ? 2.5 * mhp : 0.6 * mhp;
+  const deck = deckStats(b);
+  const ctx = {
+    key, lead, e, ps, es, mhp, isAtk, dLo, dHi, acc, dNow, pLethal, dFut, dU, foePhys: dS > 0 ? pS / dS : 0.5, foeLeft, nFoes, alive, F,
+    physShare: deck.phys, avgCard: deck.avg, foeFaster: !!it?.first, protOk: protectChanceNow(b),
+    foeStatus: it && !isAtk && it.kind === 'debuff' ? 0.3 * dU : 0,
+  };
+  b._ctx = ctx;
+  return ctx;
+}
+
+// Value (HP units) of one status card in a hand that deals dmg (kill: it KOs the foe; eFirst: the foe moves first).
+function statusCardValue(b, ctx, info, dmg, kill, eFirst, D) {
+  const m = info.move, eff = m.effect, e = ctx.e, ps = ctx.ps, es = ctx.es, dU = ctx.dU;
+  const dealt = Math.min(dmg, e.hp);
+  const Tr = Math.min(8, Math.max(0, ctx.foeLeft - dealt) / D); // turns left in the fight after this hand
+  const Tc = kill ? 0 : Math.min(8, (e.hp - dealt) / D);       // turns left against this foe
+  const now = !eFirst && !kill ? 1 : 0;                           // lands before this turn's foe move
+  const acc = m.accuracy && m.target !== 'USER' ? Math.min(1, m.accuracy / 100) : 1;
+  const tough = e.isBoss || e.isElite || e.legendary;
+  let v = 0;
+  if (SELF_STAGES[eff]) {
+    for (const [st, n] of SELF_STAGES[eff]) {
+      const cur = ps.stages[st] || 0, nx = clampStage(cur + n);
+      if (nx === cur) continue;
+      const g = 1 - stageMult(cur) / stageMult(nx);
+      if (st === 'atk') v += Tr * g * ctx.physShare * dU;
+      else if (st === 'spa') v += Tr * g * (1 - ctx.physShare) * dU;
+      else if (st === 'def') v += (Tr + now) * g * ctx.foePhys * dU;
+      else if (st === 'spd') v += (Tr + now) * g * (1 - ctx.foePhys) * dU;
+      else if (st === 'spe' && ctx.foeFaster) v += 0.2 * Math.min(Tr, 4) * dU;
+    }
+    return v * 0.8;
+  }
+  if (FOE_STAGES[eff]) {
+    if (kill || es.mist) return 0;
+    for (const [st, n] of FOE_STAGES[eff]) {
+      const cur = es.stages[st] || 0, nx = clampStage(cur + n);
+      if (nx === cur) continue;
+      if (st === 'atk') v += (Tc + now) * (1 - stageMult(nx) / stageMult(cur)) * ctx.foePhys * dU;
+      else if (st === 'def') v += Tc * (1 - stageMult(nx) / stageMult(cur)) * ctx.physShare * dU;
+      else if (st === 'spd') v += Tc * (1 - stageMult(nx) / stageMult(cur)) * (1 - ctx.physShare) * dU;
+      else if (st === 'acc') v += (Tc + now) * (1 - accStageMult(nx) / accStageMult(cur)) * dU;
+      else if (st === 'spe' && ctx.foeFaster) v += 0.1 * Math.min(Tc, 4) * dU;
+    }
+    return v * acc * 0.8;
+  }
+  const ail = AILMENT[eff];
+  if (ail || eff === 'LEECH_SEED' || eff === 'CONFUSE' || eff === 'YAWN') {
+    if (kill) return 0;
+    const chip = e.maxHp / (tough ? 20 : 10), left = e.hp - dealt, turns = Math.ceil(Tc);
+    if (ail) {
+      if (b.statusBlock('enemy', ail, m.key, e) !== null) return 0;
+      if (ail === 'SLP') v = Math.min(tough ? 1.5 : 2, Tc + now) * dU;
+      else if (ail === 'PAR') v = 0.25 * (Tc + now) * dU + (ctx.foeFaster ? 0.1 * Math.min(Tc, 4) * dU : 0);
+      else if (ail === 'BRN') v = 0.5 * ctx.foePhys * (Tc + now) * dU + Math.min(left, chip * turns) / D * dU;
+      else if (ail === 'PSN') v = Math.min(left, chip * turns) / D * dU;
+      else if (ail === 'TOX') { let c = 0; for (let n = 1; n <= turns; n++) c += tough ? e.maxHp * Math.min(2, n) / 24 : e.maxHp * Math.min(15, n) / 16; v = Math.min(left, c) / D * dU; }
+    } else if (eff === 'LEECH_SEED') {
+      if (es.seeded || e.types.includes('GRASS')) return 0;
+      v = Math.min(left, chip * turns) / D * dU + Math.min(turns * ctx.mhp / 8, ctx.mhp - ctx.lead.hp + turns * ctx.dFut) * 0.8;
+    } else if (eff === 'CONFUSE') {
+      if (es.confused) return 0;
+      v = (tough ? 0.33 : 0.5) * Math.min(2, Tc + now) * dU;
+    } else if (eff === 'YAWN') {
+      if (es.yawn || b.statusBlock('enemy', 'SLP', m.key, e) !== null) return 0;
+      v = Math.min(tough ? 1.5 : 2, Math.max(0, Tc - 1)) * dU;
+    }
+    return v * acc * 0.85;
+  }
+  if (HEAL_FX.has(eff) || eff === 'REST') {
+    const o = info.owner, mh = maxHp(o), h = Math.min(mh - o.hp, eff === 'REST' ? mh : mh * 0.5);
+    v = h * 0.9 - (eff === 'REST' ? 2 * dU : 0);
+    if (o.uid === ctx.lead.uid && !eFirst && ctx.pLethal > 0 && o.hp + h > ctx.dHi) v += ctx.pLethal * ctx.F;
+    return v;
+  }
+  if (eff === 'REFLECT') return ps.reflect ? 0 : Math.min(5, Tr + now) * 0.5 * ctx.foePhys * dU * 0.8;
+  if (eff === 'LIGHT_SCREEN') return ps.lightScreen ? 0 : Math.min(5, Tr + now) * 0.5 * (1 - ctx.foePhys) * dU * 0.8;
+  if (eff === 'FOCUS_ENERGY') return ps.focus > 0 ? 0 : 0.19 * (dealt / D + Math.min(1, Tr)) * dU * 0.8;
+  if (eff === 'PROTECT' || eff === 'ENDURE') return 0; // (handValue)
+  return 0.02 * dU;
+}
+
+// Value of playing `set` (cards in play order) for dmg damage this turn.
+function handValue(b, ctx, set, dmg, D) {
+  const e = ctx.e, infos = set.map(x => x.i);
+  const kill = dmg >= e.hp;
+  const prot = infos.some(i => i.move.effect === 'PROTECT'), endure = !prot && infos.some(i => i.move.effect === 'ENDURE');
+  const pOk = prot || endure ? ctx.protOk : 0;
+  const eFirst = b.intent?.move ? b.enemyActsFirst(infos, b.intent.move, pOk >= 0.5) : false;
+  const dealt = Math.min(dmg, e.hp);
+  // a faster foe that KOs the lead first makes its hand fizzle
+  let v = dealt * (1 - (eFirst ? ctx.pLethal : 0)) / D * ctx.dU;
+  const blocked = kill && !eFirst ? 1 : prot ? pOk : 0;
+  v -= (1 - blocked) * (ctx.dNow + ctx.pLethal * ctx.F + ctx.foeStatus);
+  if (endure) v += pOk * ctx.pLethal * ctx.F;
+  // a PROTECT kept in hand protects next turn instead (and it can't work two turns running)
+  if (prot) v -= 0.65 * ctx.dFut;
+  if (endure) v -= 0.15 * ctx.dFut;
+  for (const x of set) {
+    if (x.i.status) v += statusCardValue(b, ctx, x.i, dmg, kill, eFirst, D);
+    else if (x.kick) v += 0.05 * ctx.dU * (ctx.avgCard - x.v) / Math.max(1, ctx.avgCard); // cycling a weak card
+    else if (kill && ctx.nFoes > 1) v -= 0.04 * ctx.dU * x.v / Math.max(1, ctx.avgCard); // spent on an overkill
+  }
+  v -= set.length * 0.002 * ctx.dU;
+  return { v, kill, eFirst, blocked };
 }
 
 // Decision metrics (tests/metrics_report.mjs): enabled by balance.mjs --metrics.
 export const METRICS = { on: false, decisions: [] };
 
-export function chooseHand(b, skill) {
+function chooseHandFull(b, skill) {
   const cdmg = [];
   const hand = b.deck.hand.filter(c => b.cardInfo(c).playable && !c.faceDown).map(c => c.id).concat(b.deck.hand.filter(c => c.faceDown && b.cardInfo(c).playable).map(c => c.id));
   const e = b.enemy();
@@ -62,17 +245,96 @@ export function chooseHand(b, skill) {
       cdmg.push(dmg);
       const infos = b.findCards(s).map(c => b.cardInfo(c));
       const kill = dmg >= e.hp;
-      v = Math.min(dmg, e.hp * 1.05) / e.hp + statusValue(b, infos) + (kill ? 0.5 - s.length * 0.02 : 0);
-      // keep pairs for later: slight penalty for spending copies when not lethal
+      v = Math.min(dmg, e.hp * 1.05) / e.hp + statusValueLegacy(b, infos) + (kill ? 0.5 - s.length * 0.02 : 0);
       if (!kill) v -= s.length * 0.005;
       // catching: don't kill a wild mon we want
       if (b._wantCatch && kill) v = 0.4 - dmg / e.hp * 0.1;
-      if (b._wantCatch && !kill) v = dmg / e.hp + (e.hp - dmg > 0 ? 0.3 : 0) + statusValue(b, infos) * 2;
+      if (b._wantCatch && !kill) v = dmg / e.hp + (e.hp - dmg > 0 ? 0.3 : 0) + statusValueLegacy(b, infos) * 2;
     }
     if (v > bv) { bv = v; best = s; }
   }
   b._cands = skill === 'greedy' ? null : { sets: cands, dmg: cdmg };
   return { best, value: bv };
+}
+
+// Smart hand choice: a handful of candidate hands instead of every subset. The cheap combo evaluator (card previews,
+// same combo code as the game) picks the best attack sets; status cards are tried on top of the best one (played
+// first, so their buffs / debuffs land before the attacks); weak non-scoring attack cards ride along to be cycled.
+// Only those few candidates are simulated, and each is valued by the race model (handValue).
+export function chooseHand(b, skill) {
+  if (skill === 'greedy' || b._wantCatch) return chooseHandFull(b, skill);
+  const e = b.enemy();
+  const H = [];
+  for (const c of b.deck.hand) { const i = b.cardInfo(c); if (i.playable) H.push({ c, id: c.id, i, v: i.status ? 0 : b.cardValue(i) }); }
+  if (!H.length) { b._cands = null; return { best: null, value: -Infinity }; }
+  const ctx = battleCtx(b);
+  const atk = H.filter(x => !x.i.status), sts = H.filter(x => x.i.status);
+  const opts = { coverageN: b.mods.coverage4 ? 3 : 4, levels: b.run.comboLevels };
+  const evalSet = (arr) => {
+    if (!arr.length) return { v: 0, sc: [] };
+    let best = null;
+    const tryOne = (sel) => {
+      const objs = sel.map(x => ({ move: x.i.move.key, type: x.i.type, owner: x.i.uid, status: false, value: x.v }));
+      const r = detectCombo(objs, opts);
+      const v = r.scoring.reduce((a, j) => a + objs[j].value, 0) * (1 + comboBonus(r.key, opts.levels[r.key] || 1) / 100);
+      if (!best || v > best.v) best = { v, sc: r.scoring.map(j => sel[j]) };
+    };
+    if (arr.length <= b.maxPlay) tryOne(arr);
+    else for (const s of subsets(arr, b.maxPlay)) if (s.length === b.maxPlay) tryOne(s);
+    return best;
+  };
+  const pool = atk.filter(x => x.v > 0);
+  const tops = [], seen = new Set();
+  const push = (r) => { if (!r || !r.sc.length) return; const k = r.sc.map(x => x.id).sort((p, q) => p - q).join(','); if (seen.has(k)) return; seen.add(k); tops.push(r); };
+  const top = evalSet(pool);
+  push(top);
+  if (top) for (const x of top.sc) push(evalSet(pool.filter(y => y !== x)));
+  tops.sort((p, q) => q.v - p.v);
+  tops.length = Math.min(tops.length, 3);
+  if (!tops.length) tops.push({ v: 0, sc: [] });
+  const mk = (sc, st) => {
+    if (sc.length + st.length > b.maxPlay || !(sc.length + st.length)) return null;
+    const inSet = new Set([...sc, ...st]), kick = new Set();
+    for (const x of atk.filter(y => !inSet.has(y) && y.v < ctx.avgCard * 0.9).sort((p, q) => p.v - q.v)) { if (inSet.size >= b.maxPlay) break; inSet.add(x); kick.add(x); }
+    // play order: status cards first, then attacks (hand order)
+    const set = H.filter(x => inSet.has(x) && x.i.status).concat(H.filter(x => inSet.has(x) && !x.i.status)).map(x => (kick.has(x) ? { ...x, kick: true } : x));
+    return set;
+  };
+  const cands = [], seenSet = new Set();
+  let D = null;
+  const evalCand = (set) => {
+    if (!set) return null;
+    const ids = set.map(x => x.id), key = ids.join(',');
+    if (seenSet.has(key)) return null;
+    seenSet.add(key);
+    if (!b.canPlay(ids).ok) return null;
+    const dmg = simDmg(b, ids);
+    if (D === null) {
+      if (b._dTurn !== b.turn) { b._dTurn = b.turn; b._dEma = b._dEma == null ? dmg : 0.6 * b._dEma + 0.4 * dmg; }
+      D = Math.max(1, 0.5 * dmg + 0.5 * (b._dEma ?? dmg));
+    }
+    const r = handValue(b, ctx, set, dmg, D);
+    const c = { set, ids, dmg, ...r };
+    cands.push(c);
+    return c;
+  };
+  // status subsets on the best attack set (at most 3 status cards: the most valuable ones first)
+  evalCand(mk(tops[0].sc, []));
+  const stSorted = sts.length > 3 ? sts.map(x => ({ x, v: statusCardValue(b, ctx, x.i, tops[0].v, false, ctx.foeFaster, Math.max(1, tops[0].v)) + (['PROTECT', 'ENDURE'].includes(x.i.move.effect) ? ctx.dNow : 0) })).sort((p, q) => q.v - p.v).slice(0, 3).map(o => o.x) : sts;
+  let bestSt = [], bestStV = -Infinity;
+  for (const st of subsets(stSorted, b.maxPlay)) {
+    const c = evalCand(mk(tops[0].sc, st));
+    if (c && c.v > bestStV) { bestStV = c.v; bestSt = st; }
+  }
+  const base = cands[0];
+  if (base && base.v >= bestStV) bestSt = [];
+  for (const t of tops.slice(1)) { evalCand(mk(t.sc, bestSt)); if (bestSt.length) evalCand(mk(t.sc, [])); }
+  if (!cands.length) return chooseHandFull(b, skill); // (a boss rule forbids the cheap candidates)
+  let best = cands[0];
+  for (const c of cands) if (c.v > best.v) best = c;
+  b._cands = METRICS.on ? { sets: cands.map(c => c.ids), dmg: cands.map(c => c.dmg) } : null;
+  b._choice = best;
+  return { best: best.ids, value: best.v, dmg: best.dmg, kill: best.kill, blocked: best.blocked, eFirst: best.eFirst };
 }
 
 // ---------------------------------------------------------------- battle turn
@@ -107,22 +369,80 @@ export function matchup(b, m) {
   return n ? tot / n * Math.min(1, n / 5) : 0;
 }
 
+// Damage the foe's shown move would do to m if it were the lead (max roll, all hits).
+function intentDmgOn(b, m) {
+  const mv = b.intent?.move, e = b.enemy();
+  if (!mv || !b.intent?.damage) return 0;
+  return b.enemyDamage(mv, e, m, 1, false, true) * hitsOf(mv);
+}
+
 // Switch when another POKéMON's deck is clearly better here (costs a discard), or when the lead can't act.
+// It must survive the foe's shown move; after a faint the re-pick is free, so take the best one outright.
 function considerSwitch(b, run, skill) {
-  if (b.freeSwitches <= 0 && b.discardsLeft <= 0) return false;
+  if (!b.faintSwitch && b.freeSwitches <= 0 && b.discardsLeft <= 0) return false;
   if (b._switchedTurn === b.turn) return false;
   const lead = b.lead(), e = b.enemy();
   const stuck = !b.deck.hand.some(c => b.cardInfo(c).playable);
   const alts = run.party.filter(m => !isFainted(m) && m.uid !== lead.uid && !['SLP', 'FRZ'].includes(m.status));
   if (!alts.length) return false;
-  const hpOk = m => m.hp / maxHp(m) > (skill === 'smart' ? 0.35 : 0.5);
-  const score = m => matchup(b, m) * (0.5 + 0.5 * m.hp / maxHp(m));
+  const smart = skill === 'smart';
+  const hpOk = m => m.hp / maxHp(m) > (smart ? 0.35 : 0.5) && (!smart || intentDmgOn(b, m) < m.hp * 0.8);
+  const score = m => matchup(b, m) * (0.5 + 0.5 * m.hp / maxHp(m)) * (smart ? 1 - 0.5 * Math.min(1, intentDmgOn(b, m) / Math.max(1, m.hp)) : 1);
   const best = alts.filter(hpOk).sort((x, y) => score(y) - score(x))[0];
   if (!best) return false;
   const mine = score(lead);
-  const ratio = skill === 'smart' ? 1.6 : 2.5;
+  const ratio = smart ? (b.faintSwitch ? 1.05 : 1.6) : 2.5;
   if (stuck || (score(best) > mine * ratio && e.hp > e.maxHp * 0.25)) { b._switchedTurn = b.turn; b.switchLead(best.uid); return true; }
   return false;
+}
+
+// The lead would faint to the shown move this turn and the best hand neither KOs the foe first nor PROTECTs:
+// heal it out of range, or switch to a POKéMON that takes the hit well.
+function defend(b, run) {
+  const lead = b.lead(), e = b.enemy();
+  if (!lead || !e || b.result) return;
+  const ctx = battleCtx(b);
+  if (ctx.pLethal <= 0.04 && !(ctx.pLethal > 0.02 && (run.nuzlocke || ctx.alive <= 1))) return;
+  const ch = chooseHand(b, 'smart');
+  if (ch.best && ch.blocked >= 0.99) return;
+  const mhp = ctx.mhp;
+  const pots = run.consumables.filter(k => CONSUMABLES[k]?.heal || CONSUMABLES[k]?.healFrac);
+  const healOf = k => Math.min(mhp - lead.hp, CONSUMABLES[k].heal || Math.floor(mhp * CONSUMABLES[k].healFrac));
+  const precious = run.nuzlocke || ctx.alive <= 1;
+  if (ctx.dHi < lead.hp) {
+    // only a critical hit KOs: heal out of crit range when it's precious and the potion isn't mostly wasted
+    const k = pots.filter(k => healOf(k) >= 2 * ctx.dHi - lead.hp + 1 && healOf(k) >= 0.6 * (CONSUMABLES[k].heal || mhp * CONSUMABLES[k].healFrac)).sort((x, y) => healOf(x) - healOf(y))[0];
+    if (k) b.useItem(k, lead.uid);
+    return;
+  }
+  const need = ctx.dHi - lead.hp + 1;
+  // the smallest potion that's enough (berries after potions of the same size)
+  const ok = pots.filter(k => healOf(k) >= need).sort((x, y) => healOf(x) - healOf(y) || (CONSUMABLES[x].berry ? 1 : 0) - (CONSUMABLES[y].berry ? 1 : 0));
+  let sw = null;
+  const cost = b._switchedTurn !== b.turn ? b.switchCost() : null;
+  if (cost?.ok && (cost.free || precious || ctx.pLethal >= 0.5)) {
+    const lm = matchup(b, lead);
+    let bs = -Infinity;
+    for (const m of run.party) {
+      if (isFainted(m) || m.uid === lead.uid || ['SLP', 'FRZ'].includes(m.status)) continue;
+      const d = intentDmgOn(b, m);
+      if (d >= m.hp * (precious ? 0.9 : 0.6)) continue;
+      const mu = matchup(b, m);
+      if (!precious && mu < lm * 0.35) continue;
+      const s = (mu + 1) * (1 - d / m.hp) * (0.5 + 0.5 * m.hp / maxHp(m));
+      if (s > bs) { bs = s; sw = m; }
+    }
+  }
+  if (ok.length && (precious || !sw || ctx.pLethal >= 0.5)) { b.useItem(ok[0], lead.uid); return; }
+  if (sw) { b._switchedTurn = b.turn; b.switchLead(sw.uid); return; }
+  // a wild fight that would cost the run / a NUZLOCKE POKéMON: run away (sure when we're faster)
+  if (precious && b.canFlee() && ctx.pLethal >= 0.25) {
+    const ps = b.speedOf('player'), es = b.speedOf('enemy');
+    const pFlee = ps >= es ? 1 : ((ps * 128 / Math.max(1, es) + 30 * (b.fleeAttempts + 1)) % 256) / 256;
+    if (pFlee >= 0.4 || (pots.length === 0 && pFlee > 0.15)) return 'flee';
+  }
+  // nothing is enough: the biggest potion still makes the KO less likely
+  if (precious && pots.length) { const k = pots.sort((x, y) => healOf(y) - healOf(x))[0]; if (healOf(k) > 0 && lead.hp + healOf(k) > ctx.dLo) b.useItem(k, lead.uid); }
 }
 
 export function botTurn(b, run, skill) {
@@ -130,33 +450,21 @@ export function botTurn(b, run, skill) {
   const lead = b.lead();
   const e = b.enemy();
   if (skill === 'smart') {
-    const intentMax = b.intent?.damage ? b.intent.damage[1] : 0;
-    const enemyFirst = b.intent?.first;
-    // Heal the lead when the next hit would KO it (or it's very low) and we can't kill first.
-    const canKillFirst = !enemyFirst && (chooseHand(b, 'greedy').value >= e.hp);
-    if ((lead.hp <= intentMax || lead.hp < maxHp(lead) * 0.25) && !canKillFirst) {
-      const pot = run.consumables.find(k => (CONSUMABLES[k]?.heal || CONSUMABLES[k]?.healFrac) && !CONSUMABLES[k]?.berry) || run.consumables.find(k => CONSUMABLES[k]?.heal || CONSUMABLES[k]?.healFrac);
-      if (pot && (CONSUMABLES[pot].heal || 0) + lead.hp > intentMax) { b.useItem(pot, lead.uid); }
-      else if (b.discardsLeft > 0 || b.freeSwitches > 0) {
-        // switch to whoever takes the least damage (as a fraction of HP), if clearly better
-        const opts = run.party.filter(m => !isFainted(m) && m.uid !== lead.uid).map(m => ({ m, d: b.intent?.move && intentMax ? b.enemyDamage(b.intent.move, e, m, 1, false, true) / m.hp : 0 }));
-        opts.sort((x, y) => x.d - y.d);
-        if (opts[0] && opts[0].d < 0.5 && opts[0].d < (intentMax / lead.hp) * 0.6) b.switchLead(opts[0].m.uid);
-      }
-    }
-    // Use battle items on bosses early.
-    if ((b.kind === 'boss' || b.kind === 'elite') && b.turn === 1) {
+    b._wantCatch = wantCatch(b, run);
+    if (defend(b, run) === 'flee') return b.flee();
+    if (b.result) return [];
+    // Use battle items on bosses / elites / rivals early.
+    if ((b.kind === 'boss' || b.kind === 'elite' || b.cfg?.rival) && b.turn === 1) {
       for (const k of run.consumables.slice()) if (CONSUMABLES[k]?.stage && b.handsPlayed === 0) b.useItem(k, null);
     }
-    // Revive fainted mons in long fights.
-    const fainted = run.party.find(m => isFainted(m));
+    // Revive fainted mons in long fights (not under NUZLOCKE: a fainted POKéMON is gone).
+    const fainted = run.party.find(m => isFainted(m) && !m.lost);
     if (fainted && b.kind === 'boss') { const rv = run.consumables.find(k => CONSUMABLES[k]?.revive); if (rv) b.useItem(rv, fainted.uid); }
-    b._wantCatch = wantCatch(b, run);
     if (b._wantCatch) {
       const ball = bestBall(run, e, b);
       const frac = e.hp / e.maxHp;
       // (FARAWAY ISLAND's MEW, cfg.catchMult: easy to catch, and it won't stay long)
-      if (ball && (frac < 0.45 || (e.status && frac < 0.7) || (D.species[e.species].catchRate * (b.cfg.catchMult || 1) >= 180 && frac < (b.cfg.catchMult ? 1.01 : 0.8)))) return b.throwBall(ball);
+      if (ball && (frac < 0.45 || (e.status && frac < 0.7) || b.catchChance(ball) >= 0.5 || (D.species[e.species].catchRate * (b.cfg.catchMult || 1) >= 180 && frac < (b.cfg.catchMult ? 1.01 : 0.8)))) return b.throwBall(ball);
     }
   } else {
     if (lead.hp < maxHp(lead) * 0.3) { const pot = run.consumables.find(k => CONSUMABLES[k]?.heal || CONSUMABLES[k]?.healFrac); if (pot) b.useItem(pot, lead.uid); }
@@ -164,9 +472,10 @@ export function botTurn(b, run, skill) {
   }
   if (b.result) return [];
   const { best, value } = chooseHand(b, skill);
+  const e2 = b.enemy();
   // a wild foe the hand can't hurt (a rare-find SHEDINJA's WONDER GUARD): throw a ball, else run
-  if (e.ability === 'WONDER_GUARD' && b.canFlee() && (!best || dryScore(b, best) <= 0)) {
-    const ball = b.canCatch() ? bestBall(run, e, b) : null;
+  if (e2.ability === 'WONDER_GUARD' && b.canFlee() && (!best || dryScore(b, best) <= 0)) {
+    const ball = b.canCatch() ? bestBall(run, e2, b) : null;
     return ball ? b.throwBall(ball) : b.flee();
   }
   if (!best) {
@@ -177,7 +486,7 @@ export function botTurn(b, run, skill) {
   if (b._discTurn !== b.turn) { b._discTurn = b.turn; b._discN = 0; }
   if (skill === 'smart' && BOT_OPTS.oldDig) {
     // v0.0.4 bot (balance.mjs --olddig): dig only when the best hand is under 25% of the foe's HP
-    if (b.discardsLeft > 1 && !b._wantCatch && dryScore(b, best) / e.hp < 0.25 && b.deck.draw.length + b.deck.discard.length >= 3) {
+    if (b.discardsLeft > 1 && !b._wantCatch && dryScore(b, best) / e2.hp < 0.25 && b.deck.draw.length + b.deck.discard.length >= 3) {
       const keep = new Set(best);
       const toss = b.deck.hand.map(c => b.cardInfo(c)).filter(i => !keep.has(i.id) && (i.status || (i.rawPower ?? i.chipsPreview) < 60 || !i.playable)).slice(0, 5).map(i => i.id);
       if (toss.length >= 2) { b.discard(toss); return botTurn(b, run, skill); }
@@ -185,7 +494,7 @@ export function botTurn(b, run, skill) {
   } else if (skill === 'smart' && !BOT_OPTS.noDig && !b._wantCatch && b._discN++ < 6) {
     const toss = planDiscard(b, best);
     if (toss) { b.discard(toss); return botTurn(b, run, skill); }
-  } else if (skill === 'greedy' && value < e.hp * 0.25 && b.discardsLeft > 0 && b.turn > 0 && b.rng.chance(0.5)) {
+  } else if (skill === 'greedy' && value < e2.hp * 0.25 && b.discardsLeft > 0 && b.turn > 0 && b.rng.chance(0.5)) {
     const keep = new Set(best);
     const toss = b.deck.hand.filter(c => !keep.has(c.id)).slice(0, 5).map(c => c.id);
     if (toss.length) { b.discard(toss); return botTurn(b, run, skill); }
@@ -235,7 +544,9 @@ export function planDiscard(b, best) {
   const now = evalCards(H, b.maxPlay, opts);
   // convert the foe's HP into evaluator units (the evaluator ignores held-item bonuses)
   const hpE = now > 0 && real > 0 ? e.hp * now / real : e.hp;
-  const keepStatus = H.filter(c => c.status && statusValue(b, [c.i]) >= 0.15);
+  // status cards worth keeping (never cycle a PROTECT, a buff for a long fight, a status the foe doesn't have yet...)
+  const ctx = battleCtx(b), Dk = Math.max(1, real, b._dEma || 0);
+  const keepStatus = H.filter(c => c.status && (['PROTECT', 'ENDURE'].includes(c.i.move.effect) ? ctx.dFut > ctx.mhp * 0.08 : statusCardValue(b, ctx, c.i, 0, false, ctx.foeFaster, Dk) >= 0.25 * ctx.dU));
   const keeps = [];
   const add = (arr) => { const set = new Set([...arr, ...keepStatus].map(c => c.id)); const key = [...set].sort().join(','); if (!keeps.some(k => k.key === key)) keeps.push({ key, set }); };
   const atk = H.filter(c => !c.status && c.value > 0).sort((x, y) => y.value - x.value);
@@ -310,8 +621,13 @@ function playMeasured(b, run, best) {
   return evs;
 }
 
+// FIGHTLOG=file: one record per fight (pathing analysis), written at exit.
+const FIGHTLOG = process.env.FIGHTLOG ? [] : null;
+if (FIGHTLOG) process.on('exit', () => { fs.writeFileSync(process.env.FIGHTLOG, JSON.stringify(FIGHTLOG)); });
+let FIGHTLOG_PR = 0, FIGHTLOG_ST = null;
 export function fight(run, cfg, skill, stats) {
   const hpBefore = teamHp(run);
+  if (FIGHTLOG) { const st = teamState(run), k = cfg.rival ? 'rival' : cfg.kind; FIGHTLOG_ST = { hp: +st.hp.toFixed(3), pots: st.pots, alive: st.alive, gap: st.top - Math.max(...cfg.enemies.map(x => x.level)) }; FIGHTLOG_PR = +fightRisk(run, k, st.hp, st.top - Math.max(...cfg.enemies.map(x => x.level)), st.alive, st.pots).toFixed(3); }
   const b = new Battle(run, cfg);
   // Lead with the healthy POKéMON whose deck fits this fight best (the map screen lets you set the lead).
   const healthy = run.party.filter(m => !isFainted(m) && m.hp / maxHp(m) > 0.4);
@@ -334,6 +650,7 @@ export function fight(run, cfg, skill, stats) {
   while (!b.result && guard++ < 80) botTurn(b, run, skill);
   if (!b.result) b.end('lose');
   run.logBattle(b);
+  if (FIGHTLOG) FIGHTLOG.push({ a: run.actIndex, f: run.floor, k: cfg.rival ? 'rival' : cfg.kind, asc: run.ascension, hp0: +hpBefore.toFixed(2), n: run.party.length, lv: Math.max(...run.party.map(m => m.level)), foe: Math.max(...cfg.enemies.map(x => x.level)), ne: cfg.enemies.length, out: b.result.outcome, pr: FIGHTLOG_PR, st: FIGHTLOG_ST, hp1: +teamHp(run).toFixed(2) });
   // a "?" event gauntlet (the RADIO TOWER): after a win the next fight starts right away, no heal (prizes come last)
   if (b.result.outcome === 'win' && cfg.chainNext) { run.afterBattle(b); handleLevelEvents(run, run.distributeExp(b.result, b.kind), skill); const nx = cfg.chainNext(run); if (nx) return fight(run, nx, skill, stats); }
   if (stats) {
@@ -353,7 +670,7 @@ export function fight(run, cfg, skill, stats) {
 export function teamHp(run) { return run.party.reduce((a, m) => a + m.hp / maxHp(m), 0) / Math.max(1, run.party.length); }
 
 // ---------------------------------------------------------------- between battles
-function moveScore(mon, moveKey) {
+function moveScoreOld(mon, moveKey) {
   const mv = D.moves[moveKey];
   if (!mv) return 0;
   if (mv.power === 0) {
@@ -367,13 +684,108 @@ function moveScore(mon, moveKey) {
   return (mv.power + s) * stab * Math.min(1, (mv.accuracy || 100) / 100) * (['RECHARGE', 'SOLAR_BEAM', 'RAZOR_WIND', 'SKULL_BASH', 'SKY_ATTACK', 'EXPLOSION'].includes(mv.effect) ? 0.7 : 1);
 }
 
-export function learnSmart(mon, move) {
+// Daniel's card values: attacks by power x STAB x accuracy x the attacking stat they use (relative to the mon's
+// average), self-buffs that fit the mon's attacking side and PROTECT close to its best attack, heals and sleep
+// a bit less, stat debuffs and other fluff near zero ("buff yourself, never debuff them").
+const SETUP_PHYS = new Set(['ATTACK_UP_2', 'DRAGON_DANCE', 'BULK_UP', 'ATTACK_UP', 'BELLY_DRUM']);
+const SETUP_SPEC = new Set(['SPECIAL_ATTACK_UP_2', 'CALM_MIND', 'SPECIAL_ATTACK_UP']);
+const HEAL_MOVES = new Set(['RESTORE_HP', 'SOFTBOILED', 'SYNTHESIS', 'MOONLIGHT', 'MORNING_SUN', 'WISH']);
+const STATUS_FX = new Set(['SLEEP', 'PARALYZE', 'TOXIC', 'WILL_O_WISP', 'LEECH_SEED', 'YAWN']);
+const BAD_FX = new Set(['RECHARGE', 'SOLAR_BEAM', 'RAZOR_WIND', 'SKULL_BASH', 'SKY_ATTACK', 'EXPLOSION', 'SELF_DESTRUCT', 'FOCUS_PUNCH']);
+function attackScore(mon, mv, st) {
+  const special = isSpecialMove(mv.key, mv.type);
+  const s = special ? st.spa : st.atk;
+  const ratio = Math.max(0.5, Math.min(1.6, s / Math.max(1, (st.atk + st.spa) / 2)));
+  const stab = typesOf(mon).includes(mv.type) ? 1.5 : 1;
+  let v = Math.max(20, mv.power) * stab * Math.min(1, (mv.accuracy || 100) / 100) * ratio;
+  if (BAD_FX.has(mv.effect)) v *= 0.65;
+  if (mv.effect === 'SPECIAL_ATTACK_UP_HIT' && special) v *= 1.3; // CHARGE BEAM: a hit that sets up
+  if (/^(ATTACK|SPECIAL_ATTACK)_UP_HIT$|^ALL_STATS_UP_HIT$/.test(mv.effect || '') && mv.effect !== 'SPECIAL_ATTACK_UP_HIT') v *= 1.1;
+  return v;
+}
+function bestAttackScore(mon, st, except) {
+  let b = 0;
+  for (const x of mon.moves) { const mv = D.moves[x.move]; if (mv?.power && x.move !== except) b = Math.max(b, attackScore(mon, mv, st)); }
+  return b || 60;
+}
+export function moveScore(mon, moveKey) {
+  if (BOTX.has('oldmoves')) return moveScoreOld(mon, moveKey);
+  const mv = D.moves[moveKey];
+  if (!mv) return 0;
+  const st = stats(mon);
+  if (mv.power) return attackScore(mon, mv, st);
+  const best = bestAttackScore(mon, st);
+  const fx = mv.effect;
+  const physical = st.atk >= st.spa;
+  // a second card of the same kind adds little
+  const has = (pred) => mon.moves.some(x => x.move !== moveKey && D.moves[x.move] && !D.moves[x.move].power && pred(D.moves[x.move].effect));
+  if (fx === 'PROTECT') return best * 0.8;
+  if (SETUP_PHYS.has(fx) || SETUP_SPEC.has(fx)) {
+    const fits = SETUP_PHYS.has(fx) ? physical || fx === 'DRAGON_DANCE' || fx === 'BULK_UP' : !physical || fx === 'CALM_MIND';
+    if (fx === 'BELLY_DRUM') return best * 0.3;
+    return best * (fits ? 0.8 : 0.25) * (has(e => SETUP_PHYS.has(e) || SETUP_SPEC.has(e)) ? 0.4 : 1);
+  }
+  if (HEAL_MOVES.has(fx)) return best * 0.5 * (has(e => HEAL_MOVES.has(e)) ? 0.3 : 1);
+  if (STATUS_FX.has(fx)) return best * (fx === 'SLEEP' ? 0.4 : 0.3) * Math.min(1, (mv.accuracy || 100) / 100) * (has(e => STATUS_FX.has(e)) ? 0.4 : 1);
+  if (fx === 'REFLECT' || fx === 'LIGHT_SCREEN' || fx === 'SUBSTITUTE') return best * 0.2;
+  return best * 0.05;
+}
+// A deck's value per card (copies weigh in); `swap` = [index, newMove] (index -1: added).
+function deckAvg(mon, swap) {
+  let tot = 0, n = 0;
+  const add = (move, c) => { tot += moveScore(mon, move) * c; n += c; };
+  mon.moves.forEach((x, i) => { if (swap && swap[0] === i) return; add(x.move, x.copies || 1); });
+  if (swap) add(swap[1], swap[0] >= 0 ? replacedCopies(mon.moves[swap[0]], swap[1]) : defaultCopies(swap[1]));
+  return { avg: n ? tot / n : 0, n };
+}
+// Best way to put `move` into mon's deck: { gain (relative), idx (-1 = add) } or null when it doesn't help.
+function bestSlotFor(mon, move) {
+  if (knowsMove(mon, move)) return null;
+  const cur = deckAvg(mon);
+  const opts = [];
+  if (mon.moves.length < 4) opts.push(-1);
+  for (let i = 0; i < mon.moves.length; i++) opts.push(i);
+  let best = null;
+  for (const i of opts) {
+    const nx = deckAvg(mon, [i, move]);
+    // thin decks: value per card, but a deck below ~8 cards wants more cards (the hand is 5)
+    let g = (nx.avg - cur.avg) / Math.max(1, cur.avg);
+    if (i === -1 && cur.n < 8) g += 0.08 * (8 - cur.n) / 8 + (moveScore(mon, move) >= cur.avg * 0.6 ? 0.05 : -0.2);
+    if (i >= 0 && nx.n < 6) g -= 0.1;
+    if (!best || g > best.gain) best = { gain: g, idx: i };
+  }
+  return best;
+}
+
+export function learnSmart(mon, move, minGain = 0.02) {
   if (knowsMove(mon, move)) return false;
-  const v = moveScore(mon, move);
-  if (mon.moves.length < 4) return teachMove(mon, move);
-  const worst = mon.moves.map((m, i) => [moveScore(mon, m.move), i]).sort((a, b) => a[0] - b[0])[0];
-  if (v > worst[0] * 1.1) { teachMove(mon, move, worst[1], replacedCopies(mon.moves[worst[1]], move)); return true; }
-  return false;
+  if (BOTX.has('oldmoves')) {
+    const v = moveScore(mon, move);
+    if (mon.moves.length < 4) return teachMove(mon, move);
+    const worst = mon.moves.map((m, i) => [moveScore(mon, m.move), i]).sort((a, b) => a[0] - b[0])[0];
+    if (v > worst[0] * 1.1) { teachMove(mon, move, worst[1], replacedCopies(mon.moves[worst[1]], move)); return true; }
+    return false;
+  }
+  const s = bestSlotFor(mon, move);
+  if (!s || s.gain < minGain) return false;
+  if (s.idx < 0) return teachMove(mon, move);
+  return teachMove(mon, move, s.idx, replacedCopies(mon.moves[s.idx], move));
+}
+
+// The MOVE DELETER's pick for mon (index into mon.moves) or -1: a card whose removal raises the deck's value per
+// card, while keeping at least 7 cards.
+function deletePick(mon) {
+  const total = mon.moves.reduce((a, m) => a + (m.copies || 1), 0);
+  if (total <= 7) return -1;
+  let tot = 0;
+  const sc = mon.moves.map(x => { const v = moveScore(mon, x.move); tot += v * (x.copies || 1); return v; });
+  const avg = tot / total;
+  let idx = -1, worst = Infinity;
+  sc.forEach((v, i) => { if (v < worst) { worst = v; idx = i; } });
+  // only clearly weak cards (and never the last attack)
+  if (idx < 0 || worst > avg * 0.6) return -1;
+  if (D.moves[mon.moves[idx].move]?.power && mon.moves.filter(x => D.moves[x.move]?.power).length <= 1 && (mon.moves[idx].copies || 1) <= 1) return -1;
+  return idx;
 }
 
 export function handleLevelEvents(run, list, skill) {
@@ -469,8 +881,22 @@ export function postBattle(run, b, rng, skill, metrics) {
     const choices = run.moveRewardChoices(rng);
     if (choices.length) {
       if (skill === 'smart') {
-        const scored = choices.map(c => { const mon = run.party.find(m => m.uid === c.uid); const worst = Math.min(...mon.moves.map(m => moveScore(mon, m.move))); return { c, mon, gain: moveScore(mon, c.move) - (mon.moves.length < 4 ? 0 : worst) }; }).sort((a, b) => b.gain - a.gain);
-        if (scored[0].gain > 0) learnSmart(scored[0].mon, scored[0].c.move);
+        if (BOTX.has('oldmoves')) {
+          const scored = choices.map(c => { const mon = run.party.find(m => m.uid === c.uid); const worst = Math.min(...mon.moves.map(m => moveScore(mon, m.move))); return { c, mon, gain: moveScore(mon, c.move) - (mon.moves.length < 4 ? 0 : worst) }; }).sort((a, b) => b.gain - a.gain);
+          if (scored[0].gain > 0) learnSmart(scored[0].mon, scored[0].c.move);
+        } else {
+          // the carry first (Daniel: one POKéMON fed everything); skip rewards that don't raise a deck's value per card
+          const top = Math.max(...run.party.map(m => m.level));
+          let best = null;
+          for (const c of choices) {
+            const mon = run.party.find(m => m.uid === c.uid);
+            const sl = mon && bestSlotFor(mon, c.move);
+            if (!sl) continue;
+            const w = mon.level >= top - 1 ? 1 : 0.5;
+            if (!best || sl.gain * w > best.v) best = { v: sl.gain * w, mon, c };
+          }
+          if (best && best.v >= 0.03) learnSmart(best.mon, best.c.move, -1);
+        }
       } else {
         const c = choices.sort((x, y) => (D.moves[y.move].power || 0) - (D.moves[x.move].power || 0))[0];
         const mon = run.party.find(m => m.uid === c.uid);
@@ -517,8 +943,99 @@ function legendPref(run, hp, fainted) {
   return top2 >= target - 4 ? 9 : top2 >= target - 7 ? 4 : 0.3;
 }
 
+// ---- risk-aware pathing (smart): a small lookahead over the map that models each node's chance to lose (by kind,
+// the team's HP and its level lead over the node's foes), the HP it costs and the power it brings (EXP levels,
+// held items, catches), and prices the forced fights still ahead (rival, boss) at the projected state.
+export const BOTX = new Set((process.env.BOTX || '').split(',').filter(Boolean)); // ablation switches
+const KIND_RISK = { wild: 0.035, trainer: 0.12, elite: 0.24, rival: 0.3, boss: 0.3, legend: 0.5 };
+const KIND_COST = { wild: 0.1, trainer: 0.16, elite: 0.28, rival: 0.3, boss: 0.25, legend: 0.35 };
+const KIND_FOE = { wild: 0, trainer: 1, elite: 2, rival: 1, legend: 3 };
+const KIND_EXP = { wild: 0.45, trainer: 0.7, elite: 1.0, rival: 1.0, legend: 1.4 };
+// Strength-weighted HP (the carry's HP matters most) and the top level of the standing POKéMON.
+export function teamState(run) {
+  let w = 0, h = 0, top = 0, alive = 0;
+  for (const m of run.party) {
+    const wt = m.level * m.level;
+    w += wt; h += wt * Math.max(0, m.hp) / maxHp(m);
+    if (!isFainted(m)) { alive++; top = Math.max(top, m.level); }
+  }
+  const pots = run.consumables.filter(k => CONSUMABLES[k]?.heal || CONSUMABLES[k]?.healFrac || CONSUMABLES[k]?.revive).length;
+  return { hp: w ? h / w : 0, top, alive, pots };
+}
+// Chance to lose a fight: a logistic fit on ~3600 smart-bot fights at A2/A5/A7/A10 (FIGHTLOG=..., tests/bot.mjs):
+// per-kind intercept and level-gap slope (gap = top level - the foes' top level), the strength-weighted HP missing,
+// heal items in the bag, a lone POKéMON, A7+ / NUZLOCKE, act 2+ (the bot's team has filled out by then).
+const RISK_B = { wild: -4.09, trainer: -3.41, elite: -1.28, rival: -0.9, boss: -0.99, legend: -0.6 };
+const RISK_G = { wild: -0.59, trainer: -0.78, elite: -0.47, rival: -0.57, boss: -0.36, legend: -0.5 };
+export function fightRisk(run, kind, hp, gap, alive, pots = 0) {
+  const z = (RISK_B[kind] ?? -2) + (RISK_G[kind] ?? -0.5) * (Math.max(-4, Math.min(5, gap)) - 1) + 1.81 * (1 - Math.min(1, hp)) - 0.36 * Math.min(3, pots)
+    + (alive <= 1 ? 1.02 : 0) + (run.ascension >= 7 ? 0.24 : 0) + (run.nuzlocke ? 0.72 : 0) - (run.ascension >= 5 ? 0.21 : 0) - (run.actIndex > 0 ? 2.12 : 0);
+  return 1 / (1 + Math.exp(-z));
+}
+function foeLevel(run, kind, floor) {
+  if (kind === 'boss') return run.bossLevel ? run.bossLevel() : run.levelFor(floor) + 3;
+  return run.levelFor(floor) + (KIND_FOE[kind] ?? 1);
+}
+// Expected path score from node `id` (inclusive) for `depth` more nodes. s: {hp, top, pw (power bonus in levels),
+// money, wilds (wild fights done this act), alive}. Returns P(survive) x (1 + power value).
+function pathValue(run, id, s, depth) {
+  const n = run.map.nodes[id];
+  if (!n) return 0;
+  let { hp, top, pw, money, alive, firstWild, pots } = s;
+  let p = 1;
+  const t = n.type;
+  const fightKinds = ['wild', 'trainer', 'elite', 'rival', 'boss', 'legend'];
+  if (fightKinds.includes(t)) {
+    const gap = top + pw - foeLevel(run, t, n.floor);
+    p = 1 - fightRisk(run, t, hp, gap, alive, pots);
+    const costF = Math.pow(2, -(gap - 1) * 0.35);
+    hp = Math.max(0.05, hp - KIND_COST[t] * costF + TUNING.postBattleHeal + (run.mods().postHeal || 0));
+    if (hp < 0.35 && pots) { hp += 0.3; pots--; }
+    top += (KIND_EXP[t] || 0) * Math.pow(2, -Math.max(-2, gap) / 2.5);
+    if (t === 'wild') {
+      const canCatch = run.totalBalls() > 0 && (!run.nuzlocke || firstWild) && run.party.length < 6;
+      if (canCatch) { pw += run.party.length <= 1 ? 0.5 : run.party.length <= 2 ? 0.3 : 0.1; alive++; }
+      firstWild = false; pw += 0.06;
+      money += 40;
+    }
+    if (t === 'trainer') { pw += 0.2; money += 150; }
+    if (t === 'elite') { pw += 0.75 + 0.2; money += 300; }
+    if (t === 'rival') { pw += 0.9; money += 300; }
+    if (t === 'legend') pw += 1.6;
+    if (t === 'boss') return p * (1 + 0.15 * pw);
+  } else if (t === 'center') {
+    if (hp < 0.85 || alive < run.party.length) { hp = 1; alive = run.party.length; }
+    else top += 3;
+  } else if (t === 'treasure') { pw += 0.35; pots = Math.min(3, pots + 0.4); }
+  else if (t === 'event') { pw += 0.35; hp = Math.min(1, hp + 0.06); }
+  else if (t === 'mart') { if (money >= 700) { pots = Math.min(3, pots + Math.min(2, Math.floor(money / 900))); pw += money >= 2500 ? 0.4 : 0.1; money = Math.min(money, 300); } }
+  const ns = { hp, top, pw, money, alive, firstWild, pots };
+  if (depth <= 1 || !n.next.length) {
+    // the horizon: the forced fights still ahead at the projected state (the rival floor, the act boss)
+    let q = 1;
+    const F = run.map.floors;
+    const rf = rivalFloorOf(run.act);
+    let h2 = hp;
+    if (run.act.rival && n.floor < rf) { const g = top + pw + 0.5 * (rf - n.floor) - foeLevel(run, 'rival', rf); q *= 1 - fightRisk(run, 'rival', h2, g, alive, pots); }
+    if (n.type !== 'boss') { const g = top + pw + 0.5 * (F - n.floor) - foeLevel(run, 'boss', F); q *= 1 - fightRisk(run, 'boss', 1, g, alive, pots); }
+    return p * q * (1 + 0.15 * pw + 0.1 * hp);
+  }
+  let best = 0;
+  for (const x of n.next) best = Math.max(best, pathValue(run, x, ns, depth - 1));
+  return p * best;
+}
+
 export function chooseNode(run, rng, skill) {
   const next = reachable(run.map, run.nodeId);
+  if (skill === 'smart' && !BOTX.has('oldpath') && next.length > 1) {
+    const st = teamState(run);
+    const firstWild = run.nuzlocke ? run.nuzEnc?.[String(run.actIndex)] === undefined : true;
+    const s0 = { hp: st.hp, top: st.top, pw: 0, money: run.money, alive: st.alive, firstWild, pots: st.pots };
+    const depth = +(process.env.PATH_DEPTH || 5);
+    let best = null, bv = -Infinity;
+    for (const id of next) { const v = pathValue(run, id, s0, depth) + rng.next() * 1e-3; if (v > bv) { bv = v; best = id; } }
+    return best;
+  }
   const hp = teamHp(run);
   const fainted = run.party.filter(isFainted).length;
   const pref = skill === 'smart'
@@ -540,6 +1057,65 @@ export function doShop(run, rng, skill) {
     for (const it of shop.items) if (run.money > it.price + 500 && (it.kind === 'ball' || it.kind === 'relic' || CONSUMABLES[it.key]?.heal)) buyItem(run, shop, it);
     return;
   }
+  if (BOTX.has('oldshop')) return doShopOld(run, shop, rng, skill);
+  const buy = (it) => { const r = buyItem(run, shop, it); if (r.ok && r.pending?.type === 'teach') { const mon = run.party.filter(m => canLearn(m.species, r.pending.move) && !knowsMove(m, r.pending.move)).sort((a, b) => moveScore(b, r.pending.move) - moveScore(a, r.pending.move))[0]; if (mon) learnSmart(mon, r.pending.move); } return r.ok; };
+  const find = (k) => shop.items.find(i => i.key === k && !i.sold);
+  const isHeal = (k) => !!(CONSUMABLES[k]?.heal || CONSUMABLES[k]?.healFrac);
+  const nHeal = () => run.consumables.filter(isHeal).length;
+  const carry = [...run.party].filter(m => !isFainted(m)).sort((a, b) => b.level - a.level)[0];
+  // 1) RARE CANDY for the carry: permanent levels (Daniel's most-bought item), used on the spot
+  const candy = find('RARE_CANDY');
+  if (candy && carry && !run.levelUpBlocker?.(carry) && run.money >= candy.price) {
+    if (buyItem(run, shop, candy, { consumed: true }).ok) useItemNow(run, 'RARE_CANDY', skill);
+  }
+  // 2) balls when the team still needs a catch
+  const ballIt = shop.items.find(i => i.key === (run.actIndex >= 2 ? 'ULTRA_BALL' : run.actIndex >= 1 ? 'GREAT_BALL' : 'POKE_BALL'));
+  const nuzDone = run.nuzlocke && run.nuzEnc?.[String(run.actIndex)] !== undefined;
+  const ballWant = nuzDone ? 0 : run.party.length < 3 ? 3 : run.party.length < 6 && !run.nuzlocke ? 2 : run.nuzlocke ? 1 : 0;
+  while (ballIt && run.totalBalls() < ballWant && run.money >= ballIt.price) buy(ballIt);
+  // 3) healing: keep 2 heal items in the bag (3 when rich), the strongest that fits the budget
+  const want = run.money > 4000 ? 3 : 2;
+  const meds = ['HYPER_POTION', 'SUPER_POTION', 'POTION'].map(find).filter(Boolean);
+  const leadMax = carry ? maxHp(carry) : 30;
+  for (let g = 0; g < 3 && nHeal() < want && run.consumables.length < run.maxConsumables; g++) {
+    const it = meds.find(i => run.money >= i.price && (CONSUMABLES[i.key].heal <= leadMax * 1.6 || i.key === 'POTION' || run.money >= i.price * 2.5)) || meds.find(i => run.money >= i.price);
+    if (!it || !buy(it)) break;
+  }
+  // 4) held items worth it
+  const relics = shop.items.filter(i => i.kind === 'relic' && !i.sold).sort((a, b) => relicScore(run, b.key) - relicScore(run, a.key));
+  for (const it of relics) if (relicScore(run, it.key) >= 58 && run.money >= it.price) buy(it);
+  // 5) a REVIVE (not in NUZLOCKE: fainted POKéMON are gone)
+  const rev = find('REVIVE');
+  if (rev && !run.nuzlocke && run.party.length >= 2 && !run.consumables.some(k => CONSUMABLES[k]?.revive) && run.consumables.length < run.maxConsumables && run.money >= rev.price + 400) buy(rev);
+  // 6) vitamins (combo level-ups, no bag slot) for the combos actually played
+  const plays = run.comboPlays || {}, totP = Object.values(plays).reduce((a, b) => a + b, 0) || 1;
+  for (const it of shop.items.filter(i => i.vitamin && !i.sold).sort((a, b) => (plays[CONSUMABLES[b.key].combo] || 0) - (plays[CONSUMABLES[a.key].combo] || 0))) {
+    const share = (plays[CONSUMABLES[it.key].combo] || 0) / totP;
+    if (share >= 0.15 && run.money >= it.price + 300) buy(it);
+  }
+  // evolution stones
+  for (const it of shop.items.filter(i => i.kind === 'consumable' && !i.sold && CONSUMABLES[i.key]?.evo)) if (run.money >= it.price && run.consumables.length < run.maxConsumables) buy(it);
+  // 7) thin decks with the MOVE DELETER: status cards the bot won't use, then spare copies of weak attacks
+  const del = shop.items.find(i => i.key === 'MOVE_DELETER');
+  for (const mon of run.party) {
+    let guard = 0;
+    while (del && run.money >= del.price + 300 && guard++ < 6) {
+      const idx = deletePick(mon);
+      if (idx < 0) break;
+      run.money -= del.price;
+      const mv = mon.moves[idx];
+      if ((mv.copies || 1) > 1) mv.copies--; else mon.moves.splice(idx, 1);
+    }
+  }
+  // 8) TMs that are an upgrade
+  for (const it of shop.items.filter(i => i.kind === 'tm' && !i.sold)) {
+    const gain = Math.max(0, ...run.party.filter(m => canLearn(m.species, it.move) && !knowsMove(m, it.move)).map(m => moveScore(m, it.move) - Math.min(...m.moves.map(x => moveScore(m, x.move)))));
+    if (gain > 40 && run.money >= it.price + 600) buy(it);
+  }
+  usePostItems(run, rng, skill);
+}
+
+function doShopOld(run, shop, rng, skill) {
   const buy = (it) => { const r = buyItem(run, shop, it); if (r.ok && r.pending?.type === 'teach') { const mon = run.party.filter(m => canLearn(m.species, r.pending.move) && !knowsMove(m, r.pending.move)).sort((a, b) => moveScore(b, r.pending.move) - moveScore(a, r.pending.move))[0]; if (mon) learnSmart(mon, r.pending.move); } return r.ok; };
   // Thin decks with the Move Deleter: drop status cards (THIN=max: also weak attacks, down to 5 cards).
   const del = shop.items.find(i => i.key === 'MOVE_DELETER');
@@ -641,6 +1217,7 @@ export function botForget(run) {
   const keep = ['SLEEP', 'RESTORE_HP', 'SOFTBOILED', 'SYNTHESIS', 'MOONLIGHT', 'MORNING_SUN', 'DRAGON_DANCE', 'CALM_MIND', 'BULK_UP', 'ATTACK_UP_2'];
   const decks = run.party.map(m => ({ m, n: m.moves.reduce((a, x) => a + (x.copies || 1), 0) })).filter(d => d.n > 5).sort((a, b) => b.n - a.n);
   for (const { m, n } of decks) {
+    if (!BOTX.has('oldmoves')) { const i = deletePick(m); if (i < 0) continue; const mv = m.moves[i]; if ((mv.copies || 1) > 1) mv.copies--; else m.moves.splice(i, 1); return true; }
     let idx = m.moves.findIndex(x => D.moves[x.move]?.power === 0 && !keep.includes(D.moves[x.move]?.effect));
     if (idx < 0 && n > 7) {
       const atk = m.moves.map((x, i) => [i, moveScore(m, x.move)]).filter(([i]) => D.moves[m.moves[i].move]?.power).sort((a, b) => a[1] - b[1]);

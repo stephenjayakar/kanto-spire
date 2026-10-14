@@ -181,13 +181,24 @@ function simulate(i) {
   return finish('stalled');
 }
 
-const t0 = Date.now();
+const t0 = Date.now(), cpu0 = process.cpuUsage();
 for (let i = 0; i < RUNS; i++) {
   const r = simulate(i);
   if (VERBOSE || process.argv.includes('--each')) console.log(`run ${i} ${r.starter} ${r.died ? 'DIED ' + r.died : 'WON'} | ${r.party.join(' ')} | ${r.relics.join(',')}`);
 }
 const wins = M.runs.filter(r => !r.died).length;
-console.log(`\n=== ${LABEL} A${ASC} ${SKILL}: ${wins}/${RUNS} wins (${Math.round(100 * wins / RUNS)}%) in ${((Date.now() - t0) / 1000).toFixed(1)}s${JTUNE ? ` [${JTUNE}]` : ''}`);
+const elapsed = Date.now() - t0;
+console.log(`\n=== ${LABEL} A${ASC} ${SKILL}: ${wins}/${RUNS} wins (${Math.round(100 * wins / RUNS)}%) in ${(elapsed / 1000).toFixed(1)}s${JTUNE ? ` [${JTUNE}]` : ''}`);
+{ // bot cost: per run, and per battle turn (runs that get further take longer, so compare ms/turn between bots)
+  // CPU time (user + system) of this process: steadier than wall time when other jobs share the machine
+  const T = Object.values(M.fights).reduce((a, f) => a + f.turns, 0), c = process.cpuUsage(cpu0), cpu = (c.user + c.system) / 1000;
+  M.timing = { ms: elapsed, cpuMs: cpu, turns: T, msPerRun: cpu / RUNS, msPerTurn: cpu / Math.max(1, T) };
+  console.log(`time (CPU): ${(cpu / RUNS).toFixed(0)} ms/run, ${(cpu / Math.max(1, T)).toFixed(2)} ms/battle turn (${T} turns)`);
+  // where runs end: act reached by every run (died there or won)
+  const byAct = {};
+  for (const r of M.runs) { const k = r.died ? `A${r.act}` : 'won'; byAct[k] = (byAct[k] || 0) + 1; }
+  console.log('runs end:', Object.entries(byAct).sort().map(([k, v]) => `${k} ${v}`).join('  '));
+}
 if (M.post) console.log(`post-game: ${M.post.w}/${M.post.n} beat the post-game boss | deaths: ${Object.entries(M.post.deaths).map(([k, v]) => `${k}:${v}`).join('  ') || '-'}`);
 { // the party at the end of the run: size, top level, average level, spread = top level - the average of the others
   const avg = (a) => a.reduce((x, y) => x + y, 0) / Math.max(1, a.length);
