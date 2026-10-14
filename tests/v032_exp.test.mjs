@@ -194,7 +194,7 @@ t('co-op: the EXP rescale (COOP_TUNING.exp / expScale) keeps the per-foe split c
 // ------------------------------------------------------------------------------------ A5 level cap
 const capsOf = (run) => run.acts.map((a, i) => { run.actIndex = i; return run.levelCap(); });
 const capRun = (asc, extra = {}) => Run.create({ starter: 'CHARMANDER', ascension: asc, seed: 'CAPT', ...extra });
-const off = TUNING.levelCapOffsets; // per act (v0.5.17: +2 / +1 / 0 / 0, post-game +2)
+const off = TUNING.levelCapOffsets; // per act (v0.5.19: +1 / +1 / -1 / -2, post-game -1)
 const plus = (tops) => tops.map((x, i) => x + off[i]);
 
 t('cap: none below A5; A5 = the act boss\'s top level + offset (KANTO: gyms 15/27/41 + A3 bonus, CHAMPION 49, post-game 70)', () => {
@@ -203,9 +203,13 @@ t('cap: none below A5; A5 = the act boss\'s top level + offset (KANTO: gyms 15/2
   assert.deepEqual(capsOf(capRun(5, { world: 'kanto' })), plus([15 + 1, 27 + 2, 41 + 2, 49 + 2, 70 + 2]));
   // A10: its +1 boss level does NOT raise the cap (v0.5.18): same caps as A5
   assert.deepEqual(capsOf(capRun(10, { world: 'kanto' })), plus([15 + 1, 27 + 2, 41 + 2, 49 + 2, 70 + 2]));
-  // v0.5.17: the per-act offsets, as a plain table
-  assert.deepEqual(capsOf(capRun(5, { world: 'kanto' })), [18, 30, 43, 51, 74]);
-  assert.deepEqual(capsOf(capRun(10, { world: 'kanto' })), [18, 30, 43, 51, 74]);
+  // v0.5.19: the per-act offsets, as a plain table (v0.5.17-v0.5.18: 18 / 30 / 43 / 51 / 74)
+  assert.deepEqual(off, [1, 1, -1, -2, -1]);
+  assert.deepEqual(capsOf(capRun(5, { world: 'kanto' })), [17, 30, 42, 49, 71]);
+  assert.deepEqual(capsOf(capRun(10, { world: 'kanto' })), [17, 30, 42, 49, 71]);
+  // the post-game cap stays under the post-game boss (its party's top level 72 with A3's +2)
+  const pg = capRun(5, { world: 'kanto' }); pg.actIndex = 4;
+  assert.ok(pg.levelCap() < pg.bossLevel(false));
   // ...while the A10 bosses themselves keep their +1 from Act 2 on
   const b5 = capRun(5, { world: 'kanto' }), b10 = capRun(10, { world: 'kanto' });
   assert.deepEqual(b10.acts.map((a, i) => { b10.actIndex = i; b5.actIndex = i; return b10.bossLevel() - b5.bossLevel(); }), [0, 1, 1, 1, 1]);
@@ -231,7 +235,7 @@ function cappedParty(levels, asc = 5) {
 const res = (run, exp, lvl, parts) => ({ outcome: 'win', exp, foes: [{ level: lvl, exp }], participants: parts.map(m => m.uid), fainted: run.party.filter(isFainted).map(m => m.uid) });
 
 t('cap: a POKéMON at the cap gets no battle EXP; one below stops exactly at the cap', () => {
-  const run = cappedParty([18, 17]);
+  const run = cappedParty([17, 15]);
   const cap = run.levelCap();
   assert.equal(cap, 16 + off[0]);
   const [a, b] = run.party;
@@ -240,7 +244,7 @@ t('cap: a POKéMON at the cap gets no battle EXP; one below stops exactly at the
   assert.equal(a.level, cap); assert.equal(ra.gained, 0); assert.ok(ra.capped);
   assert.equal(b.level, cap); assert.equal(b.exp, expForLevel(D.species.RATTATA.growthRate, cap)); assert.ok(rb.capped);
   // below A5 the same battle levels them past it
-  const run4 = cappedParty([18, 17], 4);
+  const run4 = cappedParty([17, 15], 4);
   run4.distributeExp(res(run4, 5000, 15, run4.party), 'trainer');
   assert.ok(run4.party.every(m => m.level > cap));
 });
@@ -255,6 +259,25 @@ t('cap: the EXP past the cap is lost (teammates only get their own share)', () =
   assert.equal(top.exp, before[0], 'the capped POKéMON gets nothing');
   assert.equal(rl.gained, Math.max(1, Math.floor(300 * TUNING.expMult * 0.9 * 0.5 * expLevelScale(15, 9))), 'no overflow on top of its own bench share');
   assert.ok(!('passed' in rt) && !('extra' in rl));
+});
+
+t('cap: the battle log records the EXP lost to the cap (v0.5.19: capped / lostExp / gotExp)', () => {
+  const run = cappedParty([18, 9]);
+  const [top, low] = run.party;
+  run.logBattle({ cfg: {}, kind: 'trainer', result: { outcome: 'win' } });
+  const out = run.distributeExp(res(run, 300, 15, [top, low]), 'trainer');
+  const ev = run.runLog.events.at(-1);
+  assert.equal(ev.k, 'battle');
+  assert.equal(ev.capped, 1);
+  assert.ok(ev.lostExp > 0);
+  assert.equal(ev.gotExp, out.reduce((s, r) => s + r.gained, 0));
+  // a second hand-out (or one with no battle event last) leaves the log alone; below A5 nothing is added
+  run.distributeExp(res(run, 300, 15, [top]), 'trainer');
+  assert.equal(run.runLog.events.at(-1).gotExp, ev.gotExp);
+  const run4 = cappedParty([18, 9], 4);
+  run4.logBattle({ cfg: {}, kind: 'trainer', result: { outcome: 'win' } });
+  run4.distributeExp(res(run4, 300, 15, run4.party), 'trainer');
+  assert.ok(!('lostExp' in run4.runLog.events.at(-1)));
 });
 
 t('cap: RARE CANDY stops at the cap (v0.5.16), and is refused at it', () => {

@@ -394,7 +394,7 @@ export function drawHUD(ctx, run, opts = {}) {
   if (cap) {
     const ct = `Lv cap ${cap}`, cw = measure(ct, 'small');
     text(ctx, ct, rx, 3, { color: 'orange', font: 'small' });
-    if (hover(rx - 2, 0, cw + 4, 13)) tip(`LEVEL CAP: Lv${cap}`, `A${LEVEL_CAP_ASC}+: battle EXP stops at Lv${cap} in this act (its boss's top level +${levelCapOffset(run.actIndex)}${run.ascension >= 10 ? ", not counting A10's +1" : ''}). EXP past the cap is lost. RARE CANDY, training and events can't go past it either.`, { width: 200 });
+    if (hover(rx - 2, 0, cw + 4, 13)) tip(`LEVEL CAP: Lv${cap}`, `A${LEVEL_CAP_ASC}+: battle EXP stops at Lv${cap} in this act (its boss's top level ${(o => (o < 0 ? '-' : '+') + Math.abs(o))(levelCapOffset(run.actIndex))}${run.ascension >= 10 ? ", not counting A10's +1" : ''}). EXP past the cap is lost. RARE CANDY, training and events can't go past it either.`, { width: 200 });
     rx += cw + 4;
   }
   const nb = run.badges.length;
