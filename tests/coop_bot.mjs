@@ -6,7 +6,7 @@ import { maxHp, isFainted, addLevels, DECK_RULES } from '../web/src/game/pokemon
 import { CONSUMABLES, BADGES } from '../web/src/game/items.js';
 import { TUNING } from '../web/src/game/run.js';
 import { reachable } from '../web/src/game/map.js';
-import { chooseHand, dryScore, matchup, planDiscard, postBattle, chooseNode, doShop, doEvent, doCenter, handleLevelEvents, teamHp, gainBotItem } from './bot.mjs';
+import { chooseHand, dryScore, matchup, previewDamage, planDiscard, postBattle, chooseNode, doShop, doEvent, doCenter, handleLevelEvents, teamHp, gainBotItem } from './bot.mjs';
 import { CoopGame, badgeForBoss } from '../web/src/game/coop/coop.js';
 
 export function makeBot(seed, p) { return { p, rng: new RNG(`${seed}:bot${p}`), battle: null, turn: -1, st: null, fails: 0 }; }
@@ -82,7 +82,7 @@ function battleAction(game, bot) {
       if ((s.discardsLeft > 0 || s.freeSwitches > 0 || s.faintSwitch) && inc.sum > 0) {
         const opts = run.party.filter(m => !isFainted(m) && m.uid !== lead.uid).map(m => {
           let d = 0;
-          duo.intents.forEach(it => { if (it && it.target === p && it.damage) d += s.withFocus(it.ri, () => s.enemyDamage(it.move, duo.enemies[it.ri], m, 1, false, true)); });
+          duo.intents.forEach(it => { if (it && it.target === p && it.damage) d += s.withFocus(it.ri, () => previewDamage(s, it.move, duo.enemies[it.ri], m, 1)); });
           return { m, d: d / m.hp };
         }).sort((x, y) => x.d - y.d);
         if (opts[0] && opts[0].d < 0.5 && opts[0].d < (inc.sum / lead.hp) * 0.6) { st.switched = 1; return { p, type: 'switch', uid: opts[0].m.uid }; }
