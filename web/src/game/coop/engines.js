@@ -44,8 +44,7 @@ import { RNG } from '../rng.js';
 // v0.5.13 does: A10 runs end with a second ELITE FOUR + CHAMPION from another region (run.summit2, a full heal before
 // it); v0.5.8-v0.5.12 is frozen as 'v058'.
 // v0.5.14 does: NUZLOCKE co-op rooms (init.nuzlocke, the host's lobby option): fainted POKéMON are released, one catch per
-// act per player, a player with no POKéMON left is out for good. v0.5.13 is not frozen (a room mid-node when this lands
-// restarts that node from the map).
+// act per player, a player with no POKéMON left is out for good; v0.5.13 is frozen as 'v0513'.
 export const LOGIC_ID = 'v0514';
 // Actions from before v0.3.6 carry no stamp: they were played on v0.3.5 (or, for older rooms, earlier; the
 // replay checks the clients' logged checksums and tries every frozen engine, see resume.js).
@@ -53,6 +52,7 @@ export const UNSTAMPED = 'v035';
 // Frozen copies, newest first: id -> the versions it covers and its loader (dynamic import: only fetched when a
 // room needs it).
 export const FROZEN = {
+  v0513: { versions: 'v0.5.13', load: () => import('../../legacy/v0513/engine.js') },
   v058: { versions: 'v0.5.8-v0.5.12', load: () => import('../../legacy/v058/engine.js') },
   v057: { versions: 'v0.5.7', load: () => import('../../legacy/v057/engine.js') },
   v056: { versions: 'v0.5.6', load: () => import('../../legacy/v056/engine.js') },
