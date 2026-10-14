@@ -18,7 +18,7 @@ export const ASCENSIONS = [
   { n: 2, name: 'Fog of War', desc: 'Enemy moves are hidden (no intent, no move list). Foes are 1 level higher; you earn 10% less EXP.' },
   { n: 3, name: 'Gym Prep', desc: 'Bosses and the ELITE FOUR are 2 levels higher with 10% more HP.' },
   { n: 4, name: 'Shoestring', desc: 'Start with less money, fewer POKé BALLS and no POTIONS. Shop prices +25% and battles pay 20% less.' },
-  { n: 5, name: 'Level Cap', desc: "Levels stop at each act's level cap: its boss's top level +2. EXP past the cap is lost, and RARE CANDY can't pass it." },
+  { n: 5, name: 'Level Cap', desc: "Levels stop at each act's cap: its boss's top level +2 / +1 / +0 / +0 in Acts 1-4. EXP past it is lost; RARE CANDY can't pass it." },
   { n: 6, name: 'Reinforcements', desc: 'From mid Act 1 on, trainers and elites bring one more POKéMON (worth no EXP).' },
   { n: 7, name: 'Bulky Foes', desc: 'Enemies have 15% more HP.' },
   { n: 8, name: 'Nuzlocke', desc: 'A POKéMON that faints in battle is released for good. Only the first wild POKéMON of each act can be caught.' },
@@ -39,6 +39,8 @@ export const MAX_ASCENSION = ASCENSIONS.length - 1;
 export const NUZLOCKE_ASC = 8;
 // Level cap from this ascension on (v0.3.2: it replaced Weary): see Run.levelCap.
 export const LEVEL_CAP_ASC = 5;
+// The levels the A5+ cap sits above the act boss's top level in act i (0-based; TUNING.levelCapOffsets).
+export function levelCapOffset(i) { const o = TUNING.levelCapOffsets; return o[Math.min(Math.max(0, i), o.length - 1)]; }
 
 // Gen 5 scaled EXP: the multiplier on one foe's EXP for a recipient of level monLevel (1 at the same level; a
 // Lv20 POKéMON beating a Lv10 foe gets about 0.49x, a Lv5 one about 1.58x).
@@ -63,8 +65,9 @@ export const TUNING = {
   // Gen 5 scaled EXP: each recipient's share of a foe's EXP x ((2*Lfoe+10)/(Lfoe+Lmon+10))^expCurve (1 at the
   // same level, less when over-leveled, more when under-leveled; 0 = off). See expLevelScale.
   expCurve: 2.5,
-  // A5+ level cap: the act boss's top level (the CHAMPION's in the ELITE FOUR act) + this
-  levelCapOffset: 2,
+  // A5+ level cap: the act boss's top level (the CHAMPION's in the ELITE FOUR act) + this, per act (v0.5.17: acts 1-4
+  // +2 / +1 / 0 / 0, was +2 everywhere; the post-game keeps +2). Acts past the list use its last entry.
+  levelCapOffsets: [2, 1, 0, 0, 2],
   postBattleHeal: 0.05,
   // DMG system: enemy HP = the species' real HP at its level x hpScale (per act, start->end of act)
   hpScale: [[3.17, 4.38], [2.77, 3.54], [2.9, 3.7], [2.79, 3.2], [3.25, 4]],
@@ -809,14 +812,14 @@ export class Run {
   }
 
   // ---- after battle ---------------------------------------------------------------------
-  // A5+ (LEVEL_CAP_ASC): the act's level cap = its boss's top level + TUNING.levelCapOffset: the GYM LEADER's ace (or
+  // A5+ (LEVEL_CAP_ASC): the act's level cap = its boss's top level + the act's TUNING.levelCapOffsets entry: the GYM LEADER's ace (or
   // the legendary / post-game boss), in the ELITE FOUR act the CHAMPION's, with the ascension level bonuses (A3, A10).
   // Battle EXP stops at the cap, and so do RARE CANDY and every other direct level-up (v0.5.16). null below A5.
   levelCap() {
     if (this.ascension < LEVEL_CAP_ASC || !this.act) return null;
     const act = this.act;
     const top = act.gauntlet && act.gauntletLevels ? Math.max(...act.gauntletLevels) + (this.ascension >= 3 ? 2 : 0) + (this.ascension >= 10 ? 1 : 0) : this.bossLevel();
-    return Math.min(100, top + TUNING.levelCapOffset);
+    return Math.min(100, top + levelCapOffset(this.actIndex));
   }
 
   // Direct level-ups (RARE CANDY, "?" events, the CENTER's training, v0.5.16): never past the A5+ level cap (they used

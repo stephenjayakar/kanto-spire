@@ -2,9 +2,18 @@
 // Game version and patch notes (shown from the title screen). Versions are major.minor.patch: every production
 // deploy that changes the game bumps the patch (v0.2.0 -> v0.2.1); the owner calls minor bumps (v0.1.x -> v0.2.0);
 // no major bumps yet. Each one gets a new top PATCH_NOTES entry; see AGENTS.md.
-export const VERSION = 'v0.5.16';
+export const VERSION = 'v0.5.17';
 
 export const PATCH_NOTES = [
+  {
+    v: 'v0.5.17',
+    sections: [
+      ['ASCENSION', [
+        "A5 LEVEL CAP is tighter in the later acts: the cap now sits +2 levels above the act boss's top level in Act 1 (as before), +1 in Act 2 and +0 in Acts 3 and 4 (it was +2 everywhere). That makes the caps Lv 18 / 30 / 43 / 51 (A10: 18 / 31 / 44 / 52). The post-game cap is unchanged",
+        'POKéMON already above the new cap keep their levels; they just stop gaining more until the next act. Solo and co-op',
+      ]],
+    ],
+  },
   {
     v: 'v0.5.16',
     sections: [

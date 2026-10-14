@@ -47,13 +47,15 @@ import { RNG } from '../rng.js';
 // act per player, a player with no POKéMON left is out for good; v0.5.13 is frozen as 'v0513'.
 // v0.5.16 does: a foe acting twice in a turn (3-4 players) checks sleep / freeze once per turn (asleep on its first
 // action = asleep on all of them), and no level-up source passes the act's level cap; v0.5.14-v0.5.15 is frozen as 'v0514'.
-export const LOGIC_ID = 'v0516';
+// v0.5.17 does: the A5+ level cap's offset is per act (+2 / +1 / 0 / 0 in acts 1-4, +2 post-game); v0.5.16 is frozen as 'v0516'.
+export const LOGIC_ID = 'v0517';
 // Actions from before v0.3.6 carry no stamp: they were played on v0.3.5 (or, for older rooms, earlier; the
 // replay checks the clients' logged checksums and tries every frozen engine, see resume.js).
 export const UNSTAMPED = 'v035';
 // Frozen copies, newest first: id -> the versions it covers and its loader (dynamic import: only fetched when a
 // room needs it).
 export const FROZEN = {
+  v0516: { versions: 'v0.5.16', load: () => import('../../legacy/v0516/engine.js') },
   v0514: { versions: 'v0.5.14-v0.5.15', load: () => import('../../legacy/v0514/engine.js') },
   v0513: { versions: 'v0.5.13', load: () => import('../../legacy/v0513/engine.js') },
   v058: { versions: 'v0.5.8-v0.5.12', load: () => import('../../legacy/v058/engine.js') },
