@@ -201,11 +201,14 @@ t('cap: none below A5; A5 = the act boss\'s top level + offset (KANTO: gyms 15/2
   assert.equal(LEVEL_CAP_ASC, 5);
   for (const a of [0, 1, 2, 3, 4]) assert.ok(capsOf(capRun(a, { world: 'kanto' })).every(c => c === null), 'A' + a);
   assert.deepEqual(capsOf(capRun(5, { world: 'kanto' })), plus([15 + 1, 27 + 2, 41 + 2, 49 + 2, 70 + 2]));
-  // A10: +1 more level from Act 2 on (bosses and the ELITE FOUR / CHAMPION)
-  assert.deepEqual(capsOf(capRun(10, { world: 'kanto' })), plus([15 + 1, 27 + 3, 41 + 3, 49 + 3, 70 + 3]));
+  // A10: its +1 boss level does NOT raise the cap (v0.5.18): same caps as A5
+  assert.deepEqual(capsOf(capRun(10, { world: 'kanto' })), plus([15 + 1, 27 + 2, 41 + 2, 49 + 2, 70 + 2]));
   // v0.5.17: the per-act offsets, as a plain table
   assert.deepEqual(capsOf(capRun(5, { world: 'kanto' })), [18, 30, 43, 51, 74]);
-  assert.deepEqual(capsOf(capRun(10, { world: 'kanto' })), [18, 31, 44, 52, 75]);
+  assert.deepEqual(capsOf(capRun(10, { world: 'kanto' })), [18, 30, 43, 51, 74]);
+  // ...while the A10 bosses themselves keep their +1 from Act 2 on
+  const b5 = capRun(5, { world: 'kanto' }), b10 = capRun(10, { world: 'kanto' });
+  assert.deepEqual(b10.acts.map((a, i) => { b10.actIndex = i; b5.actIndex = i; return b10.bossLevel() - b5.bossLevel(); }), [0, 1, 1, 1, 1]);
 });
 
 t('cap: per region: spire acts follow the tier levels whatever the region; the legacy HOENN world uses its own', () => {
