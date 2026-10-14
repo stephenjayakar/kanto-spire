@@ -18,7 +18,7 @@ export const ASCENSIONS = [
   { n: 2, name: 'Fog of War', desc: 'Enemy moves are hidden (no intent, no move list). Foes are 1 level higher; you earn 10% less EXP.' },
   { n: 3, name: 'Gym Prep', desc: 'Bosses and the ELITE FOUR are 2 levels higher with 10% more HP.' },
   { n: 4, name: 'Shoestring', desc: 'Start with less money, fewer POKé BALLS and no POTIONS. Shop prices +25% and battles pay 20% less.' },
-  { n: 5, name: 'Level Cap', desc: "Levels stop at each act's cap: its boss's top level +2 / +1 / +0 / +0 in Acts 1-4. EXP past it is lost; RARE CANDY can't pass it." },
+  { n: 5, name: 'Level Cap', desc: "Levels stop at each act's cap: its boss's top level +2 / +1 / +0 / +0 in Acts 1-4 (A10's +1 doesn't count). EXP past it is lost; RARE CANDY can't pass it." },
   { n: 6, name: 'Reinforcements', desc: 'From mid Act 1 on, trainers and elites bring one more POKéMON (worth no EXP).' },
   { n: 7, name: 'Bulky Foes', desc: 'Enemies have 15% more HP.' },
   { n: 8, name: 'Nuzlocke', desc: 'A POKéMON that faints in battle is released for good. Only the first wild POKéMON of each act can be caught.' },
@@ -767,7 +767,8 @@ export class Run {
     this.logEvent({ k: 'softLoss', foe: battle.cfg?.mythic || battle.cfg?.legend || null });
   }
 
-  bossLevel() { return this.act.bossLevel + (this.ascension >= 3 ? (this.actIndex === 0 ? 1 : 2) : 0) + (this.ascension >= 10 && this.actIndex >= 1 ? 1 : 0); }
+  // withA10 = false: without A10's +1 (the A5+ level cap ignores it since v0.5.18).
+  bossLevel(withA10 = true) { return this.act.bossLevel + (this.ascension >= 3 ? (this.actIndex === 0 ? 1 : 2) : 0) + (withA10 && this.ascension >= 10 && this.actIndex >= 1 ? 1 : 0); }
 
   bossConfig(rng) {
     const key = this.boss;
@@ -813,12 +814,13 @@ export class Run {
 
   // ---- after battle ---------------------------------------------------------------------
   // A5+ (LEVEL_CAP_ASC): the act's level cap = its boss's top level + the act's TUNING.levelCapOffsets entry: the GYM LEADER's ace (or
-  // the legendary / post-game boss), in the ELITE FOUR act the CHAMPION's, with the ascension level bonuses (A3, A10).
+  // the legendary / post-game boss), in the ELITE FOUR act the CHAMPION's, with A3's level bonus but NOT A10's +1
+  // (v0.5.18: A10+ caps equal A5's; only the foes get A10's levels).
   // Battle EXP stops at the cap, and so do RARE CANDY and every other direct level-up (v0.5.16). null below A5.
   levelCap() {
     if (this.ascension < LEVEL_CAP_ASC || !this.act) return null;
     const act = this.act;
-    const top = act.gauntlet && act.gauntletLevels ? Math.max(...act.gauntletLevels) + (this.ascension >= 3 ? 2 : 0) + (this.ascension >= 10 ? 1 : 0) : this.bossLevel();
+    const top = act.gauntlet && act.gauntletLevels ? Math.max(...act.gauntletLevels) + (this.ascension >= 3 ? 2 : 0) : this.bossLevel(false);
     return Math.min(100, top + levelCapOffset(this.actIndex));
   }
 
