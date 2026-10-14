@@ -18,7 +18,7 @@ export const ASCENSIONS = [
   { n: 2, name: 'Fog of War', desc: 'Enemy moves are hidden (no intent, no move list). Foes are 1 level higher; you earn 10% less EXP.' },
   { n: 3, name: 'Gym Prep', desc: 'Bosses and the ELITE FOUR are 2 levels higher with 10% more HP.' },
   { n: 4, name: 'Shoestring', desc: 'Start with less money, fewer POKé BALLS and no POTIONS. Shop prices +25% and battles pay 20% less.' },
-  { n: 5, name: 'Level Cap', desc: "Levels stop at each act's cap: its boss's top level +2 / +1 / +0 / +0 in Acts 1-4 (A10's +1 doesn't count). EXP past it is lost; RARE CANDY can't pass it." },
+  { n: 5, name: 'Level Cap', desc: "Levels stop at each act's cap: its boss's top level +1 / +1 / -1 / -2 in Acts 1-4, -1 after (A10's +1 doesn't count). EXP past it is lost; RARE CANDY can't pass it." },
   { n: 6, name: 'Reinforcements', desc: 'From mid Act 1 on, trainers and elites bring one more POKéMON (worth no EXP).' },
   { n: 7, name: 'Bulky Foes', desc: 'Enemies have 15% more HP.' },
   { n: 8, name: 'Nuzlocke', desc: 'A POKéMON that faints in battle is released for good. Only the first wild POKéMON of each act can be caught.' },
@@ -65,9 +65,12 @@ export const TUNING = {
   // Gen 5 scaled EXP: each recipient's share of a foe's EXP x ((2*Lfoe+10)/(Lfoe+Lmon+10))^expCurve (1 at the
   // same level, less when over-leveled, more when under-leveled; 0 = off). See expLevelScale.
   expCurve: 2.5,
-  // A5+ level cap: the act boss's top level (the CHAMPION's in the ELITE FOUR act) + this, per act (v0.5.17: acts 1-4
-  // +2 / +1 / 0 / 0, was +2 everywhere; the post-game keeps +2). Acts past the list use its last entry.
-  levelCapOffsets: [2, 1, 0, 0, 2],
+  // A5+ level cap: the act boss's top level (the CHAMPION's in the ELITE FOUR act) + this, per act. v0.5.19: +1 / +1 /
+  // -1 / -2 in acts 1-4, -1 post-game (KANTO caps 17 / 30 / 42 / 49 / 71), so a dedicated carry meets it in acts 1, 3
+  // and 4 (battles alone reach ~16 / 27 / 37 / 49 / 54). Lower act-2 / post-game caps made A10 walls of a team trained
+  // to the cap (NORMAN, WHITNEY, RAYQUAZA under 80% single-fight wins; tests/boss_gauntlet.mjs harness at cap levels).
+  // v0.5.17-v0.5.18: +2 / +1 / 0 / 0 / +2; before: +2 everywhere. Acts past the list use its last entry.
+  levelCapOffsets: [1, 1, -1, -2, -1],
   postBattleHeal: 0.05,
   // DMG system: enemy HP = the species' real HP at its level x hpScale (per act, start->end of act)
   hpScale: [[3.17, 4.38], [2.77, 3.54], [2.9, 3.7], [2.79, 3.2], [3.25, 4]],
@@ -863,6 +866,7 @@ export class Run {
       const events = gained > 0 ? gainExp(e.mon, gained) : [];
       out.push({ mon: e.mon, gained, events, before, scale: e.scale, capped: e.over > 0 });
     }
+    this.logCapLoss(list);
     return out;
   }
 
@@ -1047,6 +1051,17 @@ export class Run {
       faints: b.faintCount || 0, maxHit: b.maxHand || 0, combos, switches: b.switchCount || 0, discards: b.discardCount || 0,
       caught: b.result?.caught?.species || null,
     });
+  }
+
+  // (v0.5.19) A5+: the EXP the level cap cost this battle, added to its log event (logBattle runs when the battle ends,
+  // before the reward screen hands out EXP): capped = POKéMON that lost some, lostExp = the EXP lost, gotExp = the EXP
+  // given. Only touches the run log (never game state), and only when the newest event is that battle.
+  logCapLoss(list) {
+    const ev = this.runLog?.events?.[this.runLog.events.length - 1];
+    if (!ev || ev.k !== 'battle' || ev.lostExp !== undefined || this.levelCap() === null) return;
+    ev.capped = list.filter(e => e.over > 0).length;
+    ev.lostExp = list.reduce((s, e) => s + e.over, 0);
+    ev.gotExp = list.reduce((s, e) => s + e.take, 0);
   }
 
   finishLog(result) {

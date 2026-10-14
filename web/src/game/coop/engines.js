@@ -49,13 +49,15 @@ import { RNG } from '../rng.js';
 // action = asleep on all of them), and no level-up source passes the act's level cap; v0.5.14-v0.5.15 is frozen as 'v0514'.
 // v0.5.17 does: the A5+ level cap's offset is per act (+2 / +1 / 0 / 0 in acts 1-4, +2 post-game); v0.5.16 is frozen as 'v0516'.
 // v0.5.18 does: the A5+ level cap ignores A10's +1 enemy level (A10+ caps equal A5's); v0.5.17 is frozen as 'v0517'.
-export const LOGIC_ID = 'v0518';
+// v0.5.19 does: lower A5+ level caps (offsets +1 / +1 / -1 / -2, post-game -1); v0.5.18 is frozen as 'v0518'.
+export const LOGIC_ID = 'v0519';
 // Actions from before v0.3.6 carry no stamp: they were played on v0.3.5 (or, for older rooms, earlier; the
 // replay checks the clients' logged checksums and tries every frozen engine, see resume.js).
 export const UNSTAMPED = 'v035';
 // Frozen copies, newest first: id -> the versions it covers and its loader (dynamic import: only fetched when a
 // room needs it).
 export const FROZEN = {
+  v0518: { versions: 'v0.5.18', load: () => import('../../legacy/v0518/engine.js') },
   v0517: { versions: 'v0.5.17', load: () => import('../../legacy/v0517/engine.js') },
   v0516: { versions: 'v0.5.16', load: () => import('../../legacy/v0516/engine.js') },
   v0514: { versions: 'v0.5.14-v0.5.15', load: () => import('../../legacy/v0514/engine.js') },
