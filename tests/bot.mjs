@@ -28,7 +28,12 @@ function subsets(arr, max) {
 // Exact score via the real scoring code (Battle.simulate: a JSON snapshot/restore, the expensive part of a decision),
 // cached per battle state (previewKey) and card list, so repeated looks at the same hand in a turn are free.
 export const SIM_STATS = { n: 0 };
+// The race model needs the current engine's helpers; the frozen co-op engines (web/src/legacy/, replayed by
+// tests/saves.test.mjs) lack some, and play on with the older full-search hand choice.
+const MODERN = ['ptypes', 'statusBlock', 'moveData', 'statusMoveValue', 'previewKey', 'switchCost', 'enemyActsFirst', 'enemyDamage'];
+function modern(b) { return b._modern ??= MODERN.every(k => typeof b[k] === 'function'); }
 function simDmg(b, ids) {
+  if (!modern(b)) return b.simulate(ids)?.damage || 0;
   const k = b.previewKey();
   if (!b._sc || b._sc.k !== k) b._sc = { k, m: new Map() };
   const key = ids.join(',');
@@ -66,6 +71,15 @@ const AILMENT = { SLEEP: 'SLP', PARALYZE: 'PAR', TOXIC: 'TOX', POISON: 'PSN', WI
 const HEAL_FX = new Set(['RESTORE_HP', 'SOFTBOILED', 'SYNTHESIS', 'MOONLIGHT', 'MORNING_SUN']);
 const hitsOf = (m) => (m.effect === 'MULTI_HIT' ? 3 : m.effect === 'DOUBLE_HIT' || m.effect === 'TWINEEDLE' || m.effect === 'TRIPLE_KICK' ? 2 : 1);
 const clampStage = (s) => Math.max(-6, Math.min(6, s));
+
+// Battle.enemyDamage for the bot's own estimates: random-power moves (MAGNITUDE, PRESENT, PSYWAVE) draw from b.rng, so
+// they run on a throwaway RNG. The bot must never touch the battle's RNG (co-op replays the action log without it).
+const DRY_RNG = new RNG('bot-dry');
+function previewDamage(b, m, e, target, rand) {
+  const rng = b.rng;
+  b.rng = DRY_RNG;
+  try { return b.enemyDamage(m, e, target, rand, false, true); } finally { b.rng = rng; }
+}
 
 function protectChanceNow(b) {
   const s = b.sides.player;
@@ -109,7 +123,7 @@ function battleCtx(b) {
     if (m.power > 0 || FIXED_DAMAGE[m.effect]) {
       w = Math.max(1, m.power || 40) * typeEffect(m.type, b.ptypes(lead)) * (e.types.includes(m.type) ? 1.5 : 1);
       if (e.isBoss) w = w * w / 60;
-      d = b.enemyDamage(m, e, lead, 0.925, false, true) * hitsOf(m) * Math.min(1, (m.accuracy || 100) / 100);
+      d = previewDamage(b, m, e, lead, 0.925) * hitsOf(m) * Math.min(1, (m.accuracy || 100) / 100);
       if (!isSpecialMove(m.key, m.type)) pS += w * d;
     } else w = b.statusMoveValue(m, e, lead);
     wS += w; dS += w * d;
@@ -262,7 +276,7 @@ function chooseHandFull(b, skill) {
 // first, so their buffs / debuffs land before the attacks); weak non-scoring attack cards ride along to be cycled.
 // Only those few candidates are simulated, and each is valued by the race model (handValue).
 export function chooseHand(b, skill) {
-  if (skill === 'greedy' || b._wantCatch) return chooseHandFull(b, skill);
+  if (skill === 'greedy' || b._wantCatch || !modern(b)) return chooseHandFull(b, skill);
   const e = b.enemy();
   const H = [];
   for (const c of b.deck.hand) { const i = b.cardInfo(c); if (i.playable) H.push({ c, id: c.id, i, v: i.status ? 0 : b.cardValue(i) }); }
@@ -373,7 +387,7 @@ export function matchup(b, m) {
 function intentDmgOn(b, m) {
   const mv = b.intent?.move, e = b.enemy();
   if (!mv || !b.intent?.damage) return 0;
-  return b.enemyDamage(mv, e, m, 1, false, true) * hitsOf(mv);
+  return previewDamage(b, mv, e, m, 1) * hitsOf(mv);
 }
 
 // Switch when another POKéMON's deck is clearly better here (costs a discard), or when the lead can't act.
@@ -385,7 +399,7 @@ function considerSwitch(b, run, skill) {
   const stuck = !b.deck.hand.some(c => b.cardInfo(c).playable);
   const alts = run.party.filter(m => !isFainted(m) && m.uid !== lead.uid && !['SLP', 'FRZ'].includes(m.status));
   if (!alts.length) return false;
-  const smart = skill === 'smart';
+  const smart = skill === 'smart' && modern(b);
   const hpOk = m => m.hp / maxHp(m) > (smart ? 0.35 : 0.5) && (!smart || intentDmgOn(b, m) < m.hp * 0.8);
   const score = m => matchup(b, m) * (0.5 + 0.5 * m.hp / maxHp(m)) * (smart ? 1 - 0.5 * Math.min(1, intentDmgOn(b, m) / Math.max(1, m.hp)) : 1);
   const best = alts.filter(hpOk).sort((x, y) => score(y) - score(x))[0];
@@ -400,7 +414,7 @@ function considerSwitch(b, run, skill) {
 // heal it out of range, or switch to a POKéMON that takes the hit well.
 function defend(b, run) {
   const lead = b.lead(), e = b.enemy();
-  if (!lead || !e || b.result) return;
+  if (!lead || !e || b.result || !modern(b)) return;
   const ctx = battleCtx(b);
   if (ctx.pLethal <= 0.04 && !(ctx.pLethal > 0.02 && (run.nuzlocke || ctx.alive <= 1))) return;
   const ch = chooseHand(b, 'smart');
@@ -545,8 +559,8 @@ export function planDiscard(b, best) {
   // convert the foe's HP into evaluator units (the evaluator ignores held-item bonuses)
   const hpE = now > 0 && real > 0 ? e.hp * now / real : e.hp;
   // status cards worth keeping (never cycle a PROTECT, a buff for a long fight, a status the foe doesn't have yet...)
-  const ctx = battleCtx(b), Dk = Math.max(1, real, b._dEma || 0);
-  const keepStatus = H.filter(c => c.status && (['PROTECT', 'ENDURE'].includes(c.i.move.effect) ? ctx.dFut > ctx.mhp * 0.08 : statusCardValue(b, ctx, c.i, 0, false, ctx.foeFaster, Dk) >= 0.25 * ctx.dU));
+  const ctx = modern(b) ? battleCtx(b) : null, Dk = Math.max(1, real, b._dEma || 0);
+  const keepStatus = H.filter(c => c.status && (!ctx ? statusValueLegacy(b, [c.i]) >= 0.15 : ['PROTECT', 'ENDURE'].includes(c.i.move.effect) ? ctx.dFut > ctx.mhp * 0.08 : statusCardValue(b, ctx, c.i, 0, false, ctx.foeFaster, Dk) >= 0.25 * ctx.dU));
   const keeps = [];
   const add = (arr) => { const set = new Set([...arr, ...keepStatus].map(c => c.id)); const key = [...set].sort().join(','); if (!keeps.some(k => k.key === key)) keeps.push({ key, set }); };
   const atk = H.filter(c => !c.status && c.value > 0).sort((x, y) => y.value - x.value);
@@ -1027,7 +1041,9 @@ function pathValue(run, id, s, depth) {
 
 export function chooseNode(run, rng, skill) {
   const next = reachable(run.map, run.nodeId);
-  if (skill === 'smart' && !BOTX.has('oldpath') && next.length > 1) {
+  // (frozen co-op engines' Runs, replayed by tests/saves.test.mjs, keep the old node preferences: the risk model and
+  // the events it favours expect this version's Run)
+  if (skill === 'smart' && !BOTX.has('oldpath') && next.length > 1 && typeof run.capLevel === 'function') {
     const st = teamState(run);
     const firstWild = run.nuzlocke ? run.nuzEnc?.[String(run.actIndex)] === undefined : true;
     const s0 = { hp: st.hp, top: st.top, pw: 0, money: run.money, alive: st.alive, firstWild, pots: st.pots };
