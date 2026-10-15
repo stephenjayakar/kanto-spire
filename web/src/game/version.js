@@ -2,9 +2,19 @@
 // Game version and patch notes (shown from the title screen). Versions are major.minor.patch: every production
 // deploy that changes the game bumps the patch (v0.2.0 -> v0.2.1); the owner calls minor bumps (v0.1.x -> v0.2.0);
 // no major bumps yet. Each one gets a new top PATCH_NOTES entry; see AGENTS.md.
-export const VERSION = 'v0.5.25';
+export const VERSION = 'v0.5.26';
 
 export const PATCH_NOTES = [
+  {
+    v: 'v0.5.26',
+    sections: [
+      ['NEW', [
+        'NEW THIS RUN: when a run ends (win or loss, solo and co-op) a popup shows what it added: new personal records, POKéMON you saw or caught for the first time, and held items you found for the first time',
+        'PERSONAL RECORDS: furthest climb, highest ASCENSION cleared, fastest clear, best hand, most trainers defeated, most POKéMON caught, most critical hits and most money earned. Your past runs set the bar, so only real records show up',
+        'Click or press a key to show everything at once, and again to close. The NEW! button in the corner opens it again. A run that added nothing shows nothing',
+      ]],
+    ],
+  },
   {
     v: 'v0.5.25',
     sections: [

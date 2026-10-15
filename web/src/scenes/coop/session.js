@@ -3,6 +3,7 @@
 // scenes by game.phase. Nothing is applied optimistically; our own actions come back through the log.
 import { Engine, setScene } from '../../engine/core.js';
 import { G, saveMeta, recordRelics } from '../../game/state.js';
+import { startRunSnapshot, coopSnapKey } from '../../game/run_news.js';
 import { recordCoopDex } from '../../game/coop/dex.js';
 import * as Coop from '../../game/coop/coop.js';
 import { NODE_INFO } from '../../game/map.js';
@@ -669,6 +670,8 @@ export class CoopSession {
     const g = this.game;
     if (!g || this.stopped) return;
     const p = this.mySlot;
+    // (v0.5.26) my meta at the start of this game, for the end screen's NEW THIS RUN (local meta only, before the dex lands)
+    if (g.phase !== 'over' && g.phase !== 'victory' && G.meta && startRunSnapshot(G.meta, coopSnapKey(this.roomId))) saveMeta('defer');
     this.recordDex();
     this.postChamp();
     let key, make;

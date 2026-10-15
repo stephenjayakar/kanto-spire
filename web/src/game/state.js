@@ -4,6 +4,7 @@ import { queueRun, queueProgressSync } from '../net/cloud.js';
 import { migrateStarterMeta, migrateAscensionMeta, migrateSpireMeta, grantAscension } from './unlocks.js';
 import { JOHTO_WINS } from './regions.js';
 import { RELICS } from './items.js';
+import { seedRecords, startRunSnapshot, soloSnapKey, soloRunNews } from './run_news.js';
 
 // Local save keys. When signed in, they are scoped to the account's email so two accounts on one
 // browser never share (or overwrite) each other's save data and unlocks.
@@ -13,6 +14,7 @@ export const saveKeys = { get meta() { return 'kantospire.meta.v1' + scope; }, g
 
 export const G = {
   run: null,
+  runNews: null, // (v0.5.26) the last finished solo run's NEW list (game/run_news.js), for its end screen
   meta: null,
   coop: null, // the CoopSession while in an online co-op game (scenes/coop/session.js); solo saves are off then
 };
@@ -27,6 +29,8 @@ const DEFAULT_META = {
   shinyOn: {}, // family -> true when the player picked the shiny form on the starter screen
   bestAscensionWon: -1,
   dexSeen: [], dexCaught: [],
+  // records: personal bests, runSnaps: the meta at the start of each run in progress (v0.5.26, game/run_news.js; set by
+  // loadMeta / saveRun, so not defaults here: seedRecords tells an old save by its missing records)
   relicsFound: [], // (v0.5.6) every held item this player has had in a run, solo or co-op (recordRelics; display only)
   runs: [], // {date, starter, ascension, result, act, floor, party:[species], seed}
   totalWins: 0, totalRuns: 0,
@@ -46,7 +50,7 @@ export function loadMeta() {
   // before this runs) starts over with the Kanto three; the rest of the progress is kept.
   // Ascension unlocks per starter (v0.0.6): rebuilt once from the run history. (No short-circuit: both run.)
   // One Spire (v0.1.0): players with HOENN access keep TREECKO / TORCHIC / MUDKIP (after the starter reset above).
-  if (migrateStarterMeta(G.meta) | migrateAscensionMeta(G.meta) | migrateSpireMeta(G.meta) | migrateAnimSetting(G.meta.settings)) saveMeta();
+  if (migrateStarterMeta(G.meta) | migrateAscensionMeta(G.meta) | migrateSpireMeta(G.meta) | migrateAnimSetting(G.meta.settings) | seedRecords(G.meta)) saveMeta();
   return G.meta;
 }
 
@@ -82,9 +86,12 @@ export function migrateAnimSetting(s) {
 // undefined = within half a minute.
 export function saveMeta(sync) { try { localStorage.setItem(saveKeys.meta, JSON.stringify(G.meta)); } catch {} queueProgressSync(sync); }
 
+const endedRuns = new WeakSet(); // (runs endRun has finished: a late save never snapshots them again)
 export function saveRun(sync) {
   if (!G.run || G.coop) return;
-  if (recordRelics(G.run.relics?.map(r => r.key))) saveMeta('defer');
+  // (v0.5.26) the run's first save snapshots the meta for the end screen's NEW list (before this save's held items land)
+  const snap = !endedRuns.has(G.run) && startRunSnapshot(G.meta, soloSnapKey(G.run));
+  if (recordRelics(G.run.relics?.map(r => r.key)) | snap) saveMeta('defer');
   try { localStorage.setItem(saveKeys.run, JSON.stringify(G.run)); } catch (e) { console.warn('save failed', e); }
   queueProgressSync(sync);
 }
@@ -140,6 +147,9 @@ export function endRun(run, result) {
   const log = run.finishLog ? run.finishLog(result) : null;
   if (log) { try { localStorage.setItem(LOG_KEY, JSON.stringify([log, ...storedRunLogs()].slice(0, 20))); } catch {} }
   recordDex(run);
+  // (v0.5.26) what's new from this run (records, POKéDEX, HELD ITEMS) for the end screen; writes meta.records
+  endedRuns.add(run);
+  try { G.runNews = soloRunNews(m, run, result, { commit: true, isRelic: (k) => !!RELICS[k] }); } catch (e) { console.warn('run news', e); G.runNews = null; }
   m.totalRuns++;
   m.runs.unshift({ date: Date.now(), starter: run.starter, ascension: run.ascension, result, act: run.actIndex + 1, floor: run.floor, party: run.party.map(p => p.species), seed: run.seed, best: run.stats.bestHand });
   m.runs = m.runs.slice(0, 30);

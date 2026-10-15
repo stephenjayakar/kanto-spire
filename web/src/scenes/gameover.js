@@ -19,6 +19,9 @@ import { TitleScene } from './title.js';
 import { offerStarterUnlock } from './unlock.js';
 import { soloActKey, grantAscension } from '../game/unlocks.js';
 import { cloudStatusLine } from './records.js';
+import { soloRunNews } from '../game/run_news.js';
+import { RELICS } from '../game/items.js';
+import { newsTick, newsChip } from './run_news.js';
 
 function statsLines(run) {
   const s = run.stats;
@@ -164,8 +167,8 @@ export class ActClearScene {
 }
 
 export class GameOverScene {
-  enter() { this.t = 0; Sound.stopBGM(); setTimeout(() => Sound.playBGM('mus_slow_pallet'), 800); }
-  update(dt) { this.t += dt; }
+  enter() { this.t = 0; this.news = G.runNews; Sound.stopBGM(); setTimeout(() => Sound.playBGM('mus_slow_pallet'), 800); }
+  update(dt) { this.t += dt; newsTick(this, dt, 1.2); }
   draw(ctx) {
     const run = G.run;
     swirlBackground(ctx, BG_THEMES.dark, 0.3);
@@ -177,6 +180,8 @@ export class GameOverScene {
     const cloud = cloudStatusLine();
     if (cloud) text(ctx, cloud[0], W / 2, 276, { align: 'center', color: cloud[1], font: 'small' });
     if (button(ctx, 'TITLE SCREEN', W / 2 - 80, 304, 160, 28, { color: THEME.play })) setScene(new TitleScene());
+    newsChip(ctx, this);
+    drawTips(ctx);
   }
 }
 
@@ -204,8 +209,15 @@ export class VictoryScene {
       this.shiny = familyOf(run.starter);
       if (this.shinyNew) saveMeta();
     }
+    // (v0.5.26) NEW THIS RUN: a post-game clear was recorded by endRun (G.runNews); a CHAMPION win is shown before it is
+    // (RETIRE / CONTINUE record it), with the clear time kept for the FASTEST CLEAR record
+    if (this.opts.postgame) this.news = G.runNews;
+    else if (run && !G.coop) {
+      if (!(run.stats.clearMs > 0)) { run.stats.clearMs = Math.max(1, Date.now() - (run.stats.startTime || Date.now())); saveRun(); }
+      try { this.news = soloRunNews(G.meta, run, 'win', { isRelic: (k) => !!RELICS[k] }); } catch (e) { console.warn('run news', e); }
+    }
   }
-  update(dt) { this.t += dt; if (Math.random() < 0.35) burst(Math.random() * W, -5, { color: ['#f8d038', '#fff', '#ff8080', '#80c0ff', '#80ff80'], n: 1, speed: 20, grav: 50, life: 4, angle: Math.PI / 2, spread: 0.4 }); }
+  update(dt) { this.t += dt; newsTick(this, dt, 1.0); if (Math.random() < 0.35) burst(Math.random() * W, -5, { color: ['#f8d038', '#fff', '#ff8080', '#80c0ff', '#80ff80'], n: 1, speed: 20, grav: 50, life: 4, angle: Math.PI / 2, spread: 0.4 }); }
   draw(ctx) {
     const run = G.run;
     swirlBackground(ctx, ['#202060', '#4040a0', '#303080'], 0.6);
@@ -239,6 +251,7 @@ export class VictoryScene {
       }
       if (button(ctx, 'RETIRE AS CHAMPION', W / 2 + 10, 296, 190, 30, { color: THEME.play })) { endRun(run, 'win'); setScene(new TitleScene()); }
     }
+    newsChip(ctx, this);
     drawFx(ctx, Engine.dt);
     drawTips(ctx);
   }
