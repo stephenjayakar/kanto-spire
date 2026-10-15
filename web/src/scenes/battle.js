@@ -14,7 +14,7 @@ import { G, saveRun, saveMeta, animFast } from '../game/state.js';
 import { Sound } from '../audio/sound.js';
 import { drawTrainer, drawHUD, drawCard, drawCardBack, cardTooltip, drawPartyPanel, drawMon, drawIcon, CARD_W, CARD_H, MessageBox, ChoiceModal, PartyPicker, DeckModal, matchupText, monTooltip, openBattleMenu, consumableDesc, monSprite, drawNoComboTag, STATUS_SEL, ordinal, orderTagWidth, drawOrderTag, ORDER_RULE, foeSprite, foeAnimFrame, FOE_ENTRY, foeEntrySound } from './common.js';
 import { battleFinished } from './flow.js';
-import { STAT_NAMES, PROTECT_EFFECTS } from '../game/effects.js';
+import { STAT_NAMES, PROTECT_EFFECTS, fmtChance } from '../game/effects.js';
 import { MoveAnims } from '../anim/player.js';
 import { pickHandAnim, ANIM_SPEED, HAND_START_EVENTS, orderTurnEvents } from '../anim/pick.js';
 import { opaqueBounds, drawStageTags, stageText, switchCostText } from './common.js';
@@ -769,7 +769,8 @@ export class BattleScene {
     else why = o.spE > o.spP ? `The foe is faster (${o.spE} vs ${o.spP}).` : o.spE === o.spP ? 'Same Speed: you win the tie.' : `You are faster (${o.spP} vs ${o.spE}).`;
     const notes = [o.infos.length ? 'Counts the cards you selected.' : 'Select cards to count their priority.'];
     if (b.mods.quickClaw && !o.claw) notes.push("QUICK CLAW: 20% each turn after your first hand, rolled when the turn starts (not this turn).");
-    if (o.infos.some(i => PROTECT_EFFECTS.has(i.move.effect))) notes.push('PROTECT / DETECT / ENDURE only go first if they work.');
+    const prot = o.infos.find(i => i.protect);
+    if (prot) notes.push(`PROTECT / DETECT / ENDURE only go first if they work (${fmtChance(prot.protect.chance)} this turn).`);
     tip('MOVE ORDER', `1st  ${rows[0]}\n2nd  ${rows[1]}\n${why}\n\n${ORDER_RULE}\n${notes.join('\n')}`, { width: 230 });
   }
 

@@ -102,7 +102,18 @@ export function critStageOf(move) {
 // v0.3.19: a hand with one of them only goes first (their priority) when it will work, so the player's roll happens
 // when the turn order is decided (preRollProtect) and the card's effect then uses that roll.
 export const PROTECT_EFFECTS = new Set(['PROTECT', 'ENDURE']);
-const protectChance = (b, s) => 1 / Math.pow(2, s.protectTurn === b.turn - 1 ? (s.protectChain || 0) : 0);
+// The chance after `chain` successes in a row on the turns just before (0: 100%). The one place the odds live: the roll
+// and every display (card face, tooltip, the "But it failed!" line) read it.
+export const protectChanceFor = (chain) => 1 / Math.pow(2, chain);
+// successes in a row that count against this turn's roll (a turn without one resets it)
+const protectChainOf = (b, s) => (s.protectTurn === b.turn - 1 ? (s.protectChain || 0) : 0);
+const protectChance = (b, s) => protectChanceFor(protectChainOf(b, s));
+// Display: the odds a PROTECT / DETECT / ENDURE played by `side` this turn works. No RNG, no state change.
+export function protectOdds(b, side = 'player') {
+  const s = b.sides[side], chain = protectChainOf(b, s);
+  return { chance: s.protectTurn === b.turn ? 0 : protectChanceFor(chain), chain };
+}
+export const fmtChance = (p) => `${+(p * 100).toFixed(1)}%`;
 // b: the battle; cards: the hand's card infos. Rolls the hand's PROTECT / DETECT / ENDURE once, up front. -> did it work?
 export function preRollProtect(b, cards) {
   if (!cards.some(i => PROTECT_EFFECTS.has(i.move.effect))) return null;
@@ -114,13 +125,14 @@ export function preRollProtect(b, cards) {
 function protectRoll(ctx) {
   const b = ctx.b, s = b.sides[ctx.us];
   if (s.protectTurn === b.turn) return false;
-  const chain = s.protectTurn === b.turn - 1 ? (s.protectChain || 0) : 0;
+  const chain = protectChainOf(b, s);
   const pre = s.protectPre?.turn === b.turn ? s.protectPre : null;
   s.protectPre = null;
   const ok = pre ? pre.ok : b.rng.chance(protectChance(b, s));
   s.protectTurn = b.turn;
   s.protectChain = ok ? chain + 1 : 0;
-  if (!ok) b.msg('But it failed!');
+  // (say why: it only fails when it was used successfully on the turn(s) just before)
+  if (!ok) b.msg(`But it failed! (${fmtChance(protectChanceFor(chain))} chance after ${chain} success${chain === 1 ? '' : 'es'} in a row)`);
   return ok;
 }
 

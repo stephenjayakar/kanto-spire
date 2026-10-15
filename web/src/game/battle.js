@@ -2,7 +2,7 @@
 import { D, typeEffect, isSpecialMove, stageMult, accStageMult, gen3Damage, expYield, monStats, speciesName } from './data.js';
 import { stats, maxHp, typesOf, monName, isFainted, nextUid, defaultMoves, randomIVs, speciesOf, DECK_RULES, replaceMoves, LEGENDARY } from './pokemon.js';
 import { detectCombo, comboBonus, COMBOS } from './hands.js';
-import { EFFECTS, POWER_FN, FIXED_DAMAGE, hitCount, critStageOf, resolveCallMove, hiddenPower, STAT_NAMES, PROTECT_EFFECTS, preRollProtect } from './effects.js';
+import { EFFECTS, POWER_FN, FIXED_DAMAGE, hitCount, critStageOf, resolveCallMove, hiddenPower, STAT_NAMES, PROTECT_EFFECTS, preRollProtect, protectOdds } from './effects.js';
 import { RELICS, BADGES, CONSUMABLES, BALLS, ballRate } from './items.js';
 import { BOSS_RULES, threatText, threatCoopCap } from './bosses.js';
 import { RNG } from './rng.js';
@@ -425,6 +425,8 @@ export class Battle {
       eff: !status && this.enemy() ? this.effVsEnemy(type, move.key) : 1,
       // the foe's ability (not its type) is what stops this card
       blockedBy: !status && this.enemy() && this.effVsEnemy(type, move.key) === 0 && typeEffect(type, this.enemy().types) > 0 ? this.enemy().ability : null,
+      // PROTECT / DETECT / ENDURE: the odds it works if played now ({ chance, chain }, effects.js protectOdds; display only)
+      protect: PROTECT_EFFECTS.has(move.effect) && this.sides?.player ? protectOdds(this, 'player') : null,
     };
     // Expected damage of this card against the current foe (no crits or misses), shown on the card face.
     info.dmgPreview = status || !owner || !this.enemy() ? 0 : this.cardPreview(info);

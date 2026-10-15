@@ -4,7 +4,7 @@ import { img, ready, draw, itemPath, typePath, trainerPath, tinted, setFallback 
 import { text, measure, textFit, wrap, textBlock, COLORS } from '../engine/font.js';
 import { panel, pixBox, rect, button, tip, hpBar, THEME, shade, windowFrame, drawTips, closeButton } from '../engine/ui.js';
 import { D, TYPE_COLORS, isSpecialMove, typeEffect } from '../game/data.js';
-import { FIXED_DAMAGE } from '../game/effects.js';
+import { FIXED_DAMAGE, protectChanceFor, fmtChance } from '../game/effects.js';
 import { COMBOS, COMBO_ORDER, comboBonus } from '../game/hands.js';
 import { maxHp, monName, stats, typesOf, isFainted, expProgress } from '../game/pokemon.js';
 import { RELICS, BADGES, CONSUMABLES, badgeIcon } from '../game/items.js';
@@ -271,9 +271,11 @@ export function drawCard(ctx, info, x, y, opts = {}) {
       : info.stab ? ['STAB x1.5', CARD_INK.stab] : [info.physical ? 'PHYSICAL' : 'SPECIAL', CARD_INK.kind];
     text(ctx, label, x + CARD_W / 2, y + CARD_H - 12, { align: 'center', color: col, font: 'small', maxW: CARD_W - 4 });
   } else {
-    const eff = effectShort(info.move, info) || 'STATUS';
+    let eff = effectShort(info.move, info) || 'STATUS';
+    // PROTECT / DETECT / ENDURE in battle: the odds it works now (red once back-to-back use has cut them)
+    if (info.protect) eff = `${eff.split('\n')[0]}\n${fmtChance(info.protect.chance)} TO WORK`;
     const lines = eff.includes('\n') ? eff.split('\n') : wrap(eff, CARD_W - 6, 'small'); // (explicit lines are condensed to fit, not re-wrapped)
-    lines.slice(0, 2).forEach((l, i) => text(ctx, l, x + CARD_W / 2, y + CARD_H - 25 + i * 10, { align: 'center', color: CARD_INK.status, font: 'small', maxW: CARD_W - 4 }));
+    lines.slice(0, 2).forEach((l, i) => text(ctx, l, x + CARD_W / 2, y + CARD_H - 25 + i * 10, { align: 'center', color: info.protect && i === 1 && info.protect.chance < 1 ? CARD_INK.red : CARD_INK.status, font: 'small', maxW: CARD_W - 4 }));
   }
   if (!info.playable && !opts.ignorePlayable) {
     ctx.save(); ctx.globalAlpha = 0.55; pixBox(ctx, x, y, CARD_W, CARD_H, '#101018', null, 4); ctx.restore();
@@ -335,7 +337,12 @@ export function cardTooltip(info, x, y, above = false) {
   };
   if (CARD_NOTE[m.effect]) lines.push(CARD_NOTE[m.effect]);
   if (m.chance && m.power) lines.push(`${m.chance}% chance of its secondary effect.`);
-  if (m.priority > 0) lines.push('Priority: your hand goes first.');
+  if (m.priority > 0) lines.push(info.protect ? 'Priority: your hand goes first, if it works.' : 'Priority: your hand goes first.');
+  if (info.protect) {
+    // the odds, from the engine's own rule (effects.js protectChanceFor): each success on back-to-back turns halves them
+    const { chance, chain } = info.protect;
+    lines.push(`Chance to work if played now: ${fmtChance(chance)}${chain ? ` (it worked on the last ${chain === 1 ? 'turn' : `${chain} turns in a row`}; if it works again, ${fmtChance(protectChanceFor(chain + 1))} next turn)` : ''}. A turn without PROTECT, DETECT or ENDURE (or a failed one) resets it to ${fmtChance(protectChanceFor(0))}. Only one per hand counts.`);
+  }
   // title: how many copies of this card its owner's deck holds, e.g. "PLUCK (3)" (copied MIMIC cards aren't in it)
   const n = info.card?.temp ? 0 : info.copies || info.owner?.moves?.find(x => x.move === m.key)?.copies || 0;
   tip(n ? `${m.name} (${n})` : m.name, lines.join('\n'), { accent: TYPE_COLORS[info.type], width: 190, x, y, above });

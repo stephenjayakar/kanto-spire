@@ -2,9 +2,18 @@
 // Game version and patch notes (shown from the title screen). Versions are major.minor.patch: every production
 // deploy that changes the game bumps the patch (v0.2.0 -> v0.2.1); the owner calls minor bumps (v0.1.x -> v0.2.0);
 // no major bumps yet. Each one gets a new top PATCH_NOTES entry; see AGENTS.md.
-export const VERSION = 'v0.5.23';
+export const VERSION = 'v0.5.24';
 
 export const PATCH_NOTES = [
+  {
+    v: 'v0.5.24',
+    sections: [
+      ['NEW', [
+        'PROTECT, DETECT and ENDURE cards show their chance to work right now (e.g. 100% TO WORK, then 50% the turn after a success, 25% after two in a row), in red once back-to-back use has cut it. Their tooltip explains the odds and what resets them. Solo and co-op',
+        'When one fails, the message says why: "But it failed! (50% chance after 1 success in a row)". The MOVE ORDER tooltip shows the odds too',
+      ]],
+    ],
+  },
   {
     v: 'v0.5.23',
     sections: [
