@@ -20,6 +20,7 @@ import { pickHandAnim, ANIM_SPEED, HAND_START_EVENTS, orderTurnEvents } from '..
 import { opaqueBounds, drawStageTags, stageText, switchCostText } from './common.js';
 import { AUTO, autoKey, autoStopInput, manualKey, autoLowHp, drawAutoButton } from './auto.js';
 import { battleTween as tween, instantOn, drawSpeedChip, SPEED_CHIP } from './instant.js';
+import { BattleLog } from './battle_log.js';
 
 const SCENE_X = 160, SCENE_Y = 27, SCENE_W = 480, SCENE_H = 200;
 const HAND_Y = 262;
@@ -38,6 +39,7 @@ export class BattleScene {
   enter() {
     const run = G.run;
     this.b = new Battle(run, this.cfg);
+    this.log = new BattleLog({ b: this.b, run }); // (display only: fed the events as they play out, see runEvents)
     this.msg = new MessageBox();
     this.sel = [];
     this.vis = new Map(); // card id -> {x,y,lift,alpha,state,flash}
@@ -104,6 +106,7 @@ export class BattleScene {
     this.busy = true;
     evs = orderTurnEvents(evs);
     for (const e of evs) {
+      try { this.log.add(e); } catch (err) { console.error('battle log', e, err); }
       try { await this.animate(e); } catch (err) { console.error('anim error', e, err); }
     }
     this.syncHand();
@@ -497,6 +500,7 @@ export class BattleScene {
       G.meta.tipCatch = true; this.busy = true;
       this.msg.say('TIP: Weaken wild POKéMON below 50% HP (or put them to sleep), then press BALL to catch them before they faint.').then(() => { this.busy = false; });
     }
+    if (keyPressed('l') || keyPressed('L')) this.log.open();
     if (this.autoTick(dt)) return;
     if (this.busy) return;
     // keyboard
@@ -643,7 +647,7 @@ export class BattleScene {
     this.drawPlayed(ctx);
     // battle speed chip (scenes/instant.js): NORMAL / FAST / INSTANT, saved in the settings (AUTO keeps its own FAST)
     if (drawSpeedChip(ctx, SCENE_X + SCENE_W - SPEED_CHIP.w - 4, SCENE_Y + 8) && !this.auto) this.fast = animFast();
-    drawHUD(ctx, run, { bounce: this.relicBounce, help: true, onMenu: openBattleMenu, battle: this.b, onDeck: () => this.showDeck(), onConsumableClick: (k) => this.useConsumable(k), noToss: true, subtitle: this.cfg.trainer ? this.cfg.trainer.title : (this.cfg.legend || this.cfg.areaName || 'WILD BATTLE') });
+    drawHUD(ctx, run, { bounce: this.relicBounce, help: true, onMenu: () => openBattleMenu([{ label: 'Battle log', color: '#3a6a8a', run: () => this.log.open() }]), battle: this.b, onDeck: () => this.showDeck(), onConsumableClick: (k) => this.useConsumable(k), noToss: true, subtitle: this.cfg.trainer ? this.cfg.trainer.title : (this.cfg.legend || this.cfg.areaName || 'WILD BATTLE') });
     drawFx(ctx, Engine.dt);
     drawFlash(ctx, Engine.dt, W, H);
     if (this.toast) {
@@ -971,6 +975,10 @@ DECK: cards left in the draw pile / cards in your lead's deck.`, { width: 200 })
       }
       if (button(ctx, 'RUN', x + w - bw, Math.min(H - 26, by), bw, 22, { color: '#607080', font: 'small', disabled: this.busy || !b.canFlee() })) this.doFlee();
     }
+    // battle log (battle_log.js): whatever is left of the column under the party panel and the BALL / RUN buttons
+    let logTop = 185 + Math.max(60, run.party.length * 24 + 8);
+    if (this.cfg.kind === 'wild' && !this.b.result) logTop = Math.max(logTop, Math.min(H - 26, by) + 22);
+    this.log.draw(ctx, x, logTop + 3, w, H - 4 - (logTop + 3));
   }
 
   drawHand(ctx) {

@@ -2,9 +2,19 @@
 // Game version and patch notes (shown from the title screen). Versions are major.minor.patch: every production
 // deploy that changes the game bumps the patch (v0.2.0 -> v0.2.1); the owner calls minor bumps (v0.1.x -> v0.2.0);
 // no major bumps yet. Each one gets a new top PATCH_NOTES entry; see AGENTS.md.
-export const VERSION = 'v0.5.22';
+export const VERSION = 'v0.5.23';
 
 export const PATCH_NOTES = [
+  {
+    v: 'v0.5.23',
+    sections: [
+      ['NEW', [
+        'BATTLE LOG: everything that happens in a battle, line by line (cards played, damage and HP left, effectiveness, status, stat changes, faints, switches, items, catches and more), in the bottom-left corner under your party. The newest line stays in view; scroll back with the mouse wheel or a drag',
+        'Tap OPEN (or press L, or MENU > Battle log) for the whole log on a big screen. With a full party there is little or no room in the corner: the log shrinks to one line, or hides, and stays one tap away in the MENU',
+        'Solo battles only for now. Co-op is unchanged',
+      ]],
+    ],
+  },
   {
     v: 'v0.5.22',
     sections: [

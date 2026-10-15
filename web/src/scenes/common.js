@@ -517,13 +517,16 @@ export function drawHUD(ctx, run, opts = {}) {
 
 // A battle's MENU (drawHUD onMenu): settings and the guide without leaving the fight. A local overlay, so a solo battle
 // waits underneath and a co-op one goes on (no quitting from here: that's the map's MENU).
-export function openBattleMenu() {
+// extra: more options ({ label, color, run }) after the standard ones (the solo battle's BATTLE LOG).
+export function openBattleMenu(extra = []) {
   pushOverlay(new ChoiceModal({
     title: 'MENU',
-    options: [{ label: 'Resume', value: 0, color: THEME.green }, { label: 'Settings', value: 1, color: '#506080' }, { label: 'How to play', value: 2, color: '#3a7a58' }],
+    options: [{ label: 'Resume', value: 0, color: THEME.green }, { label: 'Settings', value: 1, color: '#506080' }, { label: 'How to play', value: 2, color: '#3a7a58' },
+      ...extra.map((o, i) => ({ label: o.label, value: 3 + i, color: o.color }))],
     onClose: async (v) => {
       if (v === 1) { const { SettingsModal } = await import('./title.js'); pushOverlay(new SettingsModal({})); }
       if (v === 2) { const { openHowToPlay } = await import('./tutorial.js'); openHowToPlay(); }
+      if (v >= 3) extra[v - 3]?.run();
     },
   }));
 }
