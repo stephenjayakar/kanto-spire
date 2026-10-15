@@ -20,6 +20,7 @@ import { coopStarterOffers } from '../unlock.js';
 export class CoopMapScene extends MapScene {
   constructor(session) { super({}); this.s = session; this.drawsCoopOverlay = true; }
   mapRun() { return this.s.game.world; }
+  encTag() { return 'duo'; } // (coop.js duoConfig forks each node's fight from 'duo' + id)
   enter() {
     const w = this.mapRun();
     this.t = 0;

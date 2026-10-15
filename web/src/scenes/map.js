@@ -6,6 +6,7 @@ import { swirlBackground, BG_THEMES, button, panel, pixBox, rect, drawTips, tip,
 import { D, TYPE_COLORS } from '../game/data.js';
 import { G, saveRun, animFast } from '../game/state.js';
 import { reachable, NODE_INFO } from '../game/map.js';
+import { eliteIcon } from '../game/elite_icon.js';
 import { LEGENDS, BIRD_PARTNER } from '../game/acts.js';
 import { regionOf, actTitle, TIME_NAMES } from '../game/regions.js';
 import { BOSS_RULES, bossTypes, bossTypeLabel } from '../game/bosses.js';
@@ -398,6 +399,15 @@ export class MapScene {
     });
     text(ctx, `Seed ${run.seed}  ·  A${run.ascension}`, x + w / 2, 322, { align: 'center', color: 'gray', font: 'small' });
   }
+  // the encounter fork an elite node's fight is drawn from: 'enc' solo (Run.battleConfig), 'duo' co-op (CoopMapScene)
+  encTag() { return 'enc'; }
+  eliteIconAt(run, n, st) {
+    // a node walked before this fix kept no record of its fight (node.elite): a plain ace trainer, not a guess
+    if (st.visited && !n.elite && !st.current) return { sprite: 'cooltrainer_m' };
+    let key = null;
+    try { key = run.eliteKeyAt ? run.eliteKeyAt(n, this.encTag()) : null; } catch { key = null; }
+    return eliteIcon(key);
+  }
   drawNodeIcon(ctx, type, x, y, small) {
     const col = NODE_COLORS[type];
     if (small) { pixBox(ctx, x - 6, y - 8, 12, 12, col, '#101018', 2); return; }
@@ -422,10 +432,17 @@ export class MapScene {
         draw(ctx, 'gfx/misc/field_effects/tall_grass.png', x - 8, y - 18 + bob, { sx: 0, sy: 0, sw: 16, sh: 16 });
         break;
       case 'trainer': { const sp = TRAINER_SPRITES[seedIdx], fw = sp === 'biker' ? 32 : 16; draw(ctx, `gfx/overworld/people/${sp}.png`, x - fw / 2, y - 28 + bob, { sx: 0, sy: 0, sw: fw, sh: 32 }); break; }
-      case 'elite':
-        draw(ctx, `gfx/overworld/people/${['cooltrainer_m', 'rocket_m', 'blue', 'cooltrainer_f'][seedIdx % 4]}.png`, x - 8, y - 28 + bob, { sx: 0, sy: 0, sw: 16, sh: 32 });
+      case 'elite': { // the trainer this node fights (Run.eliteKeyAt; a legendary's icon if it's one)
+        const E = this.eliteIconAt(run, n, st);
+        if (E.species) {
+          drawIcon(ctx, E.species, x - 16, y - 30 + bob);
+        } else {
+          const sp = E.em && ready(img(`gfx/overworld/people/emerald/${E.em}.png`)) ? `emerald/${E.em}` : E.sprite;
+          draw(ctx, `gfx/overworld/people/${sp}.png`, x - 8, y - 28 + bob, { sx: 0, sy: 0, sw: 16, sh: 32 });
+        }
         draw(ctx, 'gfx/misc/emotes/exclamation.png', x - 8, y - 33 + bob + Math.sin(this.t * 5) * 1, { sx: 32, sy: 0, sw: 16, sh: 16 }); // frame 2 = the full ! balloon (0-1 are its pop-in)
         break;
+      }
       case 'rival': { // (HGSS walkers, 'hgss/...', have 32x32 frames; FireRed's are 16x32)
         const sp = regionOf(run.rivalRegion).rival.sprite, fw = sp.startsWith('hgss/') ? 32 : 16;
         draw(ctx, `gfx/overworld/people/${sp}.png`, x - fw / 2, y - 28 + bob, { sx: 0, sy: 0, sw: fw, sh: 32 });

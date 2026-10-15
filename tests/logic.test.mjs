@@ -2609,5 +2609,49 @@ t('v0.5.7: co-op foes skip useless status moves too (per target player)', () => 
   });
 }
 
+// v0.5.25: the map's elite icon is the elite that node really fights (it was a decorative pick of four sprites,
+// one of them BLUE's). Run.eliteKeyAt previews the pick; after the fight it reads node.elite.
+{
+  const { eliteIcon } = await import('../web/src/game/elite_icon.js');
+  const { REGIONS } = await import('../web/src/game/regions.js');
+  const RIVALKEY = /^(RIVAL_|CHAMPION_FIRST)/;
+  t('elite map icon: every act elite resolves to a real walker (never BLUE) or a legendary icon', () => {
+    const acts = Object.values(REGIONS).flatMap(r => r.acts || []);
+    for (const a of acts) for (const k of [...(a.elites || []), ...(a.rareLegends || []).map(x => x[0])]) {
+      const E = eliteIcon(k);
+      if (LEGENDS[k]) { assert.equal(E.species, LEGENDS[k].species, k); continue; }
+      assert.ok(E.sprite && (RIVALKEY.test(k) || E.sprite !== 'blue'), `${k}: ${E.sprite}`);
+      if (fs.existsSync('web/assets/gfx/overworld/people')) assert.ok(fs.existsSync(`web/assets/gfx/overworld/people/${E.sprite}.png`), `${k}: ${E.sprite}.png`);
+    }
+  });
+  t('elite map icon = the elite fought there (solo, every world, visit order and trainer fights shuffled)', () => {
+    let elites = 0;
+    for (const world of ['kanto', 'hoenn', 'johto']) for (let s = 0; s < 12; s++) {
+      const run = Run.create({ starter: 'SQUIRTLE', seed: `eliteicon-${world}-${s}`, world, ascension: s % 3 ? 0 : 9 });
+      for (let a = 0; a < run.acts.length; a++) {
+        if (a) run.startAct(a);
+        const rng = new RNG(`order-${world}-${s}-${a}`);
+        const nodes = rng.shuffle(Object.values(run.map.nodes).filter(n => n.type === 'elite' || n.type === 'trainer'));
+        for (const n of nodes) {
+          const predicted = n.type === 'elite' ? run.eliteKeyAt(n) : null;
+          run.enterNode(n.id);
+          const cfg = run.battleConfig(n);
+          if (n.type !== 'elite') continue;
+          elites++;
+          const fought = run.usedTrainers[run.usedTrainers.length - 1];
+          assert.equal(predicted, fought, `${world} act ${a} node ${n.id}`);
+          assert.equal(n.elite, fought, 'recorded on the node');
+          assert.equal(run.eliteKeyAt(n), fought, 'still shown once behind you');
+          if (LEGENDS[fought]) assert.equal(cfg.legend, LEGENDS[fought].title);
+          else if (!D.trainers[fought].dummy && !RIVALKEY.test(fought)) assert.equal(cfg.trainer.key, fought);
+          const E = eliteIcon(predicted);
+          assert.ok(E.species || E.sprite !== 'blue' || RIVALKEY.test(fought), `${fought} drawn as BLUE`);
+        }
+      }
+    }
+    assert.ok(elites > 50, `checked ${elites} elite fights`);
+  });
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

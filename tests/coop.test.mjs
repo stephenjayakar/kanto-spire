@@ -1681,5 +1681,28 @@ t('nuzlocke: bot runs replay to identical checksums, and checkpoints (also after
 });
 }
 
+// v0.5.25: the co-op map's elite icon (CoopMapScene: Run.eliteKeyAt with the 'duo' fork) = the elite duoConfig fights
+t('elite map icon = the elite fought there (co-op duoConfig)', () => {
+  let elites = 0;
+  for (const world of ['kanto', 'hoenn', 'johto']) for (let s = 0; s < 8; s++) {
+    const w = Run.create({ starter: 'BULBASAUR', seed: `coopelite-${world}-${s}`, world, coop: true });
+    for (let a = 0; a < w.acts.length; a++) {
+      if (a) w.startAct(a);
+      const nodes = new RNG(`co-${world}-${s}-${a}`).shuffle(Object.values(w.map.nodes).filter(n => n.type === 'elite' || n.type === 'trainer'));
+      for (const n of nodes) {
+        const predicted = n.type === 'elite' ? w.eliteKeyAt(n, 'duo') : null;
+        w.enterNode(n.id);
+        duoConfig(w, n, 2 + (s % 3));
+        if (n.type !== 'elite') continue;
+        elites++;
+        const fought = w.usedTrainers[w.usedTrainers.length - 1];
+        assert.equal(predicted, fought, `${world} act ${a} node ${n.id}`);
+        assert.equal(w.eliteKeyAt(n, 'duo'), fought, 'still shown once behind you');
+      }
+    }
+  }
+  assert.ok(elites > 30, `checked ${elites}`);
+});
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

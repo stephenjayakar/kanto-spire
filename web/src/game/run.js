@@ -612,11 +612,27 @@ export class Run {
     return { kind: 'trainer', trainer: this.trainerInfo(t), enemies, terrain: this.terrainForTrainer(t), music: this.trainerInfo(t).battleSong, dmgScale: this.dmgScale(), rng };
   }
 
+  // The elite (act.elites key, or a LEGEND_ key) an elite node fights, drawn the same way eliteConfig draws it but
+  // with no side effects, so the map can show it (v0.5.25: the map's elite icon used to be a decorative sprite,
+  // sometimes BLUE's). tag: the node's encounter fork, 'enc' solo (battleConfig) or 'duo' co-op (coop.js duoConfig).
+  // Once the node is behind you, its fight is in node.elite (eliteConfig): usedTrainers has changed since.
+  eliteKeyAt(node, tag = 'enc') {
+    if (node.elite) return node.elite;
+    return this.pickEliteKey(this.rng.fork(tag + node.id + ':' + this.actIndex));
+  }
+
+  pickEliteKey(rng) {
+    const elites = this.act.elites || [];
+    const options = elites.filter(k => !this.usedTrainers.includes(k));
+    return this.rareLegend(rng.fork('rareLegend')) || rng.pick(options.length ? options : elites);
+  }
+
   eliteConfig(rng, floor) {
-    const act = this.act;
-    const options = act.elites.filter(k => !this.usedTrainers.includes(k));
-    let key = this.rareLegend(rng.fork('rareLegend')) || rng.pick(options.length ? options : act.elites);
+    let key = this.pickEliteKey(rng);
     this.usedTrainers.push(key);
+    // (cosmetic: the map's icon for this node once it's behind you; on the map, so outside co-op checksums, runDigest)
+    const here = this.map?.nodes?.[this.nodeId];
+    if (here?.type === 'elite' && here.floor === floor) here.elite = key;
     const target = this.levelFor(floor) + 2;
     const asc9 = this.ascension >= 9 && this.actIndex >= 1;
     if (LEGENDS[key]) {

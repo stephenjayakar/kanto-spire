@@ -2,9 +2,17 @@
 // Game version and patch notes (shown from the title screen). Versions are major.minor.patch: every production
 // deploy that changes the game bumps the patch (v0.2.0 -> v0.2.1); the owner calls minor bumps (v0.1.x -> v0.2.0);
 // no major bumps yet. Each one gets a new top PATCH_NOTES entry; see AGENTS.md.
-export const VERSION = 'v0.5.24';
+export const VERSION = 'v0.5.25';
 
 export const PATCH_NOTES = [
+  {
+    v: 'v0.5.25',
+    sections: [
+      ['FIXES', [
+        'Elite nodes on the map now show the trainer you will actually fight there (or the legendary POKéMON, if it is one). Before, the icon was a random pick of four sprites, so an elite could wrongly show your rival BLUE. Solo and co-op',
+      ]],
+    ],
+  },
   {
     v: 'v0.5.24',
     sections: [
