@@ -368,7 +368,7 @@ export class CoopBattleScene {
       case 'enemyOut': {
         const en = d.enemies[e.ei];
         const slot = e.slot;
-        this.foes[slot] = { ...this.foeDisp(e.ei), hp: en.maxHp, x: 120, outAt: this.t }; // fresh foe (the engine may already be further on)
+        this.foes[slot] = { ...this.foeDisp(e.ei), hp: e.hp ?? en.maxHp, x: 120, outAt: this.t }; // fresh foe (the engine may already be further on)
         // the trainer lingers before throwing out its first POKéMON (display only; a click/tap cuts it short)
         if (this.isTrainer() && e.first && slot === 0) { this.introTrainer = false; this.trainerX = 0; await skippableWait(this, TRAINER_LINGER * this.speed); tween(this, { trainerX: 140 }, 0.5 * this.speed); }
         if (this.isTrainer()) { const [cx, cy] = this.foeCenter(slot); this.ballAnim = { x: cx, y: cy, t: 0 }; Sound.playSE('se_ball_open'); }
@@ -381,7 +381,7 @@ export class CoopBattleScene {
       case 'enemyGone': {
         const slot = this.slotOfRi(e.ei, e.slot);
         if (slot === null) break;
-        if (e.why === 'fled') { const f = this.foes[slot]; if (f) await tween(f, { x: 140, alpha: 0 }, 0.35 * this.speed); }
+        if (e.why === 'fled' || e.why === 'dragged') { const f = this.foes[slot]; if (f) await tween(f, { x: 140, alpha: 0 }, 0.35 * this.speed); }
         if (this.foes[slot]?.ri === e.ei) this.foes[slot] = null;
         if (e.why === 'caught') { this.ballAnim = null; }
         break;

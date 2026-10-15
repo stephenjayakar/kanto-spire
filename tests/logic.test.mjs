@@ -2437,18 +2437,19 @@ t("v0.5.7: a foe's CHARGE doubles its next ELECTRIC move, then wears off", () =>
   assert.equal(b.sides.enemy.charge, false, 'used up by the ELECTRIC move it boosted');
 });
 
-t('v0.5.7: ROAR fails if the same POKéMON made it work last turn (works again the turn after)', () => {
+t('v0.5.27: ROAR / WHIRLWIND force a trainer\'s foe out at the end of the turn (a random benched one comes in), or fail', () => {
+  // (replaces v0.5.7's "the foe hesitates, but not two turns in a row")
   const { b } = trainerWith(slowFoe(['GROWL'], 3000), 'ROAR57');
-  const hesitated = (ev) => ev.some(e => e.t === 'msg' && /hesitated/.test(e.text));
-  const failed = (ev) => ev.some(e => e.t === 'msg' && /failed: it worked last turn/.test(e.text));
   const t1 = b.play(handOf(b, ['ROAR']));
-  assert.ok(hesitated(t1) && !failed(t1), 'turn 1: the foe hesitates');
-  const t2 = b.play(handOf(b, ['ROAR']));
-  assert.ok(failed(t2) && !hesitated(t2), 'turn 2: fails');
-  const t3 = b.play(handOf(b, ['ROAR']));
-  assert.ok(hesitated(t3), 'turn 3: works again (the failure was not a success)');
-  const t4 = b.play(handOf(b, ['WHIRLWIND']));
-  assert.ok(failed(t4), 'WHIRLWIND shares the rule');
+  assert.ok(t1.some(e => e.t === 'msg' && /But it failed! \(T has no other POKéMON\)/.test(e.text)), 'no bench: it fails, saying why');
+  const c = slowFoe(['GROWL'], 3000);
+  b.enemies.push(c); b.sides.enemy.stages.atk = 2;
+  const first = b.enemy();
+  const t2 = b.play(handOf(b, ['WHIRLWIND']));
+  const msgs = t2.filter(e => e.t === 'msg').map(e => e.text);
+  assert.ok(msgs.findIndex(m => /used GROWL/.test(m)) < msgs.findIndex(m => /forced out by WHIRLWIND/.test(m)), 'the foe moves first (priority -6)');
+  assert.equal(b.enemy(), c); assert.ok(b.enemies.includes(first) && first.hp > 0, 'the old foe waits on the bench');
+  assert.equal(b.sides.enemy.stages.atk, 0, 'its stat changes are gone');
 });
 
 t('v0.5.7: foes skip status moves that would do nothing (and fall back to the usual pick when all would)', () => {

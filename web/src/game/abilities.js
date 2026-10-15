@@ -104,7 +104,7 @@ export const ABILITY_TEXT = {
   FLASH_FIRE: 'FIRE attacks do nothing to it. Taking one makes its own FIRE attacks 50% stronger.',
   SHIELD_DUST: "Side effects of attacks (burns, flinching, stat drops...) don't happen to it.",
   OWN_TEMPO: "Can't be confused.",
-  SUCTION_CUPS: "Your ROAR and WHIRLWIND don't work on it. Yours: boss rules can't freeze its cards or flip them face-down.",
+  SUCTION_CUPS: "ROAR and WHIRLWIND can't force it out. Yours: boss rules can't freeze its cards or flip them face-down.",
   INTIMIDATE: "Lowers the foe's ATTACK when it comes out.",
   SHADOW_TAG: "Enemy: you can't run, and switching costs an extra discard. Yours in the lead: wild POKéMON are 50% easier to catch.",
   ROUGH_SKIN: 'When something touches it, the attacker loses 1/16 of its HP (once per hand).',

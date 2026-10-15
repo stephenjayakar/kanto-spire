@@ -5,8 +5,8 @@
 export const MOVE_DESC = {
   // ---- field moves / flee ----
   TELEPORT: 'Ends a wild battle at once (no rewards). Against trainers and bosses, the foe hesitates instead.',
-  ROAR: 'Scares off a wild foe, ending the battle (no rewards). Against trainers and bosses, the foe hesitates instead.',
-  WHIRLWIND: 'Blows away a wild foe, ending the battle (no rewards). Against trainers and bosses, the foe hesitates instead.',
+  ROAR: "Scares a wild foe off, ending the battle. A trainer's POKéMON is forced out at the end of the turn and a random other one of theirs comes in. A foe's ROAR drags out a random one of yours.",
+  WHIRLWIND: "Blows a wild foe away, ending the battle. A trainer's POKéMON is forced out at the end of the turn and a random other one of theirs comes in. A foe's WHIRLWIND drags out a random one of yours.",
   FLY: 'Hits at once. If the foe acts after you, your lead flies out of reach and dodges its attack, then spends the next turn landing (no dodging or protecting). Never two turns in a row.',
   DIG: 'Hits at once. If the foe acts after you, your lead burrows underground and dodges its attack, then spends the next turn landing (no dodging or protecting). Never two turns in a row.',
   DIVE: 'Hits at once. If the foe acts after you, your lead dives underwater and dodges its attack, then spends the next turn landing (no dodging or protecting). Never two turns in a row.',

@@ -269,12 +269,38 @@ export const EFFECTS = {
   PAIN_SPLIT: (ctx) => ctx.b.painSplit(ctx.us, ctx.user),
   BATON_PASS: (ctx) => { if (ctx.us === 'player') { ctx.b.freeSwitches += 1; ctx.b.batonPass = true; ctx.b.msg('Next switch is free and keeps stat changes!'); } },
   TELEPORT: (ctx) => ctx.b.tryEscape(ctx.us),
-  // ROAR / WHIRLWIND (v0.5.7): fails if the same POKéMON made it work last turn (no flinch-locking a foe turn after turn)
+  // ROAR / WHIRLWIND (v0.5.27, Gen 3 rules adapted to cards): blocked by PROTECT (the move data's PROTECT_AFFECTED),
+  // SUCTION CUPS and INGRAIN (SOUNDPROOF blocks ROAR before it gets here). In a wild battle the foe flees (the battle
+  // ends); a trainer's foe is forced back and a random benched POKéMON of theirs is dragged out at the END of the turn
+  // (priority -6: the foe still gets its move; Battle.resolveDrag). A foe's ROAR drags out a random healthy POKéMON of
+  // yours at once (it always moves last). It fails when there is nobody to switch in.
   ROAR: (ctx) => {
-    const b = ctx.b, side = ctx.userSide, uid = ctx.user?.uid;
-    if (b.abOf?.(ctx.them, ctx.target) === 'SUCTION_CUPS') return b.msg(`${b.sideName(ctx.them)} anchors itself with SUCTION CUPS!`);
-    if (side?.lastRoar && side.lastRoar.uid === uid && side.lastRoar.turn === b.turn - 1) return b.msg(`${ctx.move.name || 'ROAR'} failed: it worked last turn!`);
-    if (b.tryEscape(ctx.us, true) && side && uid !== undefined) side.lastRoar = { uid, turn: b.turn };
+    const b = ctx.b, name = ctx.move.name || 'ROAR', ts = ctx.targetSide || b.sides[ctx.them], tgt = ctx.target;
+    const fail = (why) => b.msg(`But it failed! (${why})`);
+    if (ts?.protect && ctx.move.flags?.includes('PROTECT_AFFECTED')) return b.msg(`${b.sideName(ctx.them)} protected itself!`);
+    if (b.abOf?.(ctx.them, tgt) === 'SUCTION_CUPS') return b.msg(`${b.sideName(ctx.them)} anchors itself with SUCTION CUPS!`);
+    if (ts?.ingrain) return b.msg(`${b.sideName(ctx.them)} anchored itself with its roots!`);
+    if (ctx.us === 'player') {
+      const e = b.enemy();
+      if (b.wildLike) {
+        if (b.kind === 'wild' && !e.isBoss) return b.tryEscape('player', true);
+        return fail(`${b.monName(e)} can't be driven away`);
+      }
+      if (!b.foeBench()) return fail(`${b.trainer?.name || 'the foe'} has no other POKéMON`);
+      if (ts.dragPending) return; // (a second copy in the same hand: one drag)
+      ts.dragPending = { move: name };
+      b.msg(`${b.monName(e)} will be forced out at the end of the turn!`);
+      return;
+    }
+    // the foe's ROAR on your lead (wild: it runs off itself, which never happens to a boss or a legendary)
+    if (b.wildLike) {
+      const e = ctx.user;
+      if (b.kind === 'wild' && !e?.isBoss && !e?.legendary) return b.tryEscape('enemy', true);
+      return fail(`there is nowhere to send ${b.monName(tgt)}`);
+    }
+    const bench = b.playerBench();
+    if (!bench.length) return fail(`no other POKéMON can come out`);
+    b.forceSwitchPlayer(b.rng.pick(bench), name);
   },
   SUNNY_DAY: (ctx) => ctx.b.setWeather('SUN'), RAIN_DANCE: (ctx) => ctx.b.setWeather('RAIN'),
   SANDSTORM: (ctx) => ctx.b.setWeather('SAND'), HAIL: (ctx) => ctx.b.setWeather('HAIL'),

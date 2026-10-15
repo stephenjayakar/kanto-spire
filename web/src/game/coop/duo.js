@@ -86,6 +86,14 @@ export class SubBattle extends Battle {
     if (ri !== undefined) this.focus(ri);
   }
 
+  // ROAR / WHIRLWIND: the trainer's bench is the queue of the focused foe's slot.
+  foeBench() {
+    if (!this.duo) return super.foeBench();
+    if (this.wildLike) return 0;
+    const slot = this.duo.field.indexOf(this.enemyIndex);
+    return slot >= 0 ? this.duo.queueFor(slot).length : 0;
+  }
+
   // ARENA TRAP / SHADOW TAG: any foe on the field can make switching cost the extra discard.
   switchTax() {
     if (!this.duo) return super.switchTax();
@@ -326,7 +334,7 @@ export class DuoBattle {
     this.field[slot] = ri;
     this.clearIntents(slot);
     if (e.bossRule && BOSS_RULES[e.bossRule]) this.bossRule = BOSS_RULES[e.bossRule];
-    this.emit({ t: 'enemyOut', slot, ei: ri, index: ri, species: e.species, first: !!first });
+    this.emit({ t: 'enemyOut', slot, ei: ri, index: ri, species: e.species, first: !!first, hp: e.hp });
     const h = this.host();
     if (this.kind === 'wild') this.emit({ t: 'msg', text: `A wild ${speciesName(e.species)} appeared!`, slot, ei: ri });
     else this.emit({ t: 'msg', text: `${this.trainerFor(slot)?.name || 'Foe'} sent out ${speciesName(e.species)}!`, slot, ei: ri });
@@ -585,8 +593,34 @@ export class DuoBattle {
       else this.execEnemy(a);
     }
     this.locks = this.subs.map(() => null);
+    if (!this.result) this.resolveDrags(); // (ROAR / WHIRLWIND: priority -6, after every foe moved)
     if (!this.result) this.endTurn();
     if (!this.result) this.startTurn();
+  }
+
+  // End of the turn: each foe a player's ROAR / WHIRLWIND hit goes back to its trainer's queue and a random POKéMON from
+  // that queue comes out instead (Battle.resolveDrag in solo). Shared RNG: deterministic.
+  resolveDrags() {
+    for (let slot = 0; slot < 2; slot++) {
+      const ri = this.field[slot];
+      if (ri === null || this.gone[ri]) continue;
+      const es = this.enemySides[ri], p = es.dragPending;
+      if (!p) continue;
+      es.dragPending = null;
+      const q = this.queueFor(slot), e = this.enemies[ri];
+      if (!q.length || e.hp <= 0) continue;
+      const j = this.rng.int(0, q.length - 1), nri = q[j];
+      q[j] = ri;
+      const h = this.host();
+      this.emit({ t: 'msg', text: `${h.monName(e)} was forced out by ${p.move}!`, slot, ei: ri });
+      if (this.enemyMs[e.uid]) this.enemyMs[e.uid].recharge = 0;
+      this.field[slot] = null;
+      this.clearIntents(slot);
+      this.emit({ t: 'enemyGone', slot, ei: ri, why: 'dragged' });
+      this.sendOut(slot, nri, false);
+      this.emit({ t: 'msg', text: `${h.monName(this.enemies[nri])} was dragged out!`, slot, ei: nri });
+      if (this.result) return;
+    }
   }
 
   execHand(a) {

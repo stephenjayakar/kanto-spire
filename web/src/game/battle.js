@@ -427,6 +427,8 @@ export class Battle {
       blockedBy: !status && this.enemy() && this.effVsEnemy(type, move.key) === 0 && typeEffect(type, this.enemy().types) > 0 ? this.enemy().ability : null,
       // PROTECT / DETECT / ENDURE: the odds it works if played now ({ chance, chain }, effects.js protectOdds; display only)
       protect: PROTECT_EFFECTS.has(move.effect) && this.sides?.player ? protectOdds(this, 'player') : null,
+      // ROAR / WHIRLWIND: what it would do if played now ({ ok, label, why }; display only)
+      roar: move.effect === 'ROAR' && this.sides?.enemy && this.enemy() ? this.roarOutlook(move) : null,
     };
     // Expected damage of this card against the current foe (no crits or misses), shown on the card face.
     info.dmgPreview = status || !owner || !this.enemy() ? 0 : this.cardPreview(info);
@@ -539,7 +541,7 @@ export class Battle {
     const e = this.enemy();
     this.sides.enemy = { ...newSide(), spikes: this.sides.enemy.spikes };
     if (!first) this.bossRule = e.bossRule ? BOSS_RULES[e.bossRule] : this.bossRule;
-    this.emit({ t: 'enemyOut', index: this.enemyIndex, species: e.species });
+    this.emit({ t: 'enemyOut', index: this.enemyIndex, species: e.species, hp: e.hp });
     if (this.wildLike) this.msg(`A wild ${speciesName(e.species)} appeared!${e.rareFind ? ' A rare find!' : ''}`);
     else this.msg(`${this.trainer?.name || 'Foe'} sent out ${speciesName(e.species)}!`);
     if (e.bossRule && BOSS_RULES[e.bossRule]) this.emit({ t: 'bossRule', rule: e.bossRule, name: BOSS_RULES[e.bossRule].name, desc: BOSS_RULES[e.bossRule].desc });
@@ -730,7 +732,13 @@ export class Battle {
       case 'DESTINY_BOND': case 'GRUDGE': return !!es.destinyBond;
       case 'MAGIC_COAT': case 'SNATCH': return !!es.magicCoat;
       case 'HELPING_HAND': return !!es.helpingHand;
-      case 'ROAR': case 'TELEPORT': return this.kind !== 'wild'; // (a foe's ROAR only ends wild battles)
+      case 'ROAR': { // (v0.5.27: drags your lead out in trainer battles; never in wild ones, where it would end the battle)
+        if (this.wildLike || !this.playerBench().length) return true;
+        if (this.sides.player.protect || ps.ingrain) return true;
+        const ab = lead ? this.defAb('player', lead, e.ability) : null;
+        return ab === 'SUCTION_CUPS' || (SOUND_MOVES.has(m.key) && (ab === 'SOUNDPROOF' || ab === 'CACOPHONY'));
+      }
+      case 'TELEPORT': return this.kind !== 'wild'; // (a foe's TELEPORT only ends wild battles)
     }
     return false;
   }
@@ -748,7 +756,9 @@ export class Battle {
     if (eff === 'REFLECT') return es.reflect ? 0 : 15;
     if (eff === 'LIGHT_SCREEN') return es.lightScreen ? 0 : 15;
     if (eff === 'SPLASH') return 1;
-    if (eff === 'ROAR' || eff === 'TELEPORT') return 0;
+    if (eff === 'TELEPORT') return 0;
+    // ROAR / WHIRLWIND (v0.5.27): now and then; much likelier against a lead that has built up stat boosts
+    if (eff === 'ROAR') return 6 + 8 * Math.min(3, Object.values(ps.stages || {}).reduce((t, v) => t + Math.max(0, v), 0));
     if (['SUNNY_DAY', 'RAIN_DANCE', 'SANDSTORM', 'HAIL'].includes(eff)) return this.weather ? 0 : 10;
     return 6;
   }
@@ -1055,6 +1065,7 @@ export class Battle {
     if (cards.some(c => c.uid === this.leadUid)) this.leadStreak++;
     if (!this.result && !enemyFirst && !this.enemyJustSwitched) this.enemyAct();
     this.enemyJustSwitched = false;
+    if (!this.result) this.resolveDrag(); // (your ROAR / WHIRLWIND: priority -6, after the foe's move)
     if (!this.result) this.endTurn();
     if (!this.result) this.startTurn();
     return this.takeEvents();
@@ -1765,6 +1776,50 @@ export class Battle {
     }
     if (this.kind === 'wild') { this.msg(`${this.monName(this.enemy())} fled!`); this.end('enemyFled'); return true; }
     return false;
+  }
+
+  // ---- ROAR / WHIRLWIND (v0.5.27, effects.js ROAR) ---------------------------------------------
+  // The card's outlook against the current foe, mirroring the effect's checks (PROTECT can't be known in advance).
+  roarOutlook(move) {
+    const e = this.enemy(), es = this.sides.enemy, ab = e.ability;
+    if (ab === 'SUCTION_CUPS') return { ok: false, label: "WON'T WORK", why: `${this.monName(e)}'s SUCTION CUPS keep it in place.` };
+    if (SOUND_MOVES.has(move.key) && (ab === 'SOUNDPROOF' || ab === 'CACOPHONY')) return { ok: false, label: "WON'T WORK", why: `${this.monName(e)}'s ${ab} blocks sound moves.` };
+    if (es.ingrain) return { ok: false, label: "WON'T WORK", why: `${this.monName(e)} is rooted by INGRAIN.` };
+    if (this.wildLike) return this.kind === 'wild' && !e.isBoss ? { ok: true, label: 'ENDS BATTLE', why: `${this.monName(e)} flees: the battle ends (no rewards).` } : { ok: false, label: "WON'T WORK", why: `${this.monName(e)} can't be driven away.` };
+    const n = this.foeBench();
+    if (!n) return { ok: false, label: "WON'T WORK", why: `${this.trainer?.name || 'The foe'} has no other POKéMON to send out.` };
+    return { ok: true, label: 'FOE SWITCHES', why: `${this.monName(e)} is forced out and a random one of the ${n} other POKéMON comes in (stat changes are lost).` };
+  }
+  // How many POKéMON the foe's trainer could send in instead of the current one (co-op: SubBattle counts its slot's queue).
+  foeBench() { return this.wildLike ? 0 : Math.max(0, this.enemies.length - this.enemyIndex - 1); }
+  // Your POKéMON that a foe's ROAR could drag in: healthy, not the lead.
+  playerBench() { return this.run.party.filter(m => m.uid !== this.leadUid && !isFainted(m) && !m.lost).map(m => m.uid); }
+  forceSwitchPlayer(uid, moveName) {
+    const old = this.lead();
+    this.msg(`${monName(old)} was forced out by ${moveName}!`);
+    this.ms(old.uid).recharge = 0;
+    this.switchLead(uid, true);
+    this.msg(`${monName(this.lead())} was dragged out!`);
+    this.emit({ t: 'partyUpdate' });
+  }
+  // End of the turn (after the foe moved): a foe your ROAR / WHIRLWIND hit this turn goes back and a random benched
+  // POKéMON of its trainer comes out (it keeps its HP and status; its stat changes and volatile effects are gone).
+  resolveDrag() {
+    const es = this.sides.enemy, p = es?.dragPending;
+    if (!p) return;
+    es.dragPending = null;
+    const old = this.enemy();
+    if (!old || old.hp <= 0 || this.result) return;
+    const bench = [];
+    for (let i = this.enemyIndex + 1; i < this.enemies.length; i++) bench.push(i);
+    if (!bench.length) return;
+    const j = this.rng.pick(bench);
+    this.msg(`${this.monName(old)} was forced out by ${p.move}!`);
+    this.emit({ t: 'enemyRecall', uid: old.uid, species: old.species });
+    this.ms(old.uid).recharge = 0;
+    [this.enemies[this.enemyIndex], this.enemies[j]] = [this.enemies[j], this.enemies[this.enemyIndex]];
+    this.sendOutEnemy(false);
+    this.msg(`${this.monName(this.enemy())} was dragged out!`);
   }
 
   // ---- faint handling -------------------------------------------------------------------

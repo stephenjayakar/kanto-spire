@@ -192,7 +192,7 @@ const EFFECT_SHORT = {
   SUBSTITUTE: 'SUBSTITUTE', FOCUS_ENERGY: 'CRIT UP', LOCK_ON: 'NEXT HITS', HAZE: 'RESET STATS', SUNNY_DAY: 'SUN', RAIN_DANCE: 'RAIN',
   SANDSTORM: 'SANDSTORM', HAIL: 'HAIL', SPLASH: 'NOTHING!', CURSE: 'CURSE', SPIKES: 'SPIKES', WISH: 'WISH', INGRAIN: 'ROOTS',
   STOCKPILE: 'STOCKPILE', SWALLOW: 'HEAL', PAIN_SPLIT: 'SHARE HP', CHARGE: 'CHARGE', HELPING_HAND: 'x1.5 DMG', TAUNT: 'TAUNT', DISABLE: 'DISABLE',
-  ENCORE: 'ENCORE', TORMENT: 'TORMENT', PERISH_SONG: 'PERISH', DESTINY_BOND: 'DESTINY BOND', MEAN_LOOK: 'TRAP', TELEPORT: 'ESCAPE', ROAR: 'ROAR',
+  ENCORE: 'ENCORE', TORMENT: 'TORMENT', PERISH_SONG: 'PERISH', DESTINY_BOND: 'DESTINY BOND', MEAN_LOOK: 'TRAP', TELEPORT: 'ESCAPE', ROAR: 'FORCE SWITCH',
   BATON_PASS: 'FREE SWITCH', NIGHTMARE: 'NIGHTMARE', FORESIGHT: 'FORESIGHT', PSYCH_UP: 'COPY STATS', MAGIC_COAT: 'REFLECT STATUS',
   WATER_SPORT: 'FIRE -50%', MUD_SPORT: 'ELEC -50%', MEMENTO: 'MEMENTO', FOLLOW_ME: '+2 NEXT TURN', RECYCLE: '+2 NEXT TURN', TRICK: '+2 NEXT TURN',
   SKILL_SWAP: '+2 NEXT TURN', ROLE_PLAY: '+2 NEXT TURN', MIMIC: 'COPY FOE MOVE', TRANSFORM: 'COPY 2 MOVES', CONVERSION: '+1 NEXT TURN',
@@ -274,8 +274,9 @@ export function drawCard(ctx, info, x, y, opts = {}) {
     let eff = effectShort(info.move, info) || 'STATUS';
     // PROTECT / DETECT / ENDURE in battle: the odds it works now (red once back-to-back use has cut them)
     if (info.protect) eff = `${eff.split('\n')[0]}\n${fmtChance(info.protect.chance)} TO WORK`;
+    if (info.roar) eff = info.roar.ok ? info.roar.label : `${eff.split('\n')[0]}\n${info.roar.label}`; // ROAR / WHIRLWIND: what it does to this foe
     const lines = eff.includes('\n') ? eff.split('\n') : wrap(eff, CARD_W - 6, 'small'); // (explicit lines are condensed to fit, not re-wrapped)
-    lines.slice(0, 2).forEach((l, i) => text(ctx, l, x + CARD_W / 2, y + CARD_H - 25 + i * 10, { align: 'center', color: info.protect && i === 1 && info.protect.chance < 1 ? CARD_INK.red : CARD_INK.status, font: 'small', maxW: CARD_W - 4 }));
+    lines.slice(0, 2).forEach((l, i) => text(ctx, l, x + CARD_W / 2, y + CARD_H - 25 + i * 10, { align: 'center', color: i === 1 && ((info.protect && info.protect.chance < 1) || (info.roar && !info.roar.ok)) ? CARD_INK.red : CARD_INK.status, font: 'small', maxW: CARD_W - 4 }));
   }
   if (!info.playable && !opts.ignorePlayable) {
     ctx.save(); ctx.globalAlpha = 0.55; pixBox(ctx, x, y, CARD_W, CARD_H, '#101018', null, 4); ctx.restore();
@@ -333,9 +334,11 @@ export function cardTooltip(info, x, y, above = false) {
     SUPER_FANG: 'Halves the foe’s remaining HP once per hand (1/8 vs bosses and elites).',
     ENDEAVOR: 'Only works from your lead: cuts the foe’s HP down to your lead’s HP % (max 25% vs bosses).',
     LEVEL_DAMAGE: 'Deals damage equal to the user’s level, ignoring type and stats.',
-    TELEPORT: 'Ends a wild battle (no rewards).', ROAR: 'Ends a wild battle; vs trainers the foe hesitates.',
+    TELEPORT: 'Ends a wild battle (no rewards).',
+    ROAR: 'Priority -6: the switch comes after the foe moves. PROTECT, SUCTION CUPS and INGRAIN block it (SOUNDPROOF blocks ROAR).',
   };
   if (CARD_NOTE[m.effect]) lines.push(CARD_NOTE[m.effect]);
+  if (info.roar) lines.push(`Now: ${info.roar.ok ? '' : "won't work. "}${info.roar.why}`);
   if (m.chance && m.power) lines.push(`${m.chance}% chance of its secondary effect.`);
   if (m.priority > 0) lines.push(info.protect ? 'Priority: your hand goes first, if it works.' : 'Priority: your hand goes first.');
   if (info.protect) {

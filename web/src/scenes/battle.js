@@ -150,12 +150,17 @@ export class BattleScene {
         const en = b.enemies[e.index];
         // the trainer lingers before throwing out its first POKéMON (a click/tap cuts it short)
         if (this.cfg.trainer && e.index === 0) { this.trainerX = 0; await skippableWait(this, TRAINER_LINGER * this.speed); tween(this, { trainerX: 140 }, 0.5 * this.speed); }
-        this.enemyDisp = { hp: en.hp, maxHp: en.maxHp, x: FOE_ENTRY.dx, alpha: 1, flash: 0, shake: 0, faint: 0, species: en.species, shiny: en.shiny, level: en.level, uid: en.uid, outAt: this.t };
+        this.enemyDisp = { hp: e.hp ?? en.hp, maxHp: en.maxHp, x: FOE_ENTRY.dx, alpha: 1, flash: 0, shake: 0, faint: 0, species: en.species, shiny: en.shiny, level: en.level, uid: en.uid, outAt: this.t };
         if (this.cfg.trainer) { this.ballAnim = { x: SCENE_X + 360, y: SCENE_Y + 70, t: 0 }; Sound.playSE('se_ball_open'); }
         tween(this.enemyDisp, { x: 0 }, FOE_ENTRY.dur * this.speed, FOE_ENTRY.ease);
         foeEntrySound(en.species, en.shiny);
         if (en.shiny) burst(SCENE_X + 360, SCENE_Y + 70, { color: ['#fff', '#f8f080'], n: 16, speed: 60, grav: 0 });
         await this.wait(0.35);
+        break;
+      }
+      case 'enemyRecall': { // (forced out by your ROAR / WHIRLWIND: it slides off before the next one comes out)
+        const d = this.enemyDisp;
+        if (d && d.uid === e.uid) await tween(d, { x: 140, alpha: 0 }, 0.35 * this.speed);
         break;
       }
       case 'forme': this.bossBanner = { name: `${e.forme} FORME`, a: 1 }; break; // (DEOXYS, v0.3.25)

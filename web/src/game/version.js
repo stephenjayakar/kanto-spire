@@ -2,9 +2,19 @@
 // Game version and patch notes (shown from the title screen). Versions are major.minor.patch: every production
 // deploy that changes the game bumps the patch (v0.2.0 -> v0.2.1); the owner calls minor bumps (v0.1.x -> v0.2.0);
 // no major bumps yet. Each one gets a new top PATCH_NOTES entry; see AGENTS.md.
-export const VERSION = 'v0.5.26';
+export const VERSION = 'v0.5.27';
 
 export const PATCH_NOTES = [
+  {
+    v: 'v0.5.27',
+    sections: [
+      ['CHANGES', [
+        "ROAR and WHIRLWIND work like in the games. Against a trainer, the foe is forced out at the end of the turn, after it moves, and a random other POKéMON of theirs comes in. It keeps its HP and status, but loses its stat changes. They fail if the trainer has nobody left. In the wild they still end the battle. Solo and co-op",
+        "Foes use them too: a trainer's ROAR or WHIRLWIND drags out a random healthy POKéMON of yours. They like to use it on a lead that has built up boosts",
+        "PROTECT, INGRAIN and SUCTION CUPS block both moves; SOUNDPROOF blocks ROAR. The card shows what it will do (FOE SWITCHES, ENDS BATTLE or WON'T WORK, with the reason in its tooltip), and every step is in the battle log",
+      ]],
+    ],
+  },
   {
     v: 'v0.5.26',
     sections: [
