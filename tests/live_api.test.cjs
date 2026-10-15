@@ -213,8 +213,12 @@ const counts = () => Object.fromEntries(Object.entries(frames.pushes).map(([k, v
     ok(await until(() => Array.isArray(np)), 'nowPlayingLive delivers');
     const r1 = await cloud.cloudCall('mutation', 'players:activity', { activity: 'CO-OP ACT 1', room: code });
     await c2('mutation', 'players:activity', { activity: 'CO-OP ACT 1', room: code });
-    ok(typeof r1 === 'number' && await until(() => np.some(g => g.what === 'CO-OP ACT 1' && g.names.length === 2 && g.seen > 0)), 'two partners in one room: one NOW PLAYING entry with both names');
-    const oldNp = await c1('query', 'players:nowPlaying', {});
+    ok(typeof r1 === 'number' && await until(() => np.some(g => g.what === 'CO-OP ACT 1' && g.names.length === 1 && g.seen > 0)), 'a member\'s NOW PLAYING lists the partner, not themself');
+    const p1name = (await c1('mutation', 'players:me', {})).name;
+    ok(!np.some(g => g.names.includes(p1name)), 'nowPlayingLive never lists the caller');
+    const liveNp = await A.callConvex(t3, 'query', 'players:nowPlayingLive', { since });
+    ok(liveNp.some(g => g.what === 'CO-OP ACT 1' && g.names.length === 2 && g.seen > 0), 'two partners in one room: one NOW PLAYING entry with both names (to a non-member)');
+    const oldNp = await A.callConvex(t3, 'query', 'players:nowPlaying', {});
     ok(oldNp.some(g => g.what === 'CO-OP ACT 1' && g.names.length === 2 && g.seen === undefined), 'older clients\' players:nowPlaying lists the new rows too (same shape as before)');
     await c2('mutation', 'players:presence', { activity: 'ACT 3 MUDKIP' }); // (an older client: the players row)
     ok(await until(() => np.some(g => g.what === 'ACT 3 MUDKIP')), 'an older client\'s players:presence shows on nowPlayingLive');

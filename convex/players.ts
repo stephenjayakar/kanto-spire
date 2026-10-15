@@ -158,14 +158,15 @@ export const presence = mutation({
 
 // Who is in a run since `since`: newer clients' playerActivity rows and older clients' players.lastSeen, one entry
 // per trainer (the newest), grouped by co-op room. -> [{ names, what, seen }] newest first (seen: the group's newest
-// keepalive, server time)
-async function nowGroups(ctx: QueryCtx, since: number) {
+// keepalive, server time). `me` (the caller's own player) is never listed, on any device or tab: NOW PLAYING is who
+// ELSE is playing. (A co-op room you are in still lists your partners.)
+async function nowGroups(ctx: QueryCtx, since: number, me: Id<"players"> | null) {
   const rows = await ctx.db.query("playerActivity").withIndex("by_lastSeen", (q) => q.gte("lastSeen", since)).order("desc").take(NOW_LIMIT);
   const legacy = await ctx.db.query("players").withIndex("by_lastSeen", (q) => q.gte("lastSeen", since)).order("desc").take(NOW_LIMIT);
   const seenBy = new Map<string, { name: string; what: string; room?: string; seen: number }>();
-  for (const r of rows) seenBy.set(r.playerId, { name: r.name, what: r.activity, room: r.room, seen: r.lastSeen });
+  for (const r of rows) if (r.playerId !== me) seenBy.set(r.playerId, { name: r.name, what: r.activity, room: r.room, seen: r.lastSeen });
   for (const p of legacy) {
-    if (!p.activity || !p.lastSeen) continue;
+    if (!p.activity || !p.lastSeen || p._id === me) continue;
     const had = seenBy.get(p._id);
     if (!had || had.seen < p.lastSeen) seenBy.set(p._id, { name: p.name, what: p.activity, room: p.activityRoom, seen: p.lastSeen });
   }
@@ -184,8 +185,10 @@ async function nowGroups(ctx: QueryCtx, since: number) {
 export const nowPlaying = query({
   args: {},
   handler: async (ctx) => {
-    if (!(await currentUser(ctx))) return [];
-    return (await nowGroups(ctx, Date.now() - NOW_WINDOW_MS)).map(({ names, what }) => ({ names, what }));
+    const user = await currentUser(ctx);
+    if (!user) return [];
+    const me = (await playerFor(ctx, user))?._id ?? null;
+    return (await nowGroups(ctx, Date.now() - NOW_WINDOW_MS, me)).map(({ names, what }) => ({ names, what }));
   },
 });
 
@@ -227,7 +230,9 @@ export const activity = mutation({
 export const nowPlayingLive = query({
   args: { since: v.number() },
   handler: async (ctx, { since }) => {
-    if (!(await currentUser(ctx))) return [];
-    return await nowGroups(ctx, Number.isFinite(since) ? since : 0);
+    const user = await currentUser(ctx);
+    if (!user) return [];
+    const me = (await playerFor(ctx, user))?._id ?? null;
+    return await nowGroups(ctx, Number.isFinite(since) ? since : 0, me);
   },
 });
