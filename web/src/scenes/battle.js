@@ -10,7 +10,7 @@ import { COMBOS } from '../game/hands.js';
 import { BOSS_RULES, threatText } from '../game/bosses.js';
 import { CONSUMABLES, BALLS, BADGES } from '../game/items.js';
 import { maxHp, monName, typesOf, isFainted, stats, DECK_RULES, LEGENDARY } from '../game/pokemon.js';
-import { G, saveRun, saveMeta } from '../game/state.js';
+import { G, saveRun, saveMeta, animFast } from '../game/state.js';
 import { Sound } from '../audio/sound.js';
 import { drawTrainer, drawHUD, drawCard, drawCardBack, cardTooltip, drawPartyPanel, drawMon, drawIcon, CARD_W, CARD_H, MessageBox, ChoiceModal, PartyPicker, DeckModal, matchupText, monTooltip, openBattleMenu, consumableDesc, monSprite, drawNoComboTag, STATUS_SEL, ordinal, orderTagWidth, drawOrderTag, ORDER_RULE, foeSprite, foeAnimFrame, FOE_ENTRY, foeEntrySound } from './common.js';
 import { battleFinished } from './flow.js';
@@ -55,7 +55,7 @@ export class BattleScene {
     this.leadSpecies = null;
     this.ballAnim = null;
     clearFx();
-    this.fast = G.meta.settings.fast;
+    this.fast = animFast();
     this.pendingAnim = null;
     MoveAnims.load();
     this.intro();
@@ -570,7 +570,7 @@ export class BattleScene {
 
   // Plays moveKey's FireRed animation (attacker 0 = our lead, 1 = the foe). Resolves to false when there is none.
   async playMoveAnim(moveKey, attacker, moveData) {
-    if (!MoveAnims.ready || G.meta.settings.moveAnims === false || Engine.instant()) return false;
+    if (!MoveAnims.ready || Engine.instant()) return false;
     const move = moveData || this.b.moveData?.(moveKey) || D.moves[moveKey];
     const r = MoveAnims.resolve(moveKey, move, this.cfg.terrain || 'grass');
     if (!r) return false;
@@ -642,7 +642,7 @@ export class BattleScene {
     this.drawHand(ctx);
     this.drawPlayed(ctx);
     // battle speed chip (scenes/instant.js): NORMAL / FAST / INSTANT, saved in the settings (AUTO keeps its own FAST)
-    if (drawSpeedChip(ctx, SCENE_X + SCENE_W - SPEED_CHIP.w - 4, SCENE_Y + 8) && !this.auto) this.fast = G.meta.settings.fast;
+    if (drawSpeedChip(ctx, SCENE_X + SCENE_W - SPEED_CHIP.w - 4, SCENE_Y + 8) && !this.auto) this.fast = animFast();
     drawHUD(ctx, run, { bounce: this.relicBounce, help: true, onMenu: openBattleMenu, battle: this.b, onDeck: () => this.showDeck(), onConsumableClick: (k) => this.useConsumable(k), noToss: true, subtitle: this.cfg.trainer ? this.cfg.trainer.title : (this.cfg.legend || this.cfg.areaName || 'WILD BATTLE') });
     drawFx(ctx, Engine.dt);
     drawFlash(ctx, Engine.dt, W, H);
@@ -1069,7 +1069,7 @@ DECK: cards left in the draw pile / cards in your lead's deck.`, { width: 200 })
       this.autoFaintOk = !!this.b.faintSwitch; // (turned on during a faint pick: keep the lead that was sent out)
       this.fast = true;
     } else {
-      if (!this.b.result) this.fast = G.meta.settings.fast;
+      if (!this.b.result) this.fast = animFast();
       if (why) { this.toast = { text: why, t: 2.4 }; Sound.playSE('se_failure'); }
     }
   }

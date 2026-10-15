@@ -157,7 +157,7 @@ export class SettingsModal extends Modal {
     };
     row('MUSIC', s.music, y + 32, v => { s.music = v; Sound.setMusicVolume(v); saveMeta(); });
     row('SOUND FX', s.sfx, y + 58, v => { s.sfx = v; Sound.setSfxVolume(v); saveMeta(); Sound.playSE('se_select'); });
-    // ANIMATIONS (scenes/instant.js): NORMAL / FAST / INSTANT (battle turns resolve at once). Saved as settings.fast + .instant.
+    // ANIMATIONS (scenes/instant.js): NORMAL / FAST / INSTANT (battle turns resolve at once). Saved as settings.anim (game/state.js).
     const sm = speedMode(s);
     text(ctx, 'ANIMATIONS', x + 14, y + 88, { color: 'white' });
     let sx = x + 110;

@@ -30,7 +30,8 @@ const DEFAULT_META = {
   relicsFound: [], // (v0.5.6) every held item this player has had in a run, solo or co-op (recordRelics; display only)
   runs: [], // {date, starter, ascension, result, act, floor, party:[species], seed}
   totalWins: 0, totalRuns: 0,
-  settings: { music: 0.35, sfx: 0.45, fast: false, instant: false, stereo: true, vol2: true, audioQuality: 'hq', crt: 'off', crtCurve: true, display: 'fill' },
+  // (no `anim` default: migrateAnimSetting tells a save from before it by its absence)
+  settings: { music: 0.35, sfx: 0.45, fast: false, stereo: true, vol2: true, audioQuality: 'hq', crt: 'off', crtCurve: true, display: 'fill' },
 };
 
 export function loadMeta() {
@@ -45,8 +46,37 @@ export function loadMeta() {
   // before this runs) starts over with the Kanto three; the rest of the progress is kept.
   // Ascension unlocks per starter (v0.0.6): rebuilt once from the run history. (No short-circuit: both run.)
   // One Spire (v0.1.0): players with HOENN access keep TREECKO / TORCHIC / MUDKIP (after the starter reset above).
-  if (migrateStarterMeta(G.meta) | migrateAscensionMeta(G.meta) | migrateSpireMeta(G.meta)) saveMeta();
+  if (migrateStarterMeta(G.meta) | migrateAscensionMeta(G.meta) | migrateSpireMeta(G.meta) | migrateAnimSetting(G.meta.settings)) saveMeta();
   return G.meta;
+}
+
+// ---- Settings > ANIMATIONS: NORMAL / FAST / INSTANT (v0.5.21), saved as settings.anim ------------------------------
+// NORMAL: every animation and message at full length. FAST: shorter animations and delays (battles, map, rewards).
+// INSTANT: like FAST outside battle; a battle turn resolves at once with no animation, message or delay
+// (scenes/instant.js). Presentation only: the result of every battle is the same at all three.
+export const ANIM_MODES = ['normal', 'fast', 'instant'];
+export function animMode(s = G.meta?.settings) { return ANIM_MODES.includes(s?.anim) ? s.anim : 'normal'; }
+export function animFast(s = G.meta?.settings) { return animMode(s) !== 'normal'; } // shorter animations: FAST and INSTANT
+export function setAnimMode(mode, s = G.meta.settings) {
+  s.anim = ANIM_MODES.includes(mode) ? mode : 'normal';
+  s.fast = s.anim !== 'normal'; // (mirror for older clients sharing the cloud save, which only know FAST ANIMATIONS)
+  return s.anim;
+}
+// The on/off switches it replaces (true = something changed):
+//   moveAnims (animations on/off, settings-only, never in the menu): on -> NORMAL, off -> FAST
+//   fast (FAST ANIMATIONS on/off, in the menu): on -> FAST, off -> NORMAL; a save with both takes FAST
+//   instant (pre-release builds of this setting): INSTANT
+// Once migrated, `fast` stays in step with `anim`; if an older client flipped FAST ANIMATIONS since, its choice wins.
+export function migrateAnimSetting(s) {
+  if (!s) return false;
+  const before = JSON.stringify([s.anim, s.fast, s.moveAnims, s.instant]);
+  let mode;
+  if (!ANIM_MODES.includes(s.anim)) mode = s.instant === true ? 'instant' : s.moveAnims === false || s.fast === true ? 'fast' : 'normal';
+  else if (!!s.fast !== (s.anim !== 'normal')) mode = s.fast ? 'fast' : 'normal';
+  else mode = s.anim;
+  setAnimMode(mode, s);
+  delete s.moveAnims; delete s.instant;
+  return JSON.stringify([s.anim, s.fast, s.moveAnims, s.instant]) !== before;
 }
 // sync: when the cloud copy follows (net/savesync.js): 'checkpoint' = now, 'defer' = with the next upload,
 // undefined = within half a minute.

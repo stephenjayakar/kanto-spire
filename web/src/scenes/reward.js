@@ -7,7 +7,7 @@ import { burst, floatText, drawFx } from '../engine/fx.js';
 import { D, TYPE_COLORS, speciesName } from '../game/data.js';
 import { maxHp, monName, teachMove, evolve, isFainted, expProgress, knowsMove, movesLearnedAt, replacedCopies } from '../game/pokemon.js';
 import { RELICS, BADGES, CONSUMABLES, badgeIcon } from '../game/items.js';
-import { G, saveRun } from '../game/state.js';
+import { G, saveRun, animFast } from '../game/state.js';
 import { TUNING } from '../game/run.js';
 import { Sound } from '../audio/sound.js';
 import { drawHUD, drawCard, fakeInfo, cardTooltip, drawMon, drawIcon, CARD_W, CARD_H, Modal, ChoiceModal, PartyPicker, MoveReplaceModal, monTooltip, consumableDesc, drawMiniCard } from './common.js';
@@ -86,7 +86,7 @@ export class RewardScene {
     // (busy is always released: an error here must not leave the rewards unclickable)
     try {
       const o = { k: 0 };
-      if (this.expResults.length) { Sound.playSE('se_exp'); await tween(o, { k: 1 }, G.meta.settings.fast ? 0.4 : 1.0); }
+      if (this.expResults.length) { Sound.playSE('se_exp'); await tween(o, { k: 1 }, animFast() ? 0.4 : 1.0); }
       this.expAnim = 1;
       const leveled = this.expResults.filter(r => r.events.some(e => e.type === 'level'));
       if (leveled.length) { await Sound.playFanfare('mus_level_up'); }
@@ -269,7 +269,7 @@ export class RewardScene {
     drawFx(ctx, Engine.dt);
     drawTips(ctx);
   }
-  expAnimK() { return Math.min(1, this.t / (G.meta.settings.fast ? 0.4 : 1.0)); }
+  expAnimK() { return Math.min(1, this.t / (animFast() ? 0.4 : 1.0)); }
 }
 
 export function pick(modal) { return new Promise(res => { modal.onClose = res; pushOverlay(modal); }); }
@@ -333,7 +333,7 @@ class EvolutionModal extends Modal {
     await wait(0.8);
     Sound.playBGM('mus_evolution');
     this.phase = 1;
-    const dur = G.meta.settings.fast ? 2.5 : 5;
+    const dur = animFast() ? 2.5 : 5;
     const t0 = Engine.time;
     while (Engine.time - t0 < dur) {
       if (this.cancelled) break;

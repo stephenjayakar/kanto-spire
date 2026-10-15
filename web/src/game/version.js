@@ -9,8 +9,10 @@ export const PATCH_NOTES = [
     v: 'v0.5.21',
     sections: [
       ['NEW', [
-        'INSTANT battle speed: SETTINGS > ANIMATIONS is now NORMAL / FAST / INSTANT. On INSTANT a battle turn resolves at once (no move animations, messages or sound effects) and you are straight back to your next turn with every effect applied. Same battle, same damage, same luck: only the show is skipped. Solo and co-op',
-        'A BATTLE SPEED chip in the top-right corner of every battle cycles NORMAL / FAST / INSTANT on the spot. Your choice is saved with your settings',
+        'SETTINGS > ANIMATIONS replaces the FAST ANIMATIONS on/off switch with three speeds. NORMAL: every animation at full length. FAST: shorter animations and delays. INSTANT: a battle turn resolves at once (no move animations, messages or sound effects) and you are straight back to your next turn with every effect applied',
+        'Same battle, same damage, same luck at every speed: only the show changes. Solo and co-op',
+        'An ANIMATIONS chip in the top-right corner of every battle cycles NORMAL / FAST / INSTANT on the spot. Your choice is saved with your settings',
+        'Your old choice carries over: FAST ANIMATIONS ON becomes FAST, OFF stays NORMAL (and animations turned off becomes FAST)',
       ]],
     ],
   },

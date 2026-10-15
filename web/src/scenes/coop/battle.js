@@ -14,7 +14,7 @@ import { COMBOS } from '../../game/hands.js';
 import { BOSS_RULES, threatText } from '../../game/bosses.js';
 import { CONSUMABLES, BADGES } from '../../game/items.js';
 import { maxHp, monName, typesOf, isFainted, DECK_RULES, LEGENDARY } from '../../game/pokemon.js';
-import { G, saveMeta } from '../../game/state.js';
+import { G, saveMeta, animFast } from '../../game/state.js';
 import { Sound } from '../../audio/sound.js';
 import { drawTrainer, drawHUD, drawCard, drawCardBack, cardTooltip, drawPartyPanel, drawMon, drawIcon, CARD_W, CARD_H, MessageBox, ChoiceModal, PartyPicker, DeckModal, openBattleMenu, monTooltip, Modal, drawNoComboTag, STATUS_SEL, ordinal, orderTagWidth, drawOrderTag, ORDER_RULE } from '../common.js';
 import { terrainImage, playedRowPos, TRAINER_LINGER, skippableWait, pollSkip, pileInput, drawPileTip, PILE_X, PILE_Y } from '../battle.js';
@@ -89,7 +89,7 @@ export class CoopBattleScene {
   enter() {
     this.t = 0;
     this.msg = new MessageBox();
-    this.fast = G.meta.settings.fast;
+    this.fast = animFast();
     this.pendingAnim = null; this.animInv = null;
     MoveAnims.load();
     this.q = [];
@@ -317,7 +317,7 @@ export class CoopBattleScene {
     ];
   }
   async playCoopAnim(moveKey, p, slot, attacker, moveData) {
-    if (!MoveAnims.ready || G.meta.settings.moveAnims === false || Engine.instant() || slot === null || slot === undefined || this.q.length > 40) return false;
+    if (!MoveAnims.ready || Engine.instant() || slot === null || slot === undefined || this.q.length > 40) return false;
     const move = moveData || (D.moves[moveKey] ? { ...D.moves[moveKey], key: moveKey } : null);
     const r = MoveAnims.resolve(moveKey, move, this.cfg.terrain || 'grass');
     if (!r) return false;
@@ -1019,7 +1019,7 @@ export class CoopBattleScene {
     this.drawHand(ctx);
     this.drawPlayed(ctx);
     // battle speed chip (scenes/instant.js): NORMAL / FAST / INSTANT, saved in the settings (AUTO keeps its own FAST)
-    if (drawSpeedChip(ctx, SCENE_X + SCENE_W - SPEED_CHIP.w - 4, SCENE_Y + 8) && !this.auto) this.fast = G.meta.settings.fast;
+    if (drawSpeedChip(ctx, SCENE_X + SCENE_W - SPEED_CHIP.w - 4, SCENE_Y + 8) && !this.auto) this.fast = animFast();
     const title = cfg.trainers ? cfg.trainers.map(t => t.title).join(' & ') : cfg.trainer ? cfg.trainer.title : (cfg.legend || cfg.areaName || 'WILD BATTLE');
     const aim = this.duo.locks[me] && !this.duo.locks[me].pass ? this.duo.locks[me].target : this.target;
     drawHUD(ctx, run, { bounce: this.relicBounce, help: true, onMenu: openBattleMenu, battle: this.sub, foe: aim === null || aim === undefined ? null : this.duo.enemyAt(aim), onDeck: () => pushOverlay(new DeckModal({ title: 'YOUR DECKS', battle: this.sub })), onConsumableClick: (k) => this.useConsumable(k), noToss: true, subtitle: (this.many ? 'TEAM · ' : 'DUO · ') + title });
@@ -1737,7 +1737,7 @@ DECK: cards left in the draw pile / cards in your lead's deck.`, { width: 200 })
       this.autoTurn = this.duo?.locks[this.me] ? this.duo.turn : null;
       this.fast = true;
     } else {
-      if (!this.duo?.result) this.fast = G.meta.settings.fast;
+      if (!this.duo?.result) this.fast = animFast();
       if (why) { this.toast = { text: why, t: 2.4 }; Sound.playSE('se_failure'); }
     }
   }
