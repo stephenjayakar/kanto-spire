@@ -17,6 +17,7 @@ import { coopAvailable } from './coop/net.js';
 import { CRT } from '../engine/crt.js';
 import { nowPlaying, stopNowPlaying } from '../net/presence.js';
 import { BasicsModal } from './tutorial.js';
+import { SPEEDS, speedMode, setSpeedMode } from './instant.js';
 
 const CRT_MODES = ['off', 'subtle', 'strong'];
 const DISPLAY_MODES = ['auto', 'pixel', 'fill'];
@@ -156,8 +157,17 @@ export class SettingsModal extends Modal {
     };
     row('MUSIC', s.music, y + 32, v => { s.music = v; Sound.setMusicVolume(v); saveMeta(); });
     row('SOUND FX', s.sfx, y + 58, v => { s.sfx = v; Sound.setSfxVolume(v); saveMeta(); Sound.playSE('se_select'); });
-    text(ctx, 'FAST ANIMATIONS', x + 14, y + 88, { color: 'white' });
-    if (button(ctx, s.fast ? 'ON' : 'OFF', x + 170, y + 84, 60, 20, { color: s.fast ? THEME.green : '#806060' })) { s.fast = !s.fast; saveMeta(); }
+    // ANIMATIONS (scenes/instant.js): NORMAL / FAST / INSTANT (battle turns resolve at once). Saved as settings.anim (game/state.js).
+    const sm = speedMode(s);
+    text(ctx, 'ANIMATIONS', x + 14, y + 88, { color: 'white' });
+    let sx = x + 110;
+    for (const [k, label, body] of SPEEDS) {
+      const bw = k === 'fast' ? 34 : 40;
+      if (button(ctx, label, sx, y + 84, bw, 20, { color: k === sm ? THEME.green : '#506080', font: 'small' }) && k !== sm) setSpeedMode(k, s);
+      if (hover(sx, y + 82, bw, 24)) tip(label, body, { width: 210 });
+      sx += bw + 3;
+    }
+    if (hover(x + 10, y + 82, 98, 24)) tip('ANIMATIONS', SPEEDS.map(([, l, b]) => `${l}: ${b}`).join('\n') + '\nAlso on the chip in the corner of every battle.', { width: 230 });
     text(ctx, 'STEREO', x + 14, y + 112, { color: 'white' });
     if (button(ctx, s.stereo ? 'ON' : 'OFF', x + 170, y + 108, 60, 20, { color: s.stereo ? THEME.green : '#806060' })) { s.stereo = !s.stereo; Sound.setStereo(s.stereo); saveMeta(); }
     // AUDIO STYLE: HQ = the m4a songs mixed in full precision (default); GBA = the same songs through the console's own

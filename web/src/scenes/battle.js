@@ -1,5 +1,5 @@
 // Battle scene: renders the FireRed battle, the card hand, and animates the engine's event stream.
-import { Engine, W, H, hover, clicked, inRect, pushOverlay, tween, Ease, wait, keyPressed, shake, approach } from '../engine/core.js';
+import { Engine, W, H, hover, clicked, inRect, pushOverlay, Ease, wait, keyPressed, shake, approach } from '../engine/core.js';
 import { draw, img, ready, itemPath, trainerPath, tinted, ballSprite } from '../engine/assets.js';
 import { text, textBlock, measure, textFit } from '../engine/font.js';
 import { swirlBackground, BG_THEMES, button, panel, pixBox, rect, drawTips, tip, hpBar, THEME, shade } from '../engine/ui.js';
@@ -10,7 +10,7 @@ import { COMBOS } from '../game/hands.js';
 import { BOSS_RULES, threatText } from '../game/bosses.js';
 import { CONSUMABLES, BALLS, BADGES } from '../game/items.js';
 import { maxHp, monName, typesOf, isFainted, stats, DECK_RULES, LEGENDARY } from '../game/pokemon.js';
-import { G, saveRun, saveMeta } from '../game/state.js';
+import { G, saveRun, saveMeta, animFast } from '../game/state.js';
 import { Sound } from '../audio/sound.js';
 import { drawTrainer, drawHUD, drawCard, drawCardBack, cardTooltip, drawPartyPanel, drawMon, drawIcon, CARD_W, CARD_H, MessageBox, ChoiceModal, PartyPicker, DeckModal, matchupText, monTooltip, openBattleMenu, consumableDesc, monSprite, drawNoComboTag, STATUS_SEL, ordinal, orderTagWidth, drawOrderTag, ORDER_RULE, foeSprite, foeAnimFrame, FOE_ENTRY, foeEntrySound } from './common.js';
 import { battleFinished } from './flow.js';
@@ -19,6 +19,7 @@ import { MoveAnims } from '../anim/player.js';
 import { pickHandAnim, ANIM_SPEED, HAND_START_EVENTS, orderTurnEvents } from '../anim/pick.js';
 import { opaqueBounds, drawStageTags, stageText, switchCostText } from './common.js';
 import { AUTO, autoKey, autoStopInput, manualKey, autoLowHp, drawAutoButton } from './auto.js';
+import { battleTween as tween, instantOn, drawSpeedChip, SPEED_CHIP } from './instant.js';
 
 const SCENE_X = 160, SCENE_Y = 27, SCENE_W = 480, SCENE_H = 200;
 const HAND_Y = 262;
@@ -54,14 +55,17 @@ export class BattleScene {
     this.leadSpecies = null;
     this.ballAnim = null;
     clearFx();
-    this.fast = G.meta.settings.fast;
+    this.fast = animFast();
     this.pendingAnim = null;
     MoveAnims.load();
     this.intro();
   }
 
-  get speed() { return this.fast ? 0.45 : 1; }
-  async wait(s) { await wait(s * this.speed); }
+  get speed() { return Engine.instant() ? 0 : this.fast ? 0.45 : 1; }
+  async wait(s) { if (!Engine.instant()) await wait(s * this.speed); }
+  // Settings > ANIMATIONS > INSTANT (scenes/instant.js): animation time collapses while a turn plays out (busy), not
+  // while the player picks cards, so the hand and buttons move normally between turns.
+  instantPlayback() { return this.busy && instantOn(); }
 
   async intro() {
     const cfg = this.cfg;
@@ -391,6 +395,7 @@ export class BattleScene {
   }
 
   async say(str) {
+    if (Engine.instant()) return; // (INSTANT: the turn's lines are skipped; what they say is on screen once it's over)
     await this.msg.say(str, { auto: this.fast ? 0.35 : 0.9 });
   }
 
@@ -418,6 +423,7 @@ export class BattleScene {
   // ---- input ----------------------------------------------------------------------------
   // FireRed's low-HP beep is a looping SE: start it when the lead drops into the red during this battle.
   syncLowHpAlarm() {
+    if (Engine.instant()) return; // (the beep waits for the end of an INSTANT turn: sound effects are muted until then)
     const lead = this.b.lead();
     const hp = lead ? (this.partyHp[lead.uid] ?? lead.hp) : 0;
     const want = !this.b.result && lead && hp > 0 && hp / maxHp(lead) < 0.25;
@@ -564,7 +570,7 @@ export class BattleScene {
 
   // Plays moveKey's FireRed animation (attacker 0 = our lead, 1 = the foe). Resolves to false when there is none.
   async playMoveAnim(moveKey, attacker, moveData) {
-    if (!MoveAnims.ready || G.meta.settings.moveAnims === false || Engine.noAnim) return false;
+    if (!MoveAnims.ready || Engine.instant()) return false;
     const move = moveData || this.b.moveData?.(moveKey) || D.moves[moveKey];
     const r = MoveAnims.resolve(moveKey, move, this.cfg.terrain || 'grass');
     if (!r) return false;
@@ -635,6 +641,8 @@ export class BattleScene {
     this.drawLeftPanel(ctx);
     this.drawHand(ctx);
     this.drawPlayed(ctx);
+    // battle speed chip (scenes/instant.js): NORMAL / FAST / INSTANT, saved in the settings (AUTO keeps its own FAST)
+    if (drawSpeedChip(ctx, SCENE_X + SCENE_W - SPEED_CHIP.w - 4, SCENE_Y + 8) && !this.auto) this.fast = animFast();
     drawHUD(ctx, run, { bounce: this.relicBounce, help: true, onMenu: openBattleMenu, battle: this.b, onDeck: () => this.showDeck(), onConsumableClick: (k) => this.useConsumable(k), noToss: true, subtitle: this.cfg.trainer ? this.cfg.trainer.title : (this.cfg.legend || this.cfg.areaName || 'WILD BATTLE') });
     drawFx(ctx, Engine.dt);
     drawFlash(ctx, Engine.dt, W, H);
@@ -1061,7 +1069,7 @@ DECK: cards left in the draw pile / cards in your lead's deck.`, { width: 200 })
       this.autoFaintOk = !!this.b.faintSwitch; // (turned on during a faint pick: keep the lead that was sent out)
       this.fast = true;
     } else {
-      if (!this.b.result) this.fast = G.meta.settings.fast;
+      if (!this.b.result) this.fast = animFast();
       if (why) { this.toast = { text: why, t: 2.4 }; Sound.playSE('se_failure'); }
     }
   }
@@ -1173,6 +1181,7 @@ export function terrainImage(cfg) {
 // ---- shared with the co-op battle scene ------------------------------------------------------
 // A display-only wait that a click/tap or key cuts short (the scene's update() calls pollSkip).
 export function skippableWait(scene, sec) {
+  if (sec <= 0 || Engine.instant()) return Promise.resolve();
   return new Promise(res => {
     const w = { res, done: false };
     scene.skipWait = w;

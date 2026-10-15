@@ -165,6 +165,7 @@ async function coop(browser) {
   check('co-op: AUTO does not lock again after UNLOCK', !(await page.evaluate(() => !!window.__coop.game.battle.locks[1])));
   // on again; P1 locks only once P2 has: AUTO must lock exactly once per turn until the battle ends
   await page.keyboard.press('u');
+  await page.waitForFunction(() => window.__engine.Engine.scene.auto, null, { timeout: 5000, polling: 10 }).catch(() => {}); // (the key lands on the next frame)
   const t0 = Date.now();
   let end = null;
   while (Date.now() - t0 < 4 * 60 * 1000) {

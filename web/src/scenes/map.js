@@ -4,7 +4,7 @@ import { draw, img, ready, itemPath, trainerPath } from '../engine/assets.js';
 import { text, textBlock, measure } from '../engine/font.js';
 import { swirlBackground, BG_THEMES, button, panel, pixBox, rect, drawTips, tip, tip as showTip, THEME } from '../engine/ui.js';
 import { D, TYPE_COLORS } from '../game/data.js';
-import { G, saveRun } from '../game/state.js';
+import { G, saveRun, animFast } from '../game/state.js';
 import { reachable, NODE_INFO } from '../game/map.js';
 import { LEGENDS, BIRD_PARTNER } from '../game/acts.js';
 import { regionOf, actTitle, TIME_NAMES } from '../game/regions.js';
@@ -101,7 +101,7 @@ export class MapScene {
   }
   update(dt) {
     this.t += dt;
-    this.msg.update(dt, G.meta.settings.fast);
+    this.msg.update(dt, animFast());
     if (this.walk) this.scroll = this.walk.scroll0 + (this.walk.scroll1 - this.walk.scroll0) * this.walk.o.k;
     else if (Engine.mouse.wheelPx && inMap()) this.scroll = Math.max(0, Math.min((this.mapRun().act.floors + 1) * FLOOR_H - 200, this.scroll - Engine.mouse.wheelPx));
     this.updateSketch();
@@ -475,7 +475,7 @@ export class MapScene {
     const scroll0 = this.scroll;
     const o = { k: 0 };
     this.walk = { x0: fx + 12, y0: fy - scroll0, x1: tx + 12, y1: ty - scroll0, o, scroll0, scroll1: Math.max(0, (n.floor + 1) * FLOOR_H - 140) };
-    const dur = G.meta.settings.fast ? 0.3 : 0.6;
+    const dur = animFast() ? 0.3 : 0.6;
     await tween(o, { k: 1 }, dur, Ease.inOutQuad);
     this.scroll = this.walk.scroll1;
     this.walk = null;

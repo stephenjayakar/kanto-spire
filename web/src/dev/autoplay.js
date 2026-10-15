@@ -1,7 +1,7 @@
 // Dev-only autoplayer: drives the real scenes through a run to smoke-test UI flow.
 // Usage in console: import('/src/dev/autoplay.js').then(m => m.start({ speed: 4 }))
 import { Engine, popOverlay, topOverlay } from '../engine/core.js';
-import { G } from '../game/state.js';
+import { G, setAnimMode } from '../game/state.js';
 import { D } from '../game/data.js';
 import { regionOf } from '../game/regions.js';
 import { reachable } from '../game/map.js';
@@ -103,7 +103,7 @@ function step() {
 }
 
 export function start(opts = {}) {
-  G.meta.settings.fast = true;
+  if (G.meta.settings.anim !== 'instant') setAnimMode('fast'); // (FAST, or INSTANT if that is picked)
   Engine.timeScale = opts.speed || 4;
   stop();
   timer = setInterval(step, opts.interval || 120);

@@ -2,9 +2,20 @@
 // Game version and patch notes (shown from the title screen). Versions are major.minor.patch: every production
 // deploy that changes the game bumps the patch (v0.2.0 -> v0.2.1); the owner calls minor bumps (v0.1.x -> v0.2.0);
 // no major bumps yet. Each one gets a new top PATCH_NOTES entry; see AGENTS.md.
-export const VERSION = 'v0.5.20';
+export const VERSION = 'v0.5.21';
 
 export const PATCH_NOTES = [
+  {
+    v: 'v0.5.21',
+    sections: [
+      ['NEW', [
+        'SETTINGS > ANIMATIONS replaces the FAST ANIMATIONS on/off switch with three speeds. NORMAL: every animation at full length. FAST: shorter animations and delays. INSTANT: a battle turn resolves at once (no move animations, messages or sound effects) and you are straight back to your next turn with every effect applied',
+        'Same battle, same damage, same luck at every speed: only the show changes. Solo and co-op',
+        'An ANIMATIONS chip in the top-right corner of every battle cycles NORMAL / FAST / INSTANT on the spot. Your choice is saved with your settings',
+        'Your old choice carries over: FAST ANIMATIONS ON becomes FAST, OFF stays NORMAL (and animations turned off becomes FAST)',
+      ]],
+    ],
+  },
   {
     v: 'v0.5.20',
     sections: [
