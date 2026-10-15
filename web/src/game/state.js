@@ -30,7 +30,7 @@ const DEFAULT_META = {
   relicsFound: [], // (v0.5.6) every held item this player has had in a run, solo or co-op (recordRelics; display only)
   runs: [], // {date, starter, ascension, result, act, floor, party:[species], seed}
   totalWins: 0, totalRuns: 0,
-  settings: { music: 0.35, sfx: 0.45, fast: false, stereo: true, vol2: true, audioQuality: 'hq', crt: 'off', crtCurve: true, display: 'fill' },
+  settings: { music: 0.35, sfx: 0.45, fast: false, instant: false, stereo: true, vol2: true, audioQuality: 'hq', crt: 'off', crtCurve: true, display: 'fill' },
 };
 
 export function loadMeta() {

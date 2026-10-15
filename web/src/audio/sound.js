@@ -260,6 +260,8 @@ function resolveCryIndex(species, opts) {
 }
 
 export const Sound = {
+  /** Optional () => boolean: while it returns true, playSE and playCry do nothing (INSTANT battle turns: scenes/instant.js). */
+  hush: null,
   /**
    * Load the bank and set up the AudioContext + worklet. Safe to call before any user gesture
    * (the context stays suspended until unlock()).
@@ -436,6 +438,7 @@ export const Sound = {
    * Resolves when it finishes.
    */
   playSE(name) {
+    if (Sound.hush?.()) return Promise.resolve(false);
     const s = songInfo(name);
     if (!s) return Promise.resolve(false);
     const tag = state.nextTag++;
@@ -484,6 +487,7 @@ export const Sound = {
    * Resolves when the cry finishes.
    */
   playCry(species, o = {}) {
+    if (Sound.hush?.()) return Promise.resolve(false);
     const wav = typeof species === 'string' && state.wavCry ? state.wavCry(species) : null;
     if (wav) return playWavCry(wav, o).catch(() => false);
     let cryIndex;

@@ -12,8 +12,12 @@ export const Engine = {
   // Dev-only (?noanim=1 on localhost, or set by a test harness): every wait, tween, message and move animation
   // finishes on the next frame, so browser playtests run at the speed of the frame loop. Cosmetic only.
   noAnim: false,
+  // Is animation time collapsed right now? Always under noAnim; otherwise when the scene says so (Settings >
+  // ANIMATIONS > INSTANT: a battle scene returns true from instantPlayback() while it plays out a turn, so its menus
+  // and idle screen keep their normal motion). Read live, not once per frame: a turn starts mid-frame (a click).
+  instant() { return this.noAnim || !!this.scene?.instantPlayback?.(); },
 };
-const NOANIM_SCALE = 1000; // dt multiplier under noAnim: a 50 ms frame counts as 50 s of animation time
+const NOANIM_SCALE = 1000; // dt multiplier while Engine.instant(): a 50 ms frame counts as 50 s of animation time
 try {
   if (typeof location !== 'undefined' && /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname) && /^(1|true|)$/.test(new URLSearchParams(location.search).get('noanim') ?? 'x')) Engine.noAnim = true;
 } catch { /* no location */ }
@@ -130,7 +134,7 @@ export function initEngine(canvas) {
   const loop = (now) => {
     const rawDt = Math.min(0.05, (now - last) / 1000);
     last = now;
-    Engine.dt = rawDt * (Engine.noAnim ? NOANIM_SCALE : Engine.timeScale);
+    Engine.dt = rawDt * (Engine.instant() ? NOANIM_SCALE : Engine.timeScale);
     Engine.time += Engine.dt;
     Engine.frame++;
     tick(Engine.dt);

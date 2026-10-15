@@ -4,7 +4,7 @@
 // Every input posts an action through session.post(); the lockstep log applies it on both clients, and
 // the events of every applied action (session.battleFeed, copied from game.lastEvents) are animated here
 // in order. The sprites/HP on screen lag the engine until the animation catches up (then reconcile()).
-import { Engine, W, H, hover, clicked, inRect, pushOverlay, tween, Ease, wait, keyPressed, shake, approach } from '../../engine/core.js';
+import { Engine, W, H, hover, clicked, inRect, pushOverlay, Ease, wait, keyPressed, shake, approach } from '../../engine/core.js';
 import { draw, trainerPath, ballSprite } from '../../engine/assets.js';
 import { text, measure, textFit } from '../../engine/font.js';
 import { swirlBackground, BG_THEMES, button, panel, pixBox, rect, drawTips, tip, hpBar, THEME, shade } from '../../engine/ui.js';
@@ -25,6 +25,7 @@ import { pickHandAnim, ANIM_SPEED } from '../../anim/pick.js';
 import { opaqueBounds, monSprite, foeSprite, foeAnimFrame, drawStageTags, stageText, switchCostText } from '../common.js';
 import { tinted } from '../../engine/assets.js';
 import { AUTO, autoKey, autoStopInput, manualKey, autoLowHp, drawAutoButton } from '../auto.js';
+import { battleTween as tween, instantOn, drawSpeedChip, SPEED_CHIP } from '../instant.js';
 
 const SCENE_X = 160, SCENE_Y = 27, SCENE_W = 480, SCENE_H = 200;
 const HAND_Y = 262;
@@ -76,8 +77,11 @@ export class CoopBattleScene {
   get order() { return [this.me, ...this.s.others]; }
   othersLocked() { return this.duo.locks.some((L, q) => q !== this.me && L); }
   get sub() { return this.duo.subs[this.me]; }
-  get speed() { return this.fast ? 0.45 : 1; }
-  async wait(t) { await wait(t * this.speed); }
+  get speed() { return Engine.instant() ? 0 : this.fast ? 0.45 : 1; }
+  async wait(t) { if (!Engine.instant()) await wait(t * this.speed); }
+  // Settings > ANIMATIONS > INSTANT (scenes/instant.js): animation time collapses while the event feed plays out, not
+  // while the player picks cards. Display only: the log and every player's engine state are untouched.
+  instantPlayback() { return (this.running || this.q?.length > 0 || !!this.finishing) && instantOn(); }
   run(p = this.me) { return this.duo.subs[p].run; }
   nameOf(p) { return p === this.me ? 'YOU' : this.s.nameOf(p); }
   isTrainer() { return !!(this.cfg.trainer || this.cfg.trainers) && this.cfg.kind !== 'wild'; }
@@ -262,7 +266,7 @@ export class CoopBattleScene {
   }
   leadCenter(p) { const [x, y] = this.leadPos(p), k = this.leadScale(p) / 2; return [x + 64 * k, y + 52 * k]; }
 
-  async say(str) { await this.msg.say(str, { auto: this.fast ? 0.35 : 0.8 }); }
+  async say(str) { if (!Engine.instant()) await this.msg.say(str, { auto: this.fast ? 0.35 : 0.8 }); } // (INSTANT: skipped)
 
   async activateHand(p) {
     const pp = this.pendingPlays[p];
@@ -313,7 +317,7 @@ export class CoopBattleScene {
     ];
   }
   async playCoopAnim(moveKey, p, slot, attacker, moveData) {
-    if (!MoveAnims.ready || G.meta.settings.moveAnims === false || Engine.noAnim || slot === null || slot === undefined || this.q.length > 40) return false;
+    if (!MoveAnims.ready || G.meta.settings.moveAnims === false || Engine.instant() || slot === null || slot === undefined || this.q.length > 40) return false;
     const move = moveData || (D.moves[moveKey] ? { ...D.moves[moveKey], key: moveKey } : null);
     const r = MoveAnims.resolve(moveKey, move, this.cfg.terrain || 'grass');
     if (!r) return false;
@@ -882,6 +886,7 @@ export class CoopBattleScene {
 
   // ---- update -----------------------------------------------------------------------------------
   syncLowHpAlarm() {
+    if (Engine.instant()) return; // (the beep waits for the end of an INSTANT turn: sound effects are muted until then)
     const d = this.duo;
     const lead = d && !this.meOut() ? this.sub.lead() : null;
     const hp = lead ? (this.partyHp[this.me][lead.uid] ?? lead.hp) : 0;
@@ -1013,6 +1018,8 @@ export class CoopBattleScene {
     this.drawLeftPanel(ctx);
     this.drawHand(ctx);
     this.drawPlayed(ctx);
+    // battle speed chip (scenes/instant.js): NORMAL / FAST / INSTANT, saved in the settings (AUTO keeps its own FAST)
+    if (drawSpeedChip(ctx, SCENE_X + SCENE_W - SPEED_CHIP.w - 4, SCENE_Y + 8) && !this.auto) this.fast = G.meta.settings.fast;
     const title = cfg.trainers ? cfg.trainers.map(t => t.title).join(' & ') : cfg.trainer ? cfg.trainer.title : (cfg.legend || cfg.areaName || 'WILD BATTLE');
     const aim = this.duo.locks[me] && !this.duo.locks[me].pass ? this.duo.locks[me].target : this.target;
     drawHUD(ctx, run, { bounce: this.relicBounce, help: true, onMenu: openBattleMenu, battle: this.sub, foe: aim === null || aim === undefined ? null : this.duo.enemyAt(aim), onDeck: () => pushOverlay(new DeckModal({ title: 'YOUR DECKS', battle: this.sub })), onConsumableClick: (k) => this.useConsumable(k), noToss: true, subtitle: (this.many ? 'TEAM · ' : 'DUO · ') + title });
@@ -1218,6 +1225,7 @@ export class CoopBattleScene {
 
   // Which foe slot the mouse is over (sprite or healthbox/intent row), or null.
   hotFoe() {
+    if (inRect(SCENE_X + SCENE_W - SPEED_CHIP.w - 6, SCENE_Y + 6, SPEED_CHIP.w + 4, SPEED_CHIP.h + 4)) return null; // (the speed chip sits over the back foe)
     for (let slot = 0; slot < 2; slot++) {
       const f = this.foes[slot];
       if (!f || f.faint >= 1 || f.captured) continue;
