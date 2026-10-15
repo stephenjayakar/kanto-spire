@@ -12,9 +12,13 @@ const P2_EMAIL = process.env.E2E_P2_EMAIL || A.P2_EMAIL;
 (async () => {
   console.log(`presence API test against ${A.CONVEX_URL}`);
   if (!process.env.E2E_P2_EMAIL) A.ensureTestUser(A.P2_EMAIL, A.P2_NAME);
-  const [t1, t2] = await Promise.all([A.mintToken(A.P1_EMAIL), A.mintToken(P2_EMAIL)]);
+  const THIRD = 'coop-third@kanto-spire.test'; // (a non-member: sees a room's partners grouped)
+  A.ensureTestUser(THIRD, 'THIRD');
+  const [t1, t2, t3, t1b] = await Promise.all([A.mintToken(A.P1_EMAIL), A.mintToken(P2_EMAIL), A.mintToken(THIRD), A.mintToken(A.P1_EMAIL)]);
   const c1 = (k, f, a) => A.callConvex(t1, k, f, a);
   const c2 = (k, f, a) => A.callConvex(t2, k, f, a);
+  const c3 = (k, f, a) => A.callConvex(t3, k, f, a);
+  const c1b = (k, f, a) => A.callConvex(t1b, k, f, a); // P1 on another device / tab (its own token)
   const me1 = await c1('mutation', 'players:me', {}), me2 = await c2('mutation', 'players:me', {});
   const find = (list, name) => list.find(g => g.names.includes(name));
   let roomId = null;
@@ -30,6 +34,11 @@ const P2_EMAIL = process.env.E2E_P2_EMAIL || A.P2_EMAIL;
     let list = await c2('query', 'players:nowPlaying', {});
     const g1 = find(list, me1.name);
     ok(g1 && g1.what === 'ACT 2 TORCHIC' && g1.names.length === 1, `P1 listed: ${JSON.stringify(g1)}`);
+    // you never see yourself (this tab, or the same account on another device), on either query
+    ok(!find(await c1('query', 'players:nowPlaying', {}), me1.name), 'P1 is not listed to P1');
+    ok(!find(await c1b('query', 'players:nowPlaying', {}), me1.name), 'P1 is not listed to P1 on another device');
+    ok(!find(await c1b('query', 'players:nowPlayingLive', { since: 0 }), me1.name), 'P1 is not on P1\'s nowPlayingLive');
+    ok(find(await c3('query', 'players:nowPlayingLive', { since: 0 }), me1.name), 'P1 is on someone else\'s nowPlayingLive');
     const raw = JSON.stringify(list);
     ok(!raw.includes('@') && !/"(email|_id|id|room|activityRoom|userId)"/.test(raw), 'no emails, ids or room codes in the list');
 
@@ -45,12 +54,15 @@ const P2_EMAIL = process.env.E2E_P2_EMAIL || A.P2_EMAIL;
     await c2('mutation', 'coop:join', { code: r.code });
     await c1('mutation', 'players:presence', { activity: 'CO-OP ACT 1', room: r.code });
     await c2('mutation', 'players:presence', { activity: 'CO-OP ACT 1', room: r.code });
-    list = await c1('query', 'players:nowPlaying', {});
+    list = await c3('query', 'players:nowPlaying', {});
     const gc = find(list, me1.name);
     ok(gc && gc.names.includes(me2.name) && gc.what === 'CO-OP ACT 1', `partners grouped: ${JSON.stringify(gc)}`);
     ok(!JSON.stringify(list).includes(r.code), 'the room code is not sent out');
-    await c2('mutation', 'players:presence', { activity: 'CO-OP ACT 1', room: 'ZZZZZ' });
     list = await c1('query', 'players:nowPlaying', {});
+    const gp = find(list, me2.name);
+    ok(gp && !gp.names.includes(me1.name) && !find(list, me1.name), `a member sees their partner but not themself: ${JSON.stringify(gp)}`);
+    await c2('mutation', 'players:presence', { activity: 'CO-OP ACT 1', room: 'ZZZZZ' });
+    list = await c3('query', 'players:nowPlaying', {});
     ok(find(list, me1.name) !== find(list, me2.name), 'a room you are not in does not group you');
 
     // leaving the run clears you at once
