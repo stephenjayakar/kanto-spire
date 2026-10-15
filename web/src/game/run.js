@@ -101,6 +101,30 @@ export const TUNING = {
   scoring: 'dmg', hpMult: 2.4, itemScale: 1, dmgMult: 0.9,
 };
 
+// (v0.5.22) POKéDEX bias for wild encounters (solo): a target share, in two steps, boosting weights (never lowering):
+// 1. among species not caught yet, those not seen yet get at least DEX_BIAS.unseen of that group's weight, 2. species
+// not caught yet get at least DEX_BIAS.uncaught of the pool's weight. Each group keeps its own internal proportions, each boost is
+// capped at DEX_BIAS.cap, and an area's rare finds keep their usual weight (and don't count toward the shares).
+// A pool where every species is in the same group (e.g. a new player's empty dex) is left exactly as it was.
+export const DEX_BIAS = { uncaught: 0.6, unseen: 0.6, cap: 8 };
+export function dexWeights(pool, baseW, isUnseen, isUncaught) {
+  const w = new Map(pool.map(e => [e, baseW(e)]));
+  const boost = (group, rest, share) => {
+    const g = group.reduce((s, e) => s + w.get(e), 0), r = rest.reduce((s, e) => s + w.get(e), 0);
+    if (!(g > 0) || !(r > 0) || g / (g + r) >= share) return;
+    const m = Math.min(DEX_BIAS.cap, share * r / ((1 - share) * g));
+    for (const e of group) w.set(e, w.get(e) * m);
+  };
+  const common = pool.filter(e => !e.rare);
+  const uncaught = common.filter(isUncaught);
+  boost(uncaught.filter(isUnseen), uncaught.filter(e => !isUnseen(e)), DEX_BIAS.unseen);
+  boost(uncaught, common.filter(e => !isUncaught(e)), DEX_BIAS.uncaught);
+  return w;
+}
+
+// The dexBias snapshot for Run.create: the player's POKéDEX (meta.dexSeen / dexCaught) at the start of a solo run.
+export const dexBiasFrom = (meta) => ({ seen: [...new Set([...(meta?.dexSeen || []), ...(meta?.dexCaught || [])])], caught: [...(meta?.dexCaught || [])] });
+
 export class Run {
   constructor() {}
 
@@ -108,7 +132,7 @@ export class Run {
   // to copy a draw, e.g. co-op's player runs), or a legacy 'kanto' / 'hoenn' world (old saves and tests).
   // champ: the player has beaten a CHAMPION in an earlier run (meta.unlocks.win): CERULEAN CAVE's MEWTWO can show up.
   // summit2: A10's second ELITE FOUR region (regions.js pickSummit2; pass it to copy a draw, e.g. co-op's player runs).
-  static create({ starter = 'CHARMANDER', ascension = 0, seed = null, world = 'kanto', shiny = false, coop = false, pool = null, regions = null, rival = null, champ = false, summit2, nuzlocke = false } = {}) {
+  static create({ starter = 'CHARMANDER', ascension = 0, seed = null, world = 'kanto', shiny = false, coop = false, pool = null, regions = null, rival = null, champ = false, summit2, nuzlocke = false, dexBias = null } = {}) {
     const r = new Run();
     r.abilityRules = 1; // (v0.5.0 abilities: Gen 4 mons use the HGSS ability lists)
     r.seed = seed || randomSeedString();
@@ -128,6 +152,9 @@ export class Run {
     }
     if (summit2) r.summit2 = summit2;
     if (coop) r.coop = true;
+    // (v0.5.22) solo only: the player's POKéDEX at the start of the run (dexBiasFrom), for wildConfig's bias toward
+    // unseen / uncaught species. Co-op never sets it (each player's dex differs; lockstep needs the same picks).
+    r.dexBias = dexBias && !coop ? { seen: [...(dexBias.seen || [])], caught: [...(dexBias.caught || [])] } : null;
     if (coop && nuzlocke) r.coopNuzlocke = true; // (v0.5.14: a co-op NUZLOCKE room; absent everywhere else)
     r.actIndex = 0;
     r.party = [];
@@ -477,7 +504,17 @@ export class Run {
       if (!pool.length) pool = speciesOf(area);
       // ILLUMINATE: rare finds x2; MAGNET PULL: STEEL species x3
       const am = this.mods(), rf = am.rareFindMult || 1, sl = am.steelLure || 1;
-      const e = rng.weighted(pool, e => (e.rate || 1) * (e.rare ? rf : 1) * (sl > 1 && D.species[e.species]?.types?.includes('STEEL') ? sl : 1));
+      const baseW = e => (e.rate || 1) * (e.rare ? rf : 1) * (sl > 1 && D.species[e.species]?.types?.includes('STEEL') ? sl : 1);
+      // (v0.5.22, solo) lean toward species missing from the player's POKéDEX (run.dexBias, dexWeights). Weights only:
+      // still one rng draw, and with no dexBias (co-op, old saves, bots) the pick is exactly what it was.
+      const db = this.dexBias;
+      let e;
+      if (db) {
+        const seenSet = new Set([...(db.seen || []), ...(this.seen || []), ...(this.caughtSpecies || [])]);
+        const caughtSet = new Set([...(db.caught || []), ...(this.caughtSpecies || [])]);
+        const w = dexWeights(pool, baseW, x => !seenSet.has(shownAs(x.species)), x => !caughtSet.has(shownAs(x.species)));
+        e = rng.weighted(pool, x => w.get(x));
+      } else e = rng.weighted(pool, baseW);
       pick = e.species;
       rareFind = !!e.rare;
     }
@@ -1121,6 +1158,7 @@ export class Run {
     const def = (k, v) => { if (o[k] === undefined || o[k] === null && v !== null && typeof v === 'object') o[k] = v; };
     def('ascension', 0);
     def('world', 'kanto');
+    def('dexBias', null); // (v0.5.22) no POKéDEX bias for runs started before it
     // (v0.5.0 abilities) a save from before the Gen 4 ability lists changed: its Gen 4 mons keep the ability they had
     if (!o.abilityRules) {
       for (const m of o.party || []) {

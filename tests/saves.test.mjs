@@ -476,7 +476,8 @@ t('old solo save (v0.3.5) loads, round-trips unchanged and plays on', () => {
   assert.deepEqual(run.moveOffers, {}, 'v0.3.7 default');
   assert.equal(run.legendTaken, null, 'v0.3.25 default: no legendary in this save');
   assert.equal(run.abilityRules, 1, 'abilities prototype: an old save is marked once its Gen 4 mons are pinned');
-  const { moveOffers, legendTaken, abilityRules, ...rest } = JSON.parse(JSON.stringify(run));
+  assert.equal(run.dexBias, null, 'v0.5.22 default: no POKéDEX bias for an old run');
+  const { moveOffers, legendTaken, abilityRules, dexBias, ...rest } = JSON.parse(JSON.stringify(run));
   assert.equal(JSON.stringify(rest), JSON.stringify(fx.save), 'the v0.3.5 fields are unchanged');
   assert.ok(run.party.length >= 1 && run.map && run.rng);
   // a save of this version comes out exactly as it went in, and upgradeJSON is a no-op on it
