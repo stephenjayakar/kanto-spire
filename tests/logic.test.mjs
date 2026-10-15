@@ -12,7 +12,7 @@ import { DuoBattle as DuoBattleT } from '../web/src/game/coop/duo.js';
 import { makeMon, maxHp, gainExp, defaultMoves, canLearn, defaultCopies, replacedCopies, DECK_RULES, NO_PLAYER_MOVES, movesLearnedAt } from '../web/src/game/pokemon.js';
 import { generateMap, reachable } from '../web/src/game/map.js';
 import { ACTS, STARTERS, GEN3_TYPES, BIRDS, LEGENDS, BIRD_PARTNER, counterStarter, KANTO_FINDS } from '../web/src/game/acts.js';
-import { NUZLOCKE_ASC, ASCENSIONS, MAX_ASCENSION, TUNING } from '../web/src/game/run.js';
+import { NUZLOCKE_ASC, ASCENSIONS, MAX_ASCENSION, TUNING, dexWeights, DEX_BIAS } from '../web/src/game/run.js';
 import { unlockShiny, shinyUnlocked } from '../web/src/game/state.js';
 import { HOENN_ACTS, HOENN_FINDS } from '../web/src/game/hoenn.js';
 import { RNG } from '../web/src/game/rng.js';
@@ -2541,6 +2541,71 @@ t('v0.5.7: co-op foes skip useless status moves too (per target player)', () => 
     for (let g = 0; g < 10; g++) assert.ok(k.gauntletConfig(new RNG('k' + g), g).enemies.length >= 1);
     assert.equal(ACTS[3].gauntlet.length, 5, "the shared act data isn't mutated");
     assert.match(ASCENSIONS[10].desc, /ELITE FOUR/);
+  });
+
+  // (v0.5.22) wild encounters lean toward species missing from the player's POKéDEX (solo, run.dexBias)
+  const dexRuns = (dexBias) => ['DXA', 'DXB', 'DXC'].map(seed => Run.create({ seed, world: 'spire', pool: ['kanto', 'hoenn', 'johto'], dexBias }));
+  const wildPicks = (r, n, tag) => {
+    const out = [];
+    for (let a = 0; a < 4; a++) {
+      if (a) r.startAct(a);
+      for (let i = 0; i < n; i++) {
+        const rng = new RNG(`${tag}${a}:${i}`), floor = 1 + (i % (r.act.floors - 1));
+        const c = r.wildConfig(rng, floor);
+        out.push({ sp: c.enemies[0].species, base: c.enemies[0].wildBase, lvl: c.enemies[0].level, hp: c.enemies[0].maxHp, shiny: !!c.enemies[0].shiny, st: rng.state });
+      }
+    }
+    return out;
+  };
+
+  t('v0.5.22 dex bias: no bias data (or a dex where every species is in one group) picks exactly as before', () => {
+    const base = dexRuns(undefined).map(r => wildPicks(r, 40, 'n'));
+    assert.ok(dexRuns(undefined).every(r => r.dexBias === null));
+    const all = Object.keys(D.species);
+    for (const dex of [{ seen: [], caught: [] }, { seen: all, caught: all }, { seen: all, caught: [] }]) {
+      dexRuns(dex).forEach((r, i) => assert.deepEqual(wildPicks(r, 40, 'n'), base[i]));
+    }
+    // co-op never takes a bias (lockstep: each player's dex differs); an old save loads with none
+    assert.equal(Run.create({ seed: 'DXC', coop: true, dexBias: { seen: ['PIDGEY'], caught: [] } }).dexBias, null);
+    const o = JSON.parse(JSON.stringify(dexRuns({ seen: ['PIDGEY'], caught: ['PIDGEY'] })[0]));
+    assert.deepEqual(Run.fromJSON(JSON.parse(JSON.stringify(o))).dexBias, { seen: ['PIDGEY'], caught: ['PIDGEY'] });
+    delete o.dexBias; assert.equal(Run.fromJSON(o).dexBias, null);
+  });
+
+  t('v0.5.22 dex bias: unseen, then uncaught species get their target share; rare finds stay rare', () => {
+    // dexWeights: 4 caught (weight 10 each), 2 seen-uncaught (5), 2 unseen (5), 1 unseen rare find (1)
+    const pool = [...'ABCD'].map(s => ({ species: s, rate: 10 })).concat([...'EFGH'].map(s => ({ species: s, rate: 5 })), [{ species: 'R', rate: 1, rare: true }]);
+    const unseen = e => 'GHR'.includes(e.species), uncaught = e => 'EFGHR'.includes(e.species);
+    const w = dexWeights(pool, e => e.rate, unseen, uncaught), sum = l => l.reduce((s, e) => s + w.get(e), 0);
+    const common = pool.filter(e => !e.rare);
+    assert.ok(Math.abs(sum(common.filter(uncaught)) / sum(common) - DEX_BIAS.uncaught) < 1e-9);
+    assert.ok(Math.abs(sum(common.filter(unseen)) / sum(common.filter(uncaught)) - DEX_BIAS.unseen) < 1e-9);
+    assert.equal(w.get(pool[8]), 1, 'the rare find keeps its weight'); assert.equal(w.get(pool[0]), 10, 'caught species keep theirs');
+    assert.ok(w.get(pool[6]) > w.get(pool[4]) && w.get(pool[4]) > 5, 'unseen > seen-uncaught > before');
+    // never lowers a group that is already over its share; boosts are capped
+    const big = dexWeights(pool, e => e.rate, () => true, uncaught);
+    assert.ok(common.every(e => big.get(e) >= e.rate));
+    const tiny = [{ species: 'X', rate: 1000 }, { species: 'Y', rate: 1 }], tw = dexWeights(tiny, e => e.rate, e => e.species === 'Y', e => e.species === 'Y');
+    assert.equal(tw.get(tiny[1]), DEX_BIAS.cap);
+    // in real runs: with half of each act's species in the dex, unseen species show up far more often
+    const r0 = dexRuns(undefined), plain = r0.flatMap(r => wildPicks(r, 60, 's'));
+    const species = [...new Set(plain.map(p => p.sp))].sort(), half = species.filter((_, i) => i % 2 === 0);
+    const biased = dexRuns({ seen: half, caught: half }).flatMap(r => wildPicks(r, 60, 's'));
+    const share = l => l.filter(p => !half.includes(p.sp)).length / l.length;
+    assert.ok(share(biased) > share(plain) + 0.1, `unseen share ${share(plain).toFixed(2)} -> ${share(biased).toFixed(2)}`);
+  });
+
+  t('v0.5.22 dex bias: the same number of rng draws (levels, shinies and later rolls unchanged)', () => {
+    const plain = dexRuns(undefined).map(r => wildPicks(r, 60, 'd'));
+    const half = [...new Set(plain.flat().map(p => p.sp))].filter((_, i) => i % 2);
+    const biased = dexRuns({ seen: half, caught: half.slice(0, half.length >> 1) }).map(r => wildPicks(r, 60, 'd'));
+    let diff = 0;
+    plain.forEach((l, i) => l.forEach((p, j) => {
+      const b = biased[i][j];
+      assert.equal(b.st, p.st, 'rng state after the encounter'); assert.equal(b.shiny, p.shiny);
+      if (b.base !== p.base) diff++;
+    }));
+    assert.ok(diff > 0, 'the bias changed some picks');
   });
 }
 

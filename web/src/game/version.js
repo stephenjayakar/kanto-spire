@@ -2,9 +2,18 @@
 // Game version and patch notes (shown from the title screen). Versions are major.minor.patch: every production
 // deploy that changes the game bumps the patch (v0.2.0 -> v0.2.1); the owner calls minor bumps (v0.1.x -> v0.2.0);
 // no major bumps yet. Each one gets a new top PATCH_NOTES entry; see AGENTS.md.
-export const VERSION = 'v0.5.21';
+export const VERSION = 'v0.5.22';
 
 export const PATCH_NOTES = [
+  {
+    v: 'v0.5.22',
+    sections: [
+      ['NEW', [
+        'Wild POKéMON now lean toward species missing from your POKéDEX: ones you have never seen turn up most often, then ones you have seen but not caught yet. Every area, solo runs',
+        'Rare finds stay rare, and a POKéDEX that is empty (or complete) plays exactly as before. Co-op is unchanged',
+      ]],
+    ],
+  },
   {
     v: 'v0.5.21',
     sections: [

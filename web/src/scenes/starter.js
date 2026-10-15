@@ -5,7 +5,7 @@ import { text, textBlock } from '../engine/font.js';
 import { swirlBackground, BG_THEMES, button, panel, pixBox, rect, drawTips, tip, THEME } from '../engine/ui.js';
 import { D, TYPE_COLORS } from '../game/data.js';
 import { G, saveRun, saveMeta, shinyUnlocked, SHINY_ASC, hasSavedRun } from '../game/state.js';
-import { Run, ASCENSIONS, familyOf } from '../game/run.js';
+import { Run, ASCENSIONS, familyOf, dexBiasFrom } from '../game/run.js';
 import { STARTERS } from '../game/acts.js';
 import { RELICS } from '../game/items.js';
 import { Sound } from '../audio/sound.js';
@@ -149,7 +149,7 @@ export class StarterScene {
   begin(st) {
     G.meta.lastAscension = this.asc;
     (G.meta.lastAscBy ||= {})[st.species] = this.asc;
-    G.run = Run.create({ starter: st.species, ascension: this.asc, world: SPIRE, pool: unlockedRegions(G.meta), shiny: this.shinyOn(st.species), champ: !!G.meta.unlocks?.win });
+    G.run = Run.create({ starter: st.species, ascension: this.asc, world: SPIRE, pool: unlockedRegions(G.meta), shiny: this.shinyOn(st.species), champ: !!G.meta.unlocks?.win, dexBias: dexBiasFrom(G.meta) });
     saveRun();
     Sound.playCry(st.species);
     goToMap({ intro: true });
