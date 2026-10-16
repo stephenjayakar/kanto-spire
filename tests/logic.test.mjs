@@ -827,6 +827,16 @@ t('ascension: a win unlocks the next level for that starter only', () => {
 {
   globalThis.localStorage ||= { _s: {}, getItem(k) { return this._s[k] ?? null; }, setItem(k, v) { this._s[k] = String(v); }, removeItem(k) { delete this._s[k]; } };
   const st = await import('../web/src/game/state.js');
+  t('v0.6.5 caught mark: a species in the POKéDEX (meta.dexCaught) or caught this run counts, per player meta/run', () => {
+    const meta = { dexCaught: ['PIDGEY', 'GIRATINA'] }, run = { caughtSpecies: ['RATTATA'] };
+    assert.equal(st.hasCaught('PIDGEY', run, meta), true, 'caught in an earlier run');
+    assert.equal(st.hasCaught('RATTATA', run, meta), true, 'caught earlier this run (not in the dex until the run ends)');
+    assert.equal(st.hasCaught('GIRATINA_ORIGIN', run, meta), true, 'a form counts as its species');
+    assert.equal(st.hasCaught('MEWTWO', run, meta), false);
+    assert.equal(st.hasCaught('PIDGEY', run, { dexCaught: [] }), false, "another player's meta (co-op: each sees their own)");
+    assert.equal(st.hasCaught('PIDGEY', null, {}), false, 'old metas without dexCaught');
+    assert.equal(st.hasCaught(null, run, meta), false);
+  });
   t('v0.6.4 OAK map intro: only the first run ever; the flag persists in the meta save; old saves with runs skip it', () => {
     localStorage.removeItem(st.saveKeys.meta);
     st.loadMeta();

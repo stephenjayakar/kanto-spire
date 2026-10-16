@@ -381,7 +381,9 @@ t('legacy: frozen v0323 is v0.3.24 (Ruby/Sapphire HOENN teams, no one-legendary 
   assert.ok(m.ID === 'v0323');
   // a room played on v0.3.24 logic replays exactly on the frozen copy, and its map checkpoint loads into this code
   const stamp = { v: '0.3.24', eng: 'v0323' };
-  const { game, log, cks } = botGame('FRZ323', { stop: (g) => g.world.actIndex >= 1 && g.phase === 'map', stamp, Game: eng.CoopGame });
+  // (stop on an early map checkpoint, as the v040 / v051 tests do: the bots lose this seed's first act boss, and
+  // beating a boss depends on bot strength, which changes)
+  const { game, log, cks } = botGame('FRZ323', { stop: (g) => g.phase === 'map' && g.world.floor >= 4, stamp, Game: eng.CoopGame });
   const g2 = new eng.CoopGame();
   for (const a of log) { g2.apply(clone(a)); if (cks.has(g2.seq)) assert.equal(g2.checksum() >>> 0, cks.get(g2.seq)); }
   assert.equal(g2.checksum() >>> 0, game.checksum() >>> 0);

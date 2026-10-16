@@ -10,14 +10,14 @@ import { COMBOS } from '../game/hands.js';
 import { BOSS_RULES, threatText } from '../game/bosses.js';
 import { CONSUMABLES, BALLS, BADGES } from '../game/items.js';
 import { maxHp, monName, typesOf, isFainted, stats, DECK_RULES, LEGENDARY } from '../game/pokemon.js';
-import { G, saveRun, saveMeta, animFast } from '../game/state.js';
+import { G, saveRun, saveMeta, animFast, hasCaught } from '../game/state.js';
 import { Sound } from '../audio/sound.js';
 import { drawTrainer, drawHUD, drawCard, drawCardBack, cardTooltip, drawPartyPanel, drawMon, drawIcon, CARD_W, CARD_H, MessageBox, ChoiceModal, PartyPicker, DeckModal, matchupText, monTooltip, openBattleMenu, consumableDesc, monSprite, drawNoComboTag, STATUS_SEL, ordinal, orderTagWidth, drawOrderTag, ORDER_RULE, foeSprite, foeAnimFrame, FOE_ENTRY, foeEntrySound } from './common.js';
 import { battleFinished } from './flow.js';
 import { STAT_NAMES, PROTECT_EFFECTS, fmtChance } from '../game/effects.js';
 import { MoveAnims } from '../anim/player.js';
 import { pickHandAnim, ANIM_SPEED, HAND_START_EVENTS, orderTurnEvents } from '../anim/pick.js';
-import { opaqueBounds, drawStageTags, stageText, switchCostText } from './common.js';
+import { opaqueBounds, drawStageTags, stageText, switchCostText, drawCaughtMark, CAUGHT_TIP } from './common.js';
 import { AUTO, autoKey, autoStopInput, manualKey, autoLowHp, drawAutoButton } from './auto.js';
 import { battleTween as tween, instantOn, drawSpeedChip, SPEED_CHIP } from './instant.js';
 import { BattleLog } from './battle_log.js';
@@ -810,7 +810,8 @@ export class BattleScene {
     if (!e) return;
     pixBox(ctx, x, y, 170, 40, '#f8f8d8', '#405050', 4);
     rect(ctx, x + 3, y + 36, 164, 2, '#c8c8a0');
-    const tw = this.drawOrderTagAt(ctx, true, x + 8, y + 5);
+    let tw = this.drawOrderTagAt(ctx, true, x + 8, y + 5);
+    tw += drawCaughtMark(ctx, hasCaught(ed.species), x + 8 + tw, y + 7); // (v0.6.5: caught before)
     textFit(ctx, speciesName(ed.species) + (e.shiny ? ' ★' : ''), x + 8 + tw, y + 3, (e.status ? 84 : 110) - tw, { color: 'dark' });
     if (e.status) draw(ctx, `gfx/ui/status/${e.status === 'TOX' ? 'psn' : e.status.toLowerCase()}.png`, x + 96, y + 5);
     text(ctx, 'Lv' + (ed.level || e.level), x + 164, y + 3, { align: 'right', color: 'dark' });
@@ -893,7 +894,7 @@ export class BattleScene {
     const ab = e.ability ? (D.abilities[e.ability]?.name || e.ability) : '';
     const rule = (e.bossRule && BOSS_RULES[e.bossRule] ? `\n\n${BOSS_RULES[e.bossRule].name}: ${BOSS_RULES[e.bossRule].desc}` : '') + (e.threat ? `\n${threatText(e.threat)}` : '') + (e.forme ? `\nNow in its ${e.forme} FORME.` : '');
     const matchup = matchupText(e.types);
-    tip(`${speciesName(e.species)}  Lv${e.level}`, `${e.types.join('/')}  ·  ${ab}${ab && D.abilities[e.ability] ? ': ' + D.abilities[e.ability].desc : ''}\nATK ${st.atk} DEF ${st.def} SPA ${st.spa} SPD ${st.spd} SPE ${st.spe}${stageText(this.b.sides.enemy.stages)}\nMoves: ${G.run.ascension >= 2 ? '??? (hidden at A2+)' : e.moves.map(m => D.moves[m]?.name).join(', ')}${matchup}${rule}`, { width: 230, accent: TYPE_COLORS[e.types[0]] });
+    tip(`${speciesName(e.species)}  Lv${e.level}`, `${e.types.join('/')}  ·  ${ab}${ab && D.abilities[e.ability] ? ': ' + D.abilities[e.ability].desc : ''}\nATK ${st.atk} DEF ${st.def} SPA ${st.spa} SPD ${st.spd} SPE ${st.spe}${stageText(this.b.sides.enemy.stages)}\nMoves: ${G.run.ascension >= 2 ? '??? (hidden at A2+)' : e.moves.map(m => D.moves[m]?.name).join(', ')}${matchup}${rule}${hasCaught(e.species) ? '\n' + CAUGHT_TIP : ''}`, { width: 230, accent: TYPE_COLORS[e.types[0]] });
   }
 
   drawLeftPanel(ctx) {

@@ -14,7 +14,7 @@ import { COMBOS } from '../../game/hands.js';
 import { BOSS_RULES, threatText } from '../../game/bosses.js';
 import { CONSUMABLES, BADGES } from '../../game/items.js';
 import { maxHp, monName, typesOf, isFainted, DECK_RULES, LEGENDARY } from '../../game/pokemon.js';
-import { G, saveMeta, animFast } from '../../game/state.js';
+import { G, saveMeta, animFast, hasCaught } from '../../game/state.js';
 import { Sound } from '../../audio/sound.js';
 import { drawTrainer, drawHUD, drawCard, drawCardBack, cardTooltip, drawPartyPanel, drawMon, drawIcon, CARD_W, CARD_H, MessageBox, ChoiceModal, PartyPicker, DeckModal, openBattleMenu, monTooltip, Modal, drawNoComboTag, STATUS_SEL, ordinal, orderTagWidth, drawOrderTag, ORDER_RULE } from '../common.js';
 import { terrainImage, playedRowPos, TRAINER_LINGER, skippableWait, pollSkip, pileInput, drawPileTip, PILE_X, PILE_Y } from '../battle.js';
@@ -22,7 +22,7 @@ import { COOP_TUNING } from '../../game/coop/tuning.js';
 import { PCOL, PFONT, drawCoopOverlay, drawPartnerChip, playerStatus, coopToast } from './ui.js';
 import { MoveAnims } from '../../anim/player.js';
 import { pickHandAnim, ANIM_SPEED } from '../../anim/pick.js';
-import { opaqueBounds, monSprite, foeSprite, foeAnimFrame, drawStageTags, stageText, switchCostText } from '../common.js';
+import { opaqueBounds, monSprite, foeSprite, foeAnimFrame, drawStageTags, stageText, switchCostText, drawCaughtMark, CAUGHT_TIP } from '../common.js';
 import { tinted } from '../../engine/assets.js';
 import { AUTO, autoKey, autoStopInput, manualKey, autoLowHp, drawAutoButton } from '../auto.js';
 import { battleTween as tween, instantOn, drawSpeedChip, SPEED_CHIP } from '../instant.js';
@@ -1241,7 +1241,8 @@ export class CoopBattleScene {
     const d = this.duo, e = d.enemies[f.ri];
     const [x, y] = FOE_BOX[slot];
     pixBox(ctx, x, y, FOE_BOX_W, FOE_BOX_H, isTarget ? '#fff8c8' : isHot ? '#f0f0e0' : '#f8f8d8', isTarget ? '#d8a020' : '#405050', 4);
-    const tw = this.drawOrderTagAt(ctx, { slot }, x + 7, y + 4);
+    let tw = this.drawOrderTagAt(ctx, { slot }, x + 7, y + 4);
+    tw += drawCaughtMark(ctx, hasCaught(f.species, this.run()), x + 7 + tw, y + 6); // (v0.6.5: caught before, by this player)
     textFit(ctx, speciesName(f.species) + (f.shiny ? ' ★' : ''), x + 7 + tw, y + 2, (e?.status ? 80 : 104) - tw, { color: 'dark' });
     if (e?.status) draw(ctx, `gfx/ui/status/${e.status === 'TOX' ? 'psn' : e.status.toLowerCase()}.png`, x + 90, y + 4);
     text(ctx, 'Lv' + (f.level || e?.level), x + FOE_BOX_W - 6, y + 2, { align: 'right', color: 'dark' });
@@ -1495,7 +1496,7 @@ export class CoopBattleScene {
     const by = f => all.filter(t => f(typeEffect(t, e.types)));
     const weak4 = by(x => x >= 4), weak = by(x => x === 2), res = by(x => x > 0 && x < 1), imm = by(x => x === 0);
     const matchup = `\n\nWEAK TO: ${[...weak4.map(t => t + ' x4'), ...weak].join(', ') || 'nothing'}\nRESISTS: ${res.join(', ') || 'nothing'}${imm.length ? `\nIMMUNE TO: ${imm.join(', ')}` : ''}`;
-    tip(`${speciesName(e.species)}  Lv${e.level}`, `${e.types.join('/')}  ·  ${ab}${ab && D.abilities[e.ability] ? ': ' + D.abilities[e.ability].desc : ''}\nATK ${st.atk} DEF ${st.def} SPA ${st.spa} SPD ${st.spd} SPE ${st.spe}${coopHp}${stageText(this.duo.enemySides[this.duo.enemies.indexOf(e)]?.stages)}\nMoves: ${this.run().ascension >= 2 ? '??? (hidden at A2+)' : e.moves.map(m => D.moves[m]?.name).join(', ')}${matchup}${rule}${this.canAct() ? '\n\nClick to target it.' : ''}`, { width: 230, accent: TYPE_COLORS[e.types[0]] });
+    tip(`${speciesName(e.species)}  Lv${e.level}`, `${e.types.join('/')}  ·  ${ab}${ab && D.abilities[e.ability] ? ': ' + D.abilities[e.ability].desc : ''}\nATK ${st.atk} DEF ${st.def} SPA ${st.spa} SPD ${st.spd} SPE ${st.spe}${coopHp}${stageText(this.duo.enemySides[this.duo.enemies.indexOf(e)]?.stages)}\nMoves: ${this.run().ascension >= 2 ? '??? (hidden at A2+)' : e.moves.map(m => D.moves[m]?.name).join(', ')}${matchup}${rule}${hasCaught(e.species, this.run()) ? '\n' + CAUGHT_TIP : ''}${this.canAct() ? '\n\nClick to target it.' : ''}`, { width: 230, accent: TYPE_COLORS[e.types[0]] });
   }
 
   drawLeftPanel(ctx) {

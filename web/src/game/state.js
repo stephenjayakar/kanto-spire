@@ -120,6 +120,15 @@ export function unlockShiny(run, meta = G.meta) {
 }
 export function shinyUnlocked(species, meta = G.meta) { return (meta?.shinies || []).includes(familyOf(species)); }
 
+// (v0.6.5) A species this player has caught before: their POKéDEX (meta.dexCaught, every finished run, solo and co-op)
+// plus this run's catches (run.caughtSpecies; recordDex adds them at the run's end). Forms count as their species.
+export function hasCaught(species, run = G.run, meta = G.meta) {
+  if (!species) return false;
+  const base = String(species).replace(/_ORIGIN$/, '');
+  const has = (l) => Array.isArray(l) && (l.includes(species) || l.includes(base));
+  return has(meta?.dexCaught) || has(run?.caughtSpecies);
+}
+
 export function recordDex(run) {
   const m = G.meta;
   for (const s of run.seen) if (!m.dexSeen.includes(s)) m.dexSeen.push(s);

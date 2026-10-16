@@ -353,6 +353,15 @@ export function cardTooltip(info, x, y, above = false) {
 
 // ---- move order tags (the healthboxes' "1st" / "2nd" in solo and co-op battles) ----------------------------------
 export function ordinal(n) { const t = n % 100; return n + (t >= 11 && t <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th'); }
+// (v0.6.5) The mainline games' "caught" POKé BALL left of a foe's name (FireRed's 8x8 ball_caught). Returns the width
+// it takes (0 when not caught), so the name shifts right by that much.
+export const CAUGHT_TIP = 'You have caught this POKéMON before (it is in your POKéDEX).';
+export function drawCaughtMark(ctx, caught, x, y) {
+  if (!caught) return 0;
+  draw(ctx, 'gfx/ui/battle/ball_caught.png', x, y);
+  if (hover(x - 1, y - 1, 10, 10)) tip('CAUGHT', CAUGHT_TIP);
+  return 10;
+}
 export function orderTagWidth(label) { return measure(label, 'small') + 6; }
 // A small pill (gold when it acts first); returns its width.
 export function drawOrderTag(ctx, label, x, y, first) {
