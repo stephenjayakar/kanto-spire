@@ -312,7 +312,8 @@ export function convert(trace, opts = {}) {
       let env;
       if (ch === 3) {
         const code = n.cgb === 3 ? 2 : 1;
-        env = (code << 4) | (opts.wave ?? (n.cgb === 3 ? 2 : 4));
+        // opts.waveFor(note) -> a wave sample index (0-15) per note's voice, or undefined for the default
+        env = (code << 4) | ((opts.waveFor && opts.waveFor(n)) ?? opts.wave ?? (n.cgb === 3 ? 2 : 4));
       } else {
         const v = Math.max(2, Math.min(15, Math.round(vmax[ch] * Math.min(1.25, n.amp / ref[ch]))));
         env = (v << 4) | decayFor(n, v);

@@ -15,8 +15,8 @@ const CACHE = 'kanto-spire-packs';
 const PARALLEL = 4;
 const pending = []; // lazy packs still loading: { dirs: ['sound/', ...], done: Promise }
 // Lazy packs that are NOT fetched in the background: only when something asks for one of their files (the RETRO music
-// bank: only players who pick AUDIO STYLE: RETRO download it).
-const ON_DEMAND = new Set(['retro']);
+// banks: only players who pick AUDIO STYLE: RETRO download them; retro_sinnoh = the Game Boy conversions of Platinum's songs).
+const ON_DEMAND = new Set(['retro', 'retro_sinnoh']);
 
 // downloaded: bytes fetched from the server this session (0 when everything came from the cache)
 export const Packs = { active: false, downloaded: 0, background: null };

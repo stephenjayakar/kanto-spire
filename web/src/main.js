@@ -69,13 +69,14 @@ async function boot() {
     Sound.addBank('assets/sound/emerald/', EM).then(ok => { if (ok) console.log('[sound] Emerald music bank loaded'); });
     // the Gen 4 species' cries (not in FireRed's bank): their HGSS samples (D.species[key].cryWav, game/gen4.js)
     Sound.setWavCries(key => { const w = D.species[key]?.cryWav; return w ? 'assets/' + w : null; });
-    // AUDIO: RETRO plays Pokemon Red's / Silver's own songs, and Game Boy conversions of Emerald's in HOENN acts
+    // AUDIO: RETRO plays Pokemon Red's / Silver's own songs, and Game Boy conversions of Emerald's in HOENN acts and of
+    // Platinum's in SINNOH acts (tools/hoenn_chip, tools/sinnoh_chip)
     // (audio/retro.js picks one per request; the lazy 'retro' pack, loaded only once someone picks RETRO). Display
     // only, like the Emerald music.
     Sound.setRetroResolver((name, ctx) => {
       const act = G.coop?.game?.world?.act || G.run?.act || null;
-      let tod = null; // (JOHTO's time of day picks the night wild-battle theme; a read, no game state touched)
-      if (act?.region === 'johto' && !G.coop) { try { tod = G.run.timeOfDay(); } catch { tod = null; } }
+      let tod = null; // (JOHTO's / SINNOH's time of day picks the night themes; a read, no game state touched)
+      if ((act?.region === 'johto' || act?.region === 'sinnoh') && !G.coop) { try { tod = G.run.timeOfDay(); } catch { tod = null; } }
       const song = retroSong(act, name, ctx, { tod, has: (s) => Sound.retroHas(s) });
       return song ? { song, next: RETRO_NEXT[song] || null } : null;
     });

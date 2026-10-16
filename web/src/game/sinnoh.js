@@ -12,8 +12,8 @@
 //
 // Trainer pics: 'platinum/<name>' = a Platinum portrait extracted by tools/extract_platinum.py into
 // web/assets/gfx/trainers/platinum/ (gitignored, lazy 'sinnoh' asset pack); engine/assets.js shows a FireRed stand-in
-// until it's there. Music: FireRed's songs (the Notion plan's option C); Platinum's own soundtrack needs an NDS
-// sequencer the game doesn't have yet.
+// until it's there. Music: FireRed's songs (the Notion plan's option C) in AUDIO HQ / GBA; AUDIO RETRO plays Game
+// Boy conversions of Platinum's own songs (tools/sinnoh_chip, audio/sinnoh_retro.js).
 //
 // GIRATINA ORIGIN FORME: a boss-only species key (GIRATINA_ORIGIN, applySinnoh below; Platinum's personal entry 501:
 // Altered's ATTACK / SP. ATK swapped with its DEFENSE / SP. DEF, LEVITATE) for the DISTORTION WORLD's final boss. It has

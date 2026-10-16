@@ -23,7 +23,8 @@ Player-facing rules: [docs/GAME.md](docs/GAME.md).
     `pip install ndspy`, for the Johto trainer portraits. Without it, Johto trainers have no portrait.
   - **Pokémon Platinum ROM** (USA Rev 1, SHA1 `0862ec35b24de5c7e2dcb88c9eea0873110d755c`, or Rev 0,
     `ce81046eda7d232513069519cb2085349896dec7`) plus `pip install ndspy`, for the Sinnoh trainer portraits, walkers and
-    Giratina's Origin Forme. Without it, Sinnoh trainers show FireRed stand-ins.
+    Giratina's Origin Forme, and (with Node only) the Game Boy versions of Platinum's songs that AUDIO STYLE: RETRO plays
+    in Sinnoh acts (`node tools/sinnoh_chip/build_bank.mjs`). Without it, Sinnoh trainers show FireRed stand-ins.
   - **Pokémon Emerald ROM** (USA, SHA1 `f3ae088181bf583e55daf962a92bb46f4f1d07b7`) plus the
     [pret/pokeemerald](https://github.com/pret/pokeemerald) decomp cloned into `pokeemerald/`, for Hoenn's music
     (Emerald's soundtrack in Hoenn acts), Emerald's trainer portraits, front sprites and Hoenn boss walkers. Without
@@ -52,6 +53,7 @@ python tools/extract_platinum.py path/to/platinum.nds  # optional: Sinnoh portra
 git clone --depth 1 https://github.com/pret/pokeemerald          # optional: Emerald (Hoenn) music and art
 python tools/extract_emerald.py path/to/emerald.gba  # -> web/assets/sound/emerald, web/assets/gfx/**/emerald
 node tools/extract_retro_music.mjs --red pokered.gb --silver pokesilver.gbc  # optional: AUDIO STYLE RETRO -> web/assets/retro
+node tools/sinnoh_chip/build_bank.mjs  # optional: RETRO's Sinnoh songs from rom/platinum.nds -> web/assets/retro_sinnoh
 
 node serve.cjs 8080              # open http://localhost:8080
 ```

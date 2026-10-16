@@ -40,7 +40,7 @@ There is no world select any more. Before v0.1.0 a run was either the Kanto worl
 - **Rival:** BARRY, if your starter is TURTWIG, CHIMCHAR or PIPLUP (unlockable starters, like Johto's three).
 - **Giratina's Origin Forme** is a boss-only form (no Pokédex entry of its own; seeing it counts as Giratina). The catchable Giratina is the Altered Forme (rare legendary elite).
 - **Content caps.** Regions say which content they need (`web/src/game/caps.js`): Sinnoh needs `sinnoh` + `gen4`, Johto needs `johto`, Kanto and Hoenn nothing. A cap names content, not a ROM: `gen4` comes from HeartGold or Platinum. The hosted build turns a cap on when the server has its asset pack; runs store the caps they need (`run.requires`). Mechanics never depend on the ROM: teams, pools and stats are committed data.
-- **Music:** Sinnoh acts play FireRed's songs for now (Platinum's soundtrack needs an NDS sequencer the game doesn't have).
+- **Music:** Sinnoh acts play FireRed's songs in AUDIO STYLE HQ and GBA. In RETRO they play Game Boy versions of Platinum's own songs (routes and towns by the act's places, day and night, every battle theme, the encounter themes and the jingles), arranged automatically from the player's Platinum ROM (`tools/sinnoh_chip`); without that bank, RETRO uses Pokémon Silver songs instead.
 
 ## Ascensions
 

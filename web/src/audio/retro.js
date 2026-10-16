@@ -8,11 +8,15 @@
 //   - HOENN: Emerald's own song as a Game Boy song ('hoenn:mus_route101': tools/hoenn_chip converts Emerald's
 //     sequences into Gold/Silver-format songs, the retro bank's 'hoenn' game); with a bank that lacks them, the
 //     closest Silver (or Red) song by mood (EMERALD below);
+//   - SINNOH: Platinum's own song as a Game Boy song ('sinnoh:SEQ_ROAD_A_D': tools/sinnoh_chip converts Platinum's
+//     sequences, the separate on-demand 'retro_sinnoh' bank; audio/sinnoh_retro.js picks the song); with a bank that
+//     lacks one, the Silver (or Red) stand-in like any non-KANTO region;
 //   - a song with no sensible match returns null: the normal GBA song plays.
 // Song ids are '<game>:<pret label>' ('red:Routes1', 'silver:Route29'); SFX_* are the games' jingles.
 //
-// Pure module (no game imports besides the Emerald table): main.js passes the act, tests read the tables.
+// Pure module (no game imports besides the Emerald and Platinum tables): main.js passes the act, tests read the tables.
 import { hoennSong, HOENN_SONG_SET } from './emerald.js';
+import { sinnohSong, sinnohRetro, SINNOH_SONG_SET } from './sinnoh_retro.js';
 
 // ---- Pokemon Red, by FireRed song ------------------------------------------------------------------------------------
 export const RED = {
@@ -133,11 +137,10 @@ const pick = (list, prog) => list[Math.min(list.length - 1, Math.floor(Math.max(
 
 // The Game Boy song for FireRed song `name` (or null: play the GBA one).
 // act: the current act (null outside a run); ctx: what the scene passed to playBGM/playFanfare (the battle config,
-// { map: progress }, { event: id }); env: { tod: 'morn' | 'day' | 'nite' | null (JOHTO's time of day),
-// has: name -> whether the loaded bank has that song (absent: assume the HOENN conversions are there) }.
+// { map: progress }, { event: id }); env: { tod: 'morn' | 'day' | 'nite' | null (JOHTO's / SINNOH's time of day),
+// has: name -> whether the loaded bank has that song (absent: assume the HOENN / SINNOH conversions are there) }.
 export function retroSong(act, name, ctx = null, env = {}) {
   if (!name) return null;
-  if (ANY[name]) return ANY[name];
   // the title and the starter pick are outside any act (G.run may still hold the last run): always Red's
   if (name === 'mus_title') return 'red:TitleScreen';
   if (name === 'mus_oak_lab') return 'red:OaksLab';
@@ -145,6 +148,12 @@ export function retroSong(act, name, ctx = null, env = {}) {
   const gauntlet = !!battle && battle.gauntlet !== undefined && battle.gauntlet !== null;
   let region = act ? act.region : 'kanto';
   if (act && (gauntlet || name === 'mus_hall_of_fame')) region = (gauntlet && act.summits?.[battle.gauntlet]) || act.summit || act.region; // (A10: the 2nd ELITE FOUR's region)
+  // SINNOH: Platinum's song when the bank has its conversion; else on to the Silver stand-ins below
+  if (region === 'sinnoh') {
+    const pl = sinnohSong(act, name, ctx, env);
+    if (pl && (!env.has || env.has(sinnohRetro(pl)))) return sinnohRetro(pl);
+  }
+  if (ANY[name]) return ANY[name];
   if (ctx && ctx.event && RETRO_EVENT[ctx.event] && region !== 'kanto') return RETRO_EVENT[ctx.event];
 
   if (region === 'hoenn') {
@@ -186,6 +195,10 @@ export const RETRO_SONG_SET = new Set([
   ...[...HOENN_SONG_SET].map(hoennRetro),
   'silver:RivalBattle', 'silver:RocketBattle', 'silver:JohtoWildBattleNight', 'silver:ChampionBattle',
 ]);
+// ... and the SINNOH songs, which live in their own bank (the 'retro_sinnoh' pack; tests/retro_sinnoh.test.mjs):
+// RETRO_SONG_SET stays the Red / Silver / HOENN bank's list. (A catch plays Platinum's wild victory loop at once,
+// so the SINNOH songs need no RETRO_NEXT hand-over.)
+export const SINNOH_RETRO_SET = new Set([...SINNOH_SONG_SET].map(sinnohRetro));
 
 // ---- RETRO MIX: how the Game Boy engine sounds (gb-core.js MIXES; every mix plays exactly the same notes) -------------
 // RETRO_MIX_PICKER on: SETTINGS shows a RETRO MIX row (A / B / C) while RETRO is picked, saved in this browser only.

@@ -42,11 +42,13 @@ const POKEMON_BUCKETS = 8;
 const SKIP = ['hgss_music'];
 // (retro: the AUDIO STYLE: RETRO Game Boy music bank, tools/extract_retro_music.mjs. Newer clients fetch it only when a
 // player picks RETRO: net/assetpack.js ON_DEMAND; older ones load it in the background like the other lazy packs.)
-const LAZY = new Set(['sound', 'anims', 'hgss', 'emerald', 'pokemon-gen4', 'retro', 'sinnoh']);
+// (retro_sinnoh: the Game Boy conversions of Platinum's songs for SINNOH acts, tools/sinnoh_chip; on demand too.)
+const LAZY = new Set(['sound', 'anims', 'hgss', 'emerald', 'pokemon-gen4', 'retro', 'retro_sinnoh', 'sinnoh']);
 function fnv1a(s) { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619) >>> 0; return h; }
 // Which pack a file goes in (each stays far under the 20 MB HTTP action response limit).
 function packOf(rel) {
   if (SKIP.some(d => rel.startsWith(d + '/'))) return null;
+  if (rel.startsWith('retro_sinnoh/')) return 'retro_sinnoh'; // (RETRO's SINNOH bank: before every other rule)
   if (rel.split('/').slice(0, -1).includes('platinum')) return 'sinnoh'; // (Platinum art: before the gfx/pokemon buckets)
   if (rel.startsWith('gfx/gen4/pokemon/')) return 'pokemon-gen4';
   if (rel.includes('/hgss/')) return 'hgss';

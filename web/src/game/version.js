@@ -16,6 +16,7 @@ export const PATCH_NOTES = [
         "Platinum's wild POKéMON, with morning, day and night, so Gen 4 POKéMON are everyday finds in SINNOH. TEAM GALACTIC (MARS, JUPITER, SATURN, CYRUS), MESPRIT, AZELF and UXIE as the acts' legendaries (each with its own held item), DIALGA and PALKIA at the SPEAR PILLAR, and 26 new \"?\" events (fossils, EEVEE, ROTOM, SPIRITOMB, the GREAT MARSH, eggs...)",
         'TURTWIG, CHIMCHAR and PIPLUP join the starters you can unlock. Start with one and your rival is BARRY',
         'Eight new badges, from the COAL BADGE to the BEACON BADGE',
+        "AUDIO STYLE: RETRO plays SINNOH's own music as Game Boy songs: the routes, towns, caves, gyms, ELITE FOUR, CYNTHIA, BARRY, TEAM GALACTIC, the legendaries and the jingles, arranged from Platinum's songs",
       ]],
       ['CHANGES', [
         'Every POKéDEX species (1-493) has a way to be caught or obtained, and a new check keeps it that way',

@@ -169,6 +169,22 @@ function gbSong(name, ctx) {
   const song = typeof r === 'string' ? r : r.song;
   return song && gb.meta.songs[song] ? { song, next: (typeof r === 'object' && r.next) || null } : null;
 }
+// SINNOH: our Game Boy conversions of Platinum's songs (tools/sinnoh_chip), a self-contained bank of its own in
+// assets/retro_sinnoh/ (the on-demand 'retro_sinnoh' pack). { meta, bin } or null when it isn't there (the json is
+// asked for first, so a missing bank costs one failed request).
+async function loadSinnohBank(base) {
+  const dir = new URL('../retro_sinnoh/', base);
+  try {
+    const rj = await fetch(new URL('sinnoh.json', dir));
+    if (!rj.ok) return null;
+    const meta = await rj.json();
+    const g = meta && meta.games && meta.games.sinnoh;
+    if (!g || !meta.songs) { console.warn('[sound] retro sinnoh bank: bad sinnoh.json'); return null; }
+    const rb = await fetch(new URL(g.file || 'sinnoh.bin', dir));
+    if (!rb.ok) { console.warn('[sound] retro sinnoh bank: sinnoh.bin missing'); return null; }
+    return { meta, bin: await rb.arrayBuffer() };
+  } catch (err) { console.warn('[sound] retro sinnoh bank', err?.message || err); return null; }
+}
 // Loads the Game Boy bank and starts its engine (once). Resolves true when RETRO can play.
 function ensureGb() {
   if (gb.ready) return gb.ready;
@@ -176,12 +192,18 @@ function ensureGb() {
     const ctx = state.ctx;
     if (!ctx) return false;
     const base = new URL(gb.baseUrl, typeof document !== 'undefined' ? document.baseURI : import.meta.url);
-    let meta, red, silver;
+    const sinnohP = loadSinnohBank(base); // (in parallel with the main bank)
+    let meta = null, red, silver;
     try {
       const [rj, rr, rs] = await Promise.all(['retro.json', 'red.bin', 'silver.bin'].map((f) => fetch(new URL(f, base))));
-      if (!rj.ok || !rr.ok || !rs.ok) { console.warn('[sound] retro music bank missing'); return false; }
-      [meta, red, silver] = await Promise.all([rj.json(), rr.arrayBuffer(), rs.arrayBuffer()]);
-    } catch (err) { console.warn('[sound] retro music bank', err?.message || err); return false; }
+      if (!rj.ok || !rr.ok || !rs.ok) console.warn('[sound] retro music bank missing');
+      else [meta, red, silver] = await Promise.all([rj.json(), rr.arrayBuffer(), rs.arrayBuffer()]);
+    } catch (err) { console.warn('[sound] retro music bank', err?.message || err); meta = null; }
+    const sinnoh = await sinnohP;
+    // (the SINNOH bank plays on its own: without Red / Silver, RETRO still plays Platinum's songs in SINNOH acts and
+    // the m4a songs everywhere else)
+    if (!meta && !sinnoh) return false;
+    if (!meta) meta = { games: {}, songs: {} };
     gb.meta = meta;
     const gain = ctx.createGain();
     gain.gain.value = state.volumes.music;
@@ -210,7 +232,7 @@ function ensureGb() {
     }
     // HOENN: our Game Boy conversions of Emerald's songs (tools/hoenn_chip), a bank of their own on Silver's engine;
     // without it the HOENN acts keep their stand-in Red / Silver songs (audio/retro.js)
-    const binaries = { red, silver };
+    const binaries = red && silver ? { red, silver } : {};
     if (meta.games.hoenn) {
       try {
         const rh = await fetch(new URL(meta.games.hoenn.file || 'hoenn.bin', base));
@@ -220,6 +242,12 @@ function ensureGb() {
         delete meta.games.hoenn;
         for (const k of Object.keys(meta.songs)) if (meta.songs[k].game === 'hoenn') delete meta.songs[k];
       }
+    }
+    // SINNOH: Platinum's songs, merged in under their own game (audio/retro.js asks for 'sinnoh:SEQ_...')
+    if (sinnoh) {
+      meta.games.sinnoh = sinnoh.meta.games.sinnoh;
+      for (const [k, v] of Object.entries(sinnoh.meta.songs)) if (v && v.game === 'sinnoh') meta.songs[k] = v;
+      binaries.sinnoh = sinnoh.bin;
     }
     gb.port.postMessage({ type: 'load', meta, binaries }, Object.values(binaries));
     if (!(await ready)) return false;
