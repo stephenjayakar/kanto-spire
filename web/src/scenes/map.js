@@ -8,7 +8,6 @@ import { G, saveRun, animFast } from '../game/state.js';
 import { reachable, NODE_INFO } from '../game/map.js';
 import { eliteIcon } from '../game/elite_icon.js';
 import { LEGENDS, BIRD_PARTNER, MYTHICS } from '../game/acts.js';
-import { mythicEventOf } from '../game/events.js';
 import { regionOf, actTitle, TIME_NAMES } from '../game/regions.js';
 import { BOSS_RULES, bossTypes, bossTypeLabel } from '../game/bosses.js';
 import { CONSUMABLES } from '../game/items.js';
@@ -314,10 +313,8 @@ export class MapScene {
       }
       return tip(L?.title || info.name, `${run.hasLegendary?.() ? info.desc.replace(' and a one-time chance to catch it', '') : info.desc}${caught ? ' (Already caught this run.)' : ''}${lt.length ? `\nType: ${lt.join('/')}` : ''}\nPRESSURE: every hand you play also costs a discard.\n${legendLine(run)}`, { accent: TYPE_COLORS[lt[0]] });
     }
-    if (hovered.type === 'event' && hovered.mythic && MYTHICS[hovered.mythic]) { // (v0.6.2: the act's mythic "?" node)
-      const run = this.mapRun(), M = MYTHICS[hovered.mythic], E = mythicEventOf(hovered.mythic);
-      const tt = [...(D.species[M.species]?.types || [])].filter((t, i, a) => a.indexOf(t) === i);
-      return tip(`${E?.title || '???'}: ${M.title}`, `Optional. A mythic POKéMON waits here (a "?" event: fight it or walk away). ${E?.choices?.[0]?.tip || ''}${tt.length ? `\nType: ${tt.join('/')}` : ''}\n${legendLine(run)}`, { accent: TYPE_COLORS[tt[0]], width: 230 });
+    if (hovered.type === 'event' && hovered.mythic && MYTHICS[hovered.mythic]) { // (v0.6.2: the act's mythic "?" node; v0.6.3: which one stays a secret until you step in)
+      return tip('A MYSTERIOUS PRESENCE', `Optional. Something powerful waits here (a "?" event: fight it or walk away). Lose and your run is over.\n${legendLine(this.mapRun())}`, { accent: '#c878f8', width: 230 });
     }
     if (hovered.type === 'boss') return tip(this.bossTitle(), `${this.bossDesc()}\n${this.bossTypeLine()}`, { accent: TYPE_COLORS[this.mapRun().act.gauntlet ? null : bossTypes(this.mapRun().boss)[0]] });
     tip(info.name, info.desc);
@@ -467,12 +464,9 @@ export class MapScene {
       case 'center': draw(ctx, 'gfx/overworld/people/nurse.png', x - 8, y - 28 + bob, { sx: 0, sy: 0, sw: 16, sh: 32 }); break;
       case 'mart': draw(ctx, 'gfx/overworld/people/clerk.png', x - 8, y - 28 + bob, { sx: 0, sy: 0, sw: 16, sh: 32 }); break;
       case 'event':
-        if (n.mythic && MYTHICS[n.mythic]) { // (v0.6.2) the act's mythic: a violet aura, the mythic's icon and its "?"
+        if (n.mythic && MYTHICS[n.mythic]) { // (v0.6.2) the act's mythic: a violet aura and its "?" (v0.6.3: no icon, which mythic stays hidden)
           const glow = 0.3 + 0.25 * Math.sin(this.t * 4);
           ctx.fillStyle = `rgba(200,120,248,${glow})`; ctx.beginPath(); ctx.ellipse(x, y - 12, 16, 16, 0, 0, Math.PI * 2); ctx.fill();
-          drawIcon(ctx, MYTHICS[n.mythic].species, x - 16, y - 30 + bob);
-          draw(ctx, 'gfx/misc/emotes/question.png', x - 2, y - 36 + bob + Math.sin(this.t * 4 + n.col) * 1.5, { sx: 32, sy: 0, sw: 16, sh: 16 });
-          break;
         }
         draw(ctx, 'gfx/misc/emotes/question.png', x - 8, y - 20 + bob + Math.sin(this.t * 4 + n.col) * 1.5, { sx: 32, sy: 0, sw: 16, sh: 16 }); break;
       case 'treasure': draw(ctx, 'gfx/overworld/misc/item_ball.png', x - 8, y - 14 + bob); break;
