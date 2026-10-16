@@ -40,7 +40,7 @@ const bst = (sp) => Object.values(D.species[sp].stats).reduce((a, x) => a + x, 0
 t('loadData reads the Gen 4 file and merges it: 493 species, #1-493 in byDex', () => {
   assert.ok(asked.includes(GEN4_DATA_FILE), `read ${asked.join(', ')}`);
   assert.equal(Object.keys(raw).length, 386, 'FireRed\'s species.json stays 386 (the frozen co-op engines read it)');
-  assert.equal(Object.keys(D.species).length, 493);
+  assert.equal(Object.keys(D.species).filter(k => !D.species[k].form).length, 493); // (v0.6.0: + the GIRATINA_ORIGIN form key)
   assert.equal(DEX_MAX, 493);
   for (let n = 1; n <= 493; n++) assert.ok(byDex[n]?.dex === n, `byDex[${n}]`);
   for (const [key, s] of Object.entries(g4.species)) {
@@ -224,7 +224,7 @@ t('the 14 Gen 4 legendaries: LEGENDARY (one per run), in LEGENDS, a rare legenda
     assert.ok(bank.songs[L.music], `${key} music ${L.music}`);
     assert.ok(L.moves.length === 4 && L.moves.every(m => D.moves[m] && D.moves[m].key), `${key} moves ${L.moves}`);
   }
-  assert.deepEqual(where.DIALGA, ['johto5']);
+  assert.deepEqual(where.DIALGA, ['johto5', 'sinnoh4']); // (v0.6.0: SINNOH's SPEAR PILLAR, act 4)
   assert.ok(where.ARCEUS.length === 2 && where.ARCEUS.every(w => w.endsWith('5')), 'ARCEUS: ultra-rare, post-game');
 });
 {

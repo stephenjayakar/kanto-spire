@@ -1,3 +1,4 @@
+import { SINNOH_BADGES } from './sinnoh.js';
 // Held items (relics), badges and consumables.
 // DMG system: a hand simply deals damage. Items change it in three ways:
 //   per card   cardPct(card, b) -> +% damage for that card   cardDmg(card, b) -> +flat damage (once per card)
@@ -161,6 +162,10 @@ Object.assign(RELICS, {
   OLD_SEA_MAP: legendItem('OLD SEA MAP', 'PSYCHIC', '+1 hand size. Card and item rewards offer one more choice. PSYCHIC cards deal +50% damage.', { mods: { handSize: 1, rewardChoices: 1 }, icon: 'TOWN_MAP' }),
   METEOR_SHARD: legendItem('METEOR SHARD', 'PSYCHIC', 'Your POKéMON are 20% faster and take 10% less damage. PSYCHIC cards deal +50% damage.', { mods: { speedMult: 0.2, dmgTaken: -0.1 }, icon: 'STAR_PIECE' }),
   JADE_ORB: legendItem('JADE ORB', 'DRAGON', '+30% damage on every hand and +1 discard each battle. DRAGON cards deal +50% damage.', { onHand(s) { s.pct(30, 'JADE_ORB'); }, mods: { discards: 1 }, icon: 'GREEN_SHARD' }),
+  // SINNOH's lake guardians (v0.6.0; borrowed icons): no generic damage % (Notion "making acts 3-5 a real threat")
+  EMOTION_GEM: legendItem('EMOTION GEM', 'PSYCHIC', 'Your party heals 12% after every battle. PSYCHIC cards deal +50% damage.', { mods: { postHeal: 0.12 }, icon: 'HEART_SCALE' }),
+  WILLPOWER_GEM: legendItem('WILLPOWER GEM', 'PSYCHIC', '+1 hand size. PSYCHIC cards deal +50% damage.', { mods: { handSize: 1 }, icon: 'RED_SHARD' }),
+  KNOWLEDGE_GEM: legendItem('KNOWLEDGE GEM', 'PSYCHIC', 'Card and item rewards offer one more choice, and +1 discard each battle. PSYCHIC cards deal +50% damage.', { mods: { rewardChoices: 1, discards: 1 }, icon: 'YELLOW_SHARD' }),
 });
 
 // Curse held items (v0.0.7): bad held items some "?" events hand out as a cost. They have rarity 'curse',
@@ -208,6 +213,7 @@ export const BADGES = {
   GLACIER: { name: 'GLACIER BADGE', leader: 'PRYCE', icon: 'NEVER_MELT_ICE', desc: '+1 hand size.', mods: { handSize: 1 } },
   RISING: { name: 'RISING BADGE', leader: 'CLAIR', icon: 'DRAGON_FANG', desc: '+80% damage on FULL HOUSE or better.', onHand(s) { if (s.comboRank >= 4) s.pct(80, 'RISING'); } },
 };
+Object.assign(BADGES, SINNOH_BADGES); // (v0.6.0: SINNOH's eight, sinnoh.js)
 for (const [k, b] of Object.entries(BADGES)) b.key = k;
 export function badgeIcon(key) { const b = BADGES[key]; return b?.icon ? `gfx/items/${b.icon.toLowerCase()}.png` : `gfx/misc/badges/${key.toLowerCase()}.png`; }
 

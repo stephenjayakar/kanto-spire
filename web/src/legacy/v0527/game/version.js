@@ -1,0 +1,924 @@
+
+// Game version and patch notes (shown from the title screen). Versions are major.minor.patch: every production
+// deploy that changes the game bumps the patch (v0.2.0 -> v0.2.1); the owner calls minor bumps (v0.1.x -> v0.2.0);
+// no major bumps yet. Each one gets a new top PATCH_NOTES entry; see AGENTS.md.
+export const VERSION = 'v0.5.27';
+
+export const PATCH_NOTES = [
+  {
+    v: 'v0.5.27',
+    sections: [
+      ['CHANGES', [
+        "ROAR and WHIRLWIND work like in the games. Against a trainer, the foe is forced out at the end of the turn, after it moves, and a random other POKéMON of theirs comes in. It keeps its HP and status, but loses its stat changes. They fail if the trainer has nobody left. In the wild they still end the battle. Solo and co-op",
+        "Foes use them too: a trainer's ROAR or WHIRLWIND drags out a random healthy POKéMON of yours. They like to use it on a lead that has built up boosts",
+        "PROTECT, INGRAIN and SUCTION CUPS block both moves; SOUNDPROOF blocks ROAR. The card shows what it will do (FOE SWITCHES, ENDS BATTLE or WON'T WORK, with the reason in its tooltip), and every step is in the battle log",
+      ]],
+    ],
+  },
+  {
+    v: 'v0.5.26',
+    sections: [
+      ['NEW', [
+        'NEW THIS RUN: when a run ends (win or loss, solo and co-op) a popup shows what it added: new personal records, POKéMON you saw or caught for the first time, and held items you found for the first time',
+        'PERSONAL RECORDS: furthest climb, highest ASCENSION cleared, fastest clear, best hand, most trainers defeated, most POKéMON caught, most critical hits and most money earned. Your past runs set the bar, so only real records show up',
+        'Click or press a key to show everything at once, and again to close. The NEW! button in the corner opens it again. A run that added nothing shows nothing',
+      ]],
+    ],
+  },
+  {
+    v: 'v0.5.25',
+    sections: [
+      ['FIXES', [
+        'Elite nodes on the map now show the trainer you will actually fight there (or the legendary POKéMON, if it is one). Before, the icon was a random pick of four sprites, so an elite could wrongly show your rival BLUE. Solo and co-op',
+      ]],
+    ],
+  },
+  {
+    v: 'v0.5.24',
+    sections: [
+      ['NEW', [
+        'PROTECT, DETECT and ENDURE cards show their chance to work right now (e.g. 100% TO WORK, then 50% the turn after a success, 25% after two in a row), in red once back-to-back use has cut it. Their tooltip explains the odds and what resets them. Solo and co-op',
+        'When one fails, the message says why: "But it failed! (50% chance after 1 success in a row)". The MOVE ORDER tooltip shows the odds too',
+      ]],
+    ],
+  },
+  {
+    v: 'v0.5.23',
+    sections: [
+      ['NEW', [
+        'BATTLE LOG: everything that happens in a battle, line by line (cards played, damage and HP left, effectiveness, status, stat changes, faints, switches, items, catches and more), in the bottom-left corner under your party. The newest line stays in view; scroll back with the mouse wheel or a drag',
+        'Tap OPEN (or press L, or MENU > Battle log) for the whole log on a big screen. With a full party there is little or no room in the corner: the log shrinks to one line, or hides, and stays one tap away in the MENU',
+        'Solo battles only for now. Co-op is unchanged',
+      ]],
+    ],
+  },
+  {
+    v: 'v0.5.22',
+    sections: [
+      ['NEW', [
+        'Wild POKéMON now lean toward species missing from your POKéDEX: ones you have never seen turn up most often, then ones you have seen but not caught yet. Every area, solo runs',
+        'Rare finds stay rare, and a POKéDEX that is empty (or complete) plays exactly as before. Co-op is unchanged',
+      ]],
+    ],
+  },
+  {
+    v: 'v0.5.21',
+    sections: [
+      ['NEW', [
+        'SETTINGS > ANIMATIONS replaces the FAST ANIMATIONS on/off switch with three speeds. NORMAL: every animation at full length. FAST: shorter animations and delays. INSTANT: a battle turn resolves at once (no move animations, messages or sound effects) and you are straight back to your next turn with every effect applied',
+        'Same battle, same damage, same luck at every speed: only the show changes. Solo and co-op',
+        'An ANIMATIONS chip in the top-right corner of every battle cycles NORMAL / FAST / INSTANT on the spot. Your choice is saved with your settings',
+        'Your old choice carries over: FAST ANIMATIONS ON becomes FAST, OFF stays NORMAL (and animations turned off becomes FAST)',
+      ]],
+    ],
+  },
+  {
+    v: 'v0.5.20',
+    sections: [
+      ['FIXES', [
+        "The title screen's NOW PLAYING window no longer lists your own run (from this tab or another device), only other trainers. In co-op it still lists your partners",
+      ]],
+    ],
+  },
+  {
+    v: 'v0.5.19',
+    sections: [
+      ['ASCENSION', [
+        "A5 LEVEL CAP is lower: Lv 17 / 30 / 42 / 49 in Acts 1-4 and 71 in the post-game (was 18 / 30 / 43 / 51 / 74), the same at A10. The cap now sits +1 / +1 / -1 / -2 levels from the act boss's top level, and 1 under the post-game boss. A POKéMON that gets most of the battles and a CENTER training or two will hit it; a team that rotates won't",
+        'POKéMON already above the new cap keep their levels; they just stop gaining more until the next act. Gifts, trades and catches join at most at the cap. Solo and co-op',
+      ]],
+    ],
+  },
+  {
+    v: 'v0.5.18',
+    sections: [
+      ['ASCENSION', [
+        "A10's +1 enemy level no longer raises the A5 LEVEL CAP: A10+ runs now have the same caps as A5, Lv 18 / 30 / 43 / 51 and 74 in the post-game (they were 18 / 31 / 44 / 52 / 75). Foes still get their A10 levels. Solo and co-op",
+      ]],
+    ],
+  },
+  {
+    v: 'v0.5.17',
+    sections: [
+      ['ASCENSION', [
+        "A5 LEVEL CAP is tighter in the later acts: the cap now sits +2 levels above the act boss's top level in Act 1 (as before), +1 in Act 2 and +0 in Acts 3 and 4 (it was +2 everywhere). That makes the caps Lv 18 / 30 / 43 / 51 (A10: 18 / 31 / 44 / 52). The post-game cap is unchanged",
+        'POKéMON already above the new cap keep their levels; they just stop gaining more until the next act. Solo and co-op',
+      ]],
+    ],
+  },
+  {
+    v: 'v0.5.16',
+    sections: [
+      ['FIXES', [
+        "Co-op with 3-4 players: a sleeping or frozen foe that acts twice a turn now loses both actions, as its intent box shows (every row reads ASLEEP / FROZEN). It used to sleep off two turns of sleep per turn and could wake up for its second action and hit someone",
+        "Level cap (A5+): RARE CANDY, the POKéMON CENTER's training, \"?\" events (DAY CARE, JIRACHI, the bells, training...) and gifts, trades and catches no longer take a POKéMON past the act's level cap. RARE CANDY used to go past it, which let an act 1 POKéMON reach Lv20",
+        "A card you can't play this turn (like FLY the turn after a FLY, LANDING) can now be selected so you can DISCARD it, instead of sitting stuck in your hand. Solo and co-op",
+      ]],
+    ],
+  },
+  {
+    v: 'v0.5.15',
+    sections: [
+      ['CHANGES', [
+        "Held items can no longer be sold. Clicking one on the map or in a POKé MART no longer offers to sell it, and its tooltip no longer says \"click to sell\". Bag items (NUGGETS, potions and the like) still sell as before",
+      ]],
+    ],
+  },
+  {
+    v: 'v0.5.14',
+    sections: [
+      ['NEW', [
+        "NUZLOCKE in co-op: the host can turn it on in the co-op lobby (it switches on by itself from A8, like solo, and can be turned on at any ascension). Every player plays by solo's NUZLOCKE rules: a POKéMON that faints is released after the battle, you can only catch in your act's first wild battle, and gift and trade events are hidden",
+        'A downed partner is no longer revived after a win in a NUZLOCKE room. A player whose last POKéMON is released is out for the rest of the run and can keep watching; the others carry on. The run is lost when everyone is out (or everyone is down in the same battle)',
+      ]],
+    ],
+  },
+  {
+    v: 'v0.5.13',
+    sections: [
+      ['ASCENSION', [
+        "A10 CHAMPION'S PATH now has a double finale, like Slay the Spire 2's top ascension: after you beat the CHAMPION, your team is fully healed and revived, then another region's ELITE FOUR and CHAMPION (BLUE, WALLACE or LANCE) stand between you and the win. The second region is one your run visited when it can be. Solo and co-op",
+        'Runs already in progress keep their single ELITE FOUR',
+      ]],
+    ],
+  },
+  {
+    v: 'v0.5.12',
+    sections: [
+      ['FIXES', [
+        'Co-op: the lobby now shows every starter you have unlocked. With more than 16 unlocked, the last ones (TORCHIC, MUDKIP, DRATINI, LARVITAR, BELDUM) were cut off and could not be picked; past 16 the tiles now use the party icons, 2 rows of up to 11',
+      ]],
+    ],
+  },
+  {
+    v: 'v0.5.11',
+    sections: [
+      ['CHANGES', [
+        "The new game screen (solo and co-op) shows the starters in their EMERALD art. Click or tap one and it plays its EMERALD animation with its cry: it opens its mouth or moves, then bounces, stretches, swings, shakes or glows like on the EMERALD summary screen (replaces v0.5.10's slide-in)",
+      ]],
+    ],
+  },
+  {
+    v: 'v0.5.10',
+    sections: [
+      ['CHANGES', [
+        'Click or tap a POKéMON on the new game screen (solo or co-op) to see it make its battle entrance, cry included',
+      ]],
+    ],
+  },
+  {
+    v: 'v0.5.9',
+    sections: [
+      ['CHANGES', [
+        "POKéDEX > HELD ITEMS marks the items you haven't found yet with ??? and shows how many you've found of each rarity (COMMON, UNCOMMON, RARE, LEGENDARY, CURSE); held items from your past runs count as found",
+      ]],
+    ],
+  },
+  {
+    v: 'v0.5.8',
+    sections: [
+      ['CHANGES', [
+        'Acts 3-5 are a bit harder. LEADER KOGA, GIOVANNI, CHUCK and JASMINE and ELITE FOUR SIDNEY are VETERANS: they take no more than part of their max HP in damage per turn (in co-op, everyone\'s hands together) and their POKéMON grow stronger as the fight goes on. Their tooltips show the numbers',
+        "LEADER SABRINA's POKéMON no longer hit 15% softer",
+      ]],
+    ],
+  },
+  {
+    v: 'v0.5.7',
+    sections: [
+      ['CHANGES', [
+        "ROAR and WHIRLWIND fail if the same POKéMON made them work last turn (no more flinching a foe every turn)",
+        'Foes are smarter with status moves: no boosting a stat that is maxed, no lowering one that is at its lowest, no status on a POKéMON that already has one or is immune, no CHARGE while charged, no screen or weather that is already up',
+      ]],
+      ['FIXES', [
+        "A foe's CHARGE did nothing. Its next ELECTRIC move now deals double damage, like yours",
+        'Held items found on another device (or added since you opened the game) are no longer lost when you save',
+      ]],
+    ],
+  },
+  {
+    v: 'v0.5.6',
+    sections: [
+      ['NEW', [
+        'The POKéDEX has a HELD ITEMS page: every held item you have had in a run (solo or co-op) shows in color, the rest as dark shapes. INFO > HELD ITEMS marks them FOUND (items count from this update on)',
+        'INFO > HELD ITEMS has a SEARCH box: type part of a name or an effect (e.g. "discard" or "FIRE")',
+        'MEWTWO, MEW, DEOXYS and RAYQUAZA have their own held items: BERSERK GENE, OLD SEA MAP, METEOR SHARD and JADE ORB. Beating one offers its item and two rare ones',
+      ]],
+      ['CHANGES', [
+        'Co-op: you can sit out a mythic ? event (MEWTWO, MEW, DEOXYS, RAYQUAZA). The others fight without you (if only one fights, it is the solo fight); you lose no HP and get no reward',
+        'Co-op: ESCAPE ROPE works. It gets the whole team out of any battle but a boss (POKé DOLL and FLUFFY TAIL: wild battles), with no rewards',
+        "Co-op legendary node: every player picks either legendary's held item, whichever one they caught (or none)",
+        'Mythic ? events now always offer rare held items (they could offer uncommon ones)',
+      ]],
+    ],
+  },
+  {
+    v: 'v0.5.5',
+    sections: [
+      ['FIXES', [
+        'At many window sizes the sign-in page (and the loading text) was hidden behind a black box. They now always show.',
+      ]],
+    ],
+  },
+  {
+    v: 'v0.5.4',
+    sections: [
+      ['NEW', [
+        'INFO has a HELD ITEMS tab: every held item in the game with its art, what it does, its rarity and where it comes from (legendary items name their legendary). Items you hold are marked HELD',
+      ]],
+    ],
+  },
+  {
+    v: 'v0.5.3',
+    sections: [
+      ['CHANGES', [
+        'LEADER BRAWLY is a little easier: BULK UP raises ATTACK every other turn instead of every turn, and more slowly in co-op',
+      ]],
+    ],
+  },
+  {
+    v: 'v0.5.2',
+    sections: [
+      ['FIXES', [
+        'A POKéMON sent out after a faint could be hit by attacks still going that turn (in co-op, the other foe often knocked it out right away). It is now safe until the next turn.',
+        "FLY, DIG, DIVE and BOUNCE could be used on back-to-back turns when the dodge didn't happen. A POKéMON now waits a turn after using one, and so do foes.",
+        'At a co-op legendary node, every player got the same held item. Each player now gets the item of the legendary they caught.',
+      ]],
+      ['CHANGES', [
+        "LEADER NORMAN's SLACK OFF was replaced by BALANCE: no single hand can deal more than 60% of his POKéMON's max HP (no more healing).",
+        'The POKéDEX scrolled a page at a time. It now scrolls smoothly with the mouse wheel, drag or arrow keys.',
+        'RECORDS lists stopped at 50. LOAD MORE at the bottom now shows the next 50.',
+      ]],
+    ],
+  },
+  {
+    v: 'v0.5.1',
+    sections: [
+      ['FIXES', [
+        'LEADER NORMAN could heal faster than you could hurt him, above all in co-op. SLACK OFF now heals 20% when a hand deals less than 15% of his HP, and in co-op both numbers are split between the players',
+        'A co-op game that was in the middle of a fight when this update landed restarts that fight from the map',
+      ]],
+    ],
+  },
+  {
+    v: 'v0.5.0',
+    sections: [
+      ['NEW', [
+        'Every ability now does something, for your POKéMON and for foes. Hover a POKéMON to read what its ability does.',
+        'Gen 4 POKéMON have their HeartGold abilities (BIDOOF: SIMPLE or UNAWARE, PORYGON-Z: ADAPTABILITY or DOWNLOAD...). POKéMON you already caught keep the ability they had.',
+        "Your POKéMON can flinch now: if the foe moves first and its attack makes your lead flinch, your hand that turn does nothing. The foe's intent warns you (FLINCH and a %). INNER FOCUS and SHIELD DUST stop it, and a POKéMON never flinches two turns in a row.",
+        'Abilities that work outside battle: PICKUP finds items, HONEY GATHER finds berries, ILLUMINATE makes rare POKéMON show up more, and ARENA TRAP or SHADOW TAG in the lead makes catching easier.',
+      ]],
+      ['CHANGES', [
+        'Abilities that punish touching (STATIC, FLAME BODY, POISON POINT, EFFECT SPORE, ROUGH SKIN, CUTE CHARM) trigger at most once per hand, not once per card.',
+        "A foe with PRESSURE costs you one discard at the start of the battle, trainers included (once per battle, not on top of a legendary's PRESSURE).",
+        'A foe with ARENA TRAP or SHADOW TAG makes switching cost an extra discard; the discard box shows what a switch costs.',
+      ]],
+    ],
+  },
+  {
+    v: 'v0.4.7',
+    sections: [
+      ['NEW', [
+        "The co-op room shows your best ascension, and the highest ascension each player has unlocked with their starter",
+      ]],
+      ['CHANGES', [
+        'Hovering a POKéMON in battle lists its stat changes',
+        'Hidden intents (A2+) no longer hint at the kind of move by the color of their frame',
+        'In 3-4 player co-op, your team’s stat changes show above your row',
+      ]],
+      ['FIXES', [
+        'Fixed accuracy and evasion changes (SAND-ATTACK, SMOKESCREEN, DOUBLE TEAM...) not showing in co-op battles',
+        "Fixed the foe's stat changes hiding behind its intent in solo battles",
+        'Fixed hidden intents (A2+) flashing red in co-op when the foe could knock out your POKéMON',
+      ]],
+    ],
+  },
+  {
+    v: 'v0.4.6',
+    sections: [
+      ['NEW', [
+        'RETRO now plays HOENN’s own music: every Emerald song in a HOENN act, remade as a Game Boy chiptune in the style of Pokémon Silver, instead of a Red or Silver song picked by mood',
+      ]],
+    ],
+  },
+  {
+    v: 'v0.4.5',
+    sections: [
+      ['CHANGES', [
+        'RETRO music sounds richer: smoother volume, softer stereo, a little room and fuller lead voices, with the same Game Boy notes',
+      ]],
+    ],
+  },
+  {
+    v: 'v0.4.4',
+    sections: [
+      ['NEW', [
+        'Battles have a MENU button: Settings and How to play without leaving the fight',
+      ]],
+    ],
+  },
+  {
+    v: 'v0.4.3',
+    sections: [
+      ['NEW', [
+        'SETTINGS > AUDIO STYLE has a third choice, RETRO: the music becomes the original Game Boy chiptunes from Pokémon Red (KANTO) and Pokémon Silver (JOHTO, and HOENN by mood), played from their original song data',
+        'HQ (the default) and GBA work as before: HQ is the GBA soundtrack at full quality, GBA sounds like the real console. Hover each choice for a reminder',
+      ]],
+    ],
+  },
+  {
+    v: 'v0.4.2',
+    sections: [
+      ['CHANGES', [
+        'Hovering your own POKéMON now shows what it is WEAK TO, RESISTS and is IMMUNE TO, like the foe tooltip',
+      ]],
+    ],
+  },
+  {
+    v: 'v0.4.1',
+    sections: [
+      ['CHANGES', [
+        'Scrolling is the same everywhere: the map, records, info, shop and patch notes move the same distance per wheel notch, and with your fingers on a trackpad',
+        'The Pokédex turns one page per few wheel notches, so a swipe no longer skips pages',
+      ]],
+    ],
+  },
+  {
+    v: 'v0.4.0',
+    sections: [
+      ['NEW', [
+        'All of Gen 4: 107 new POKéMON with their moves and evolutions; the Pokédex now goes to 493',
+        'New SHINY, DUSK, DAWN and ICE STONES, and cross-gen evolutions (MAGMORTAR, TOGEKISS, LEAFEON and more)',
+        'Every POKéMON in the Pokédex can now be caught somewhere; the rarest show up as rare finds',
+        'Rare legendary events: CERULEAN CAVE (MEWTWO), FARAWAY ISLAND (MEW), BIRTH ISLAND (DEOXYS), SKY PILLAR (RAYQUAZA)',
+        'Gen 4 legendaries appear as rare legendary elites in later acts',
+        'Emerald music, and Emerald trainers including JUAN, WALLACE and STEVEN',
+      ]],
+      ['CHANGES', [
+        "One legendary per run: once you have one, you can't catch another",
+        'Co-op: when there are two legendaries, each player picks one; for MEW and MEWTWO every player gets a copy',
+        'Co-op MEWTWO attacks every player at once',
+      ]],
+    ],
+  },
+  {
+    v: 'v0.3.24',
+    sections: [
+      ['CHANGES', [
+        'Co-op, NOW PLAYING and RECORDS update live instead of polling',
+        'Cloud saves sync once per map node, only the part that changed',
+        'Game data downloads in smaller packs, cached until they change',
+      ]],
+    ],
+  },
+  {
+    v: 'v0.3.23',
+    sections: [
+      ['NEW', [
+        'Click a POKéMON in the Pokédex for its entry: description, stats, abilities, evolutions and moves',
+      ]],
+      ['CHANGES', [
+        'After FLY, DIG, DIVE or BOUNCE dodges, your POKéMON spends the next turn LANDING: no dodging or protecting',
+      ]],
+      ['FIXES', [
+        'Fixed RAYQUAZA, MEWTWO and DEOXYS not showing as the boss on the map',
+      ]],
+    ],
+  },
+  {
+    v: 'v0.3.22',
+    sections: [
+      ['FIXES', [
+        'Fixed sign-in getting stuck after leaving the Google page',
+      ]],
+    ],
+  },
+  {
+    v: 'v0.3.21',
+    sections: [
+      ['NEW', [
+        'Battle names show who moves 1st, 2nd... this turn',
+        'The ascension shows top left; hover it for its active effects',
+        'FAME CHECKER and other growing held items show their current bonus',
+        'Co-op: reorder your team between ELITE FOUR battles',
+      ]],
+      ['CHANGES', [
+        'At the held-item limit, the shop reroll asks first (it only rolls TMs)',
+      ]],
+      ['FIXES', [
+        'Fixed co-op not filling in the Pokédex',
+        "Fixed co-op records losing each player's team",
+        'Fixed badges covering the money display',
+      ]],
+    ],
+  },
+  {
+    v: 'v0.3.20',
+    sections: [
+      ['FIXES', [
+        'Fixed trackpad scrolling (Mac) being far too fast',
+      ]],
+    ],
+  },
+  {
+    v: 'v0.3.19',
+    sections: [
+      ['NEW', [
+        'COMBOS is now INFO, with COMBOS, TYPE CHART and STATUSES tabs',
+      ]],
+      ['CHANGES', [
+        'PROTECT, DETECT and ENDURE only make your hand go first when they work',
+      ]],
+    ],
+  },
+  {
+    v: 'v0.3.18',
+    sections: [
+      ['CHANGES', [
+        "Co-op runs in RECORDS show one line per player with that player's whole team",
+      ]],
+    ],
+  },
+  {
+    v: 'v0.3.17',
+    sections: [
+      ['CHANGES', [
+        'TMs cost half as much at the POKé MART',
+        'METEORITE and WHITE FLUTE show when they trigger',
+        'FILL is the default SCREEN mode',
+      ]],
+      ['FIXES', [
+        'Fixed map nodes showing faded at the start of later acts',
+        "Fixed the foe's next move flashing up while its current move plays",
+      ]],
+    ],
+  },
+  {
+    v: 'v0.3.16',
+    sections: [
+      ['FIXES', [
+        'Fixed the co-op TEAM UP tag overlapping the foe HP line',
+        'Fixed long trainer names running under the money display',
+      ]],
+    ],
+  },
+  {
+    v: 'v0.3.15',
+    sections: [
+      ['NEW', [
+        'Added AUTO in battle: plays the suggested hand every turn until you stop it (U)',
+        'Added a picture guide to HOW TO PLAY, also reachable from the map MENU and the ? in battle',
+      ]],
+      ['CHANGES', [
+        'Selected STATUS cards are marked NO COMBO, solo and co-op',
+      ]],
+    ],
+  },
+  {
+    v: 'v0.3.14',
+    sections: [
+      ['NEW', [
+        'Co-op legendary nodes have two legendaries; each player can catch one',
+      ]],
+      ['CHANGES', [
+        'Bosses, elites and legendaries no longer use SELF-DESTRUCT or EXPLOSION; other foes only at low HP',
+        'CURSE and other status moves list their exact effects',
+        'Removed TORMENT, MEAN LOOK, SPIDER WEB and BLOCK from the moves you can get',
+      ]],
+    ],
+  },
+  {
+    v: 'v0.3.13',
+    sections: [
+      ['NEW', [
+        'Added NOW PLAYING to the title screen',
+        'Added a SCREEN setting: AUTO, PIXEL (whole-number scale) or FILL',
+      ]],
+      ['CHANGES', [
+        'Map paths are easier to read: open routes stand out and hovering a node traces the way there',
+        'Finished co-op games close and appear in RECORDS as one team entry',
+        'The face-down cards rule says when your SILPH SCOPE or FOG BADGE reveals them',
+      ]],
+    ],
+  },
+  {
+    v: 'v0.3.12',
+    sections: [
+      ['CHANGES', [
+        'After your lead faints, pick the next one from the party list (the foes stay in view)',
+      ]],
+    ],
+  },
+  {
+    v: 'v0.3.11',
+    sections: [
+      ['CHANGES', [
+        'Co-op wins show in RECORDS as one team entry',
+      ]],
+    ],
+  },
+  {
+    v: 'v0.3.10',
+    sections: [
+      ['CHANGES', [
+        'The low-HP alarm now beeps three times and stops',
+      ]],
+    ],
+  },
+  {
+    v: 'v0.3.9',
+    sections: [
+      ['CHANGES', [
+        'Slowed mouse-wheel scrolling on the records screen',
+      ]],
+    ],
+  },
+  {
+    v: 'v0.3.8',
+    sections: [
+      ['FIXES', [
+        'Fixed the message box showing four advance arrows instead of one',
+      ]],
+    ],
+  },
+  {
+    v: 'v0.3.7',
+    sections: [
+      ['CHANGES', [
+        'Co-op room ascension is now the highest unlock among the players’ chosen starters',
+        'Co-op wins unlock the next ascension even above your own unlock',
+        'Moves already offered to a POKéMON show up less often',
+        'POKéMON with small move pools learn more moves (evolution line and type moves)',
+        'KING’S ROCK rolls once per hand (was per card)',
+        'Resized JOHTO trainer portraits to match FireRed’s',
+      ]],
+      ['FIXES', [
+        'Fixed UP-GRADE, SOOT SACK, HELIX FOSSIL, ENERGY POWDER and DOME FOSSIL dealing less damage than previewed',
+        'Fixed REST not healing when the battle ended first',
+      ]],
+    ],
+  },
+  {
+    v: 'v0.3.6',
+    sections: [
+      ['CHANGES', [
+        'Added SAVE & QUIT to co-op',
+        'Co-op saves now survive game updates',
+        'Fixed co-op games from v0.3.1 resuming at the first battle',
+        'Co-op games stay in the REJOIN list for 30 days (was 24 hours)',
+      ]],
+    ],
+  },
+  {
+    v: 'v0.3.5',
+    sections: [
+      ['CHANGES', [
+        'DISABLE blocks the foe’s next move only (was the next two)',
+      ]],
+    ],
+  },
+  {
+    v: 'v0.3.4',
+    sections: [
+      ['CHANGES', [
+        'A5 LEVEL CAP: EXP past the cap is now lost (it no longer goes to your lowest-level POKéMON)',
+        'Tightened all patch notes',
+      ]],
+    ],
+  },
+  {
+    v: 'v0.3.3',
+    sections: [
+      ['FIXES', [
+        'Fixed the co-op hint line running under the HINT / LOCK IN / DISCARD buttons',
+      ]],
+    ],
+  },
+  {
+    v: 'v0.3.2',
+    sections: [
+      ['EXP AND LEVELS', [
+        'EXP now scales with level: POKéMON above the foe’s level earn less, below it more (shown on the victory screen)',
+        'Fainted POKéMON no longer earn EXP, level up or learn moves (including a revived co-op lead)',
+        'A5 is now LEVEL CAP (replaces WEARY): levels cap at the act boss’s top level +2',
+      ]],
+      ['BATTLES', [
+        'DIVE, DIG, FLY and BOUNCE now dodge all foe moves, status included, except the Gen 3 exceptions (SURF and WHIRLPOOL vs DIVE; EARTHQUAKE, MAGNITUDE and FISSURE vs DIG; GUST, TWISTER, THUNDER and SKY UPPERCUT vs FLY and BOUNCE)',
+        'Trainers stay on screen longer in the battle intro (tap to skip)',
+        'Added a draw pile tooltip (hover or tap): moves left with counts, and the discard pile size',
+        'Co-op: the foe’s POKé BALLS (POKéMON left) now show under their HP boxes',
+        'Background-changing animations (SHADOW BALL, PSYCHIC...) now fade at FireRed speed',
+      ]],
+      ['MAP AND SCREENS', [
+        'Every map node now shows what it is on hover, not just the next ones (except ? rooms)',
+        'Bosses show their preferred type on the map, the NEXT GYM preview and the ELITE FOUR break screen',
+        'Added a TYPE CHART tab to the COMBOS screen',
+        'Added warning before skipping a held item',
+      ]],
+      ['STARTERS AND ITEMS', [
+        'PIKACHU starts with CHARGE BEAM and a LIGHT BALL',
+        'MACHOP starts with a MACHO BRACE; BLUE no longer brings two ABRA against it',
+        'EXP SHARE is now a rare held item; POKé FLUTE is now uncommon',
+      ]],
+    ],
+  },
+  {
+    v: 'v0.3.1',
+    sections: [
+      ['CHANGES', [
+        'Your rival’s starter is now always super effective against yours, from any region if needed (MACHOP → ABRA, PIKACHU and GASTLY → NINCADA, DRATINI → SWINUB, ABRA → HOUNDOUR); their team and the CHAMPION’s carry its evolution line',
+      ]],
+    ],
+  },
+  {
+    v: 'v0.3.0',
+
+    title: 'JOHTO',
+    sections: [
+      ['JOHTO', [
+        'Added JOHTO (HEARTGOLD) as a third region. Its acts: NEW BARK → AZALEA (FALKNER or BUGSY), GOLDENROD → ECRUTEAK (WHITNEY or MORTY), CIANWOOD → BLACKTHORN (CHUCK, JASMINE, PRYCE or CLAIR) and VICTORY ROAD',
+        'JOHTO ELITE FOUR: WILL, KOGA, BRUNO, KAREN and CHAMPION LANCE. Post-game: MT. SILVER, with LUGIA, HO-OH and RED at the summit',
+        'JOHTO trainers use their HEARTGOLD teams, moves and portraits; routes use HEARTGOLD wild POKéMON',
+        '8 new badges: ZEPHYR (faster POKéMON, +4 damage), HIVE (+8 damage), PLAIN (grows each hand your lead stays in), FOG (reveals face-down cards, foes miss more), STORM (physical cards +30%), MINERAL (15% less damage taken), GLACIER (+1 hand size), RISING (+80% on FULL HOUSE or better). Each JOHTO leader has their own rule',
+        'Added legendary beast nodes: RAIKOU (Act 2), ENTEI (Act 3), SUICUNE (Act 4), each with a unique held item',
+        'JOHTO acts run morning → day → night (a third each), with time-specific wild POKéMON (HOOTHOOT and GASTLY at night)',
+        'Added rival SILVER for JOHTO starters (CHIKORITA, CYNDAQUIL, TOTODILE, SWINUB, HOUNDOUR, LARVITAR...)',
+      ]],
+      ['EVENTS', [
+        'Added JOHTO “?” events: MYSTERY EGG, RUINS OF ALPH, BUG-CATCHING CONTEST, KIMONO GIRLS, SUDOWOODO, the red GYARADOS, the DRAGON’S DEN quiz and more',
+        'Added KURT’s Apricorn balls (FAST, LEVEL, LURE, HEAVY, LOVE, MOON, FRIEND), also sold in JOHTO MARTS. FRIEND BALL catches get an extra copy of their best move',
+        'Added TEAM ROCKET in JOHTO: SLOWPOKE WELL, GOLDENROD UNDERGROUND and the RADIO TOWER (three executives, no heal between)',
+      ]],
+      ['UNLOCKS', [
+        'JOHTO acts unlock after your 2nd win (in co-op, when the host has them)',
+        'RECORDS mark JOHTO acts as J (e.g. K-J-H-J)',
+      ]],
+    ],
+  },
+  {
+    v: 'v0.2.3',
+    sections: [
+      ['CHANGES', [
+        'Your attack animation now plays after your hand is scored, just before the hit',
+        'Trainers now stay on screen through “X wants to battle!” before sending out their first POKéMON',
+        'NEW RUN no longer replaces your run in progress until you press BEGIN! (with a warning)',
+        'RECORDS show each trainer’s starter',
+        'YAWN now puts the foe to sleep at the end of the turn (skipping its next move) and says right away if it fails',
+      ]],
+      ['FIXES', [
+        'Fixed card labels: MIMIC and SKETCH say COPY FOE MOVE, TRANSFORM says COPY 2 MOVES, draw moves say +2 / +1 NEXT TURN',
+        'Fixed foes with no attack: ABRA now use CONFUSION, POUND, KINESIS and DISABLE instead of only TELEPORT; other status-only foes (METAPOD, POOCHYENA...) get back a learned attack',
+      ]],
+    ],
+  },
+  {
+    v: 'v0.2.2',
+
+    sections: [
+      ['MOVE ANIMATIONS', [
+        'Animations now run at GBA speed (2x with FAST ANIMATIONS; co-op doubles both)',
+        'Played cards now line up below the battle instead of covering the animation',
+        'When the foe moves first, its move now plays out before your cards are revealed; your animation then plays before your damage counts up',
+      ]],
+    ],
+  },
+  {
+    v: 'v0.2.1',
+    sections: [
+      ['FIXES', [
+        'Fixed CRT CURVE OFF darkening the screen',
+      ]],
+    ],
+  },
+  {
+    v: 'v0.2.0',
+    title: 'MOVE ANIMATIONS',
+    sections: [
+      ['MOVE ANIMATIONS', [
+        'Added FireRed move animations for your attacks and foes’ moves (EMBER, THUNDERBOLT, SURF, HYPER BEAM and more); moves without one borrow the closest',
+        'Each hand shows one animation: the highest-DMG attack card (leftmost on a tie, or the leftmost card if all status)',
+        'Animations run slightly faster than the GBA (2x with FAST ANIMATIONS)',
+        'Co-op: each player’s hand and each foe’s move animate in turn, at double speed',
+      ]],
+    ],
+  },
+  {
+    v: 'v0.1.1',
+    sections: [
+      ['CHANGES', [
+        'Added team reordering between ELITE FOUR rooms (click a POKéMON to lead, or use the arrows)',
+      ]],
+    ],
+  },
+  {
+    v: 'v0.1.0',
+    title: 'ONE SPIRE',
+    sections: [
+      ['ONE SPIRE', [
+        'Removed world select: every run climbs one spire (Acts 1-3 end at a GYM LEADER, Act 4 is VICTORY ROAD, then the ELITE FOUR, CHAMPION and post-game)',
+        'Each act’s region (KANTO or HOENN) is drawn from the run seed and sets its routes, wild POKéMON, GYM LEADERS, badges, elites, events, legendary and music. Levels follow the act, not the region',
+        'The ELITE FOUR, CHAMPION (BLUE or STEVEN) and post-game (SEVII ISLANDS or SKY PILLAR) come from a region you visited',
+        'The act-clear screen now previews the next act’s region and possible GYM LEADERS (hover for their rule), or the ELITE FOUR',
+        'One rival per run: MAY for HOENN starters, BLUE otherwise',
+        'Runs are now SPIRE runs; RECORDS show each route (e.g. K-H-H-K) and dropped the per-world boards (old runs stay in ALL RUNS and MY RUNS)',
+      ]],
+      ['UNLOCKS', [
+        'HOENN acts unlock after your first CHAMPION win (existing HOENN unlocks carry over)',
+        'TREECKO, TORCHIC and MUDKIP are no longer free; you keep them if you had HOENN unlocked',
+      ]],
+      ['STORIES', [
+        'TEAM ROCKET, AQUA and MAGMA now remember how you dealt with each other across regions',
+        'The OLD AMBER’s AERODACTYL arrives by courier if Act 3 isn’t in KANTO; STEVEN finds you in any Act 3; WALLY can appear on any VICTORY ROAD',
+      ]],
+      ['CO-OP', [
+        'Co-op wins now unlock ascensions for each player’s starter, and A5+ co-op wins unlock shinies',
+        'Removed the lobby’s world choice; HOENN acts appear once the host has won a run',
+      ]],
+      ['CHANGES', [
+        'Added SETTINGS > CRT CURVE to turn off the curved CRT glass',
+        'The HOENN ELITE FOUR and CHAMPION STEVEN now use their Ruby/Sapphire moves (they mostly had status moves)',
+      ]],
+      ['FIXES', [
+        'Fixed the evolution background: it now fills the screen instead of a flashing box',
+      ]],
+    ],
+  },
+  {
+    v: 'v0.0.7',
+    sections: [
+      ['EVENTS', [
+        'Added act-specific “?” events in real locations: the OLD MAN and MT. MOON fossils (Act 1), NUGGET BRIDGE, BILL, the S.S. ANNE and GAME CORNER (Act 2), SILPH CO., the SAFARI ZONE and POKéMON MANSION (Act 3), ELITE FOUR gear (VICTORY ROAD); in HOENN, PETALBURG WOODS, DEVON, RYDEL’s CYCLES, MT. PYRE, the ABANDONED SHIP, WALLY and more; plus post-game events',
+        'Event rewards now scale with the act; from Act 4 on, events no longer pay money',
+        'Most events are now trade-offs (e.g. a held item for HP, a rare item with a curse); some have several steps',
+        'Event battles now wait until about floor 4',
+        'Added 6 shrines (at most once per act, about 1 “?” in 4): MOVE DELETER, MOVE TUTOR, COPYCAT, BILL’s or LANETTE’s PC (trades), PROF. OAK or BIRCH (POKéDEX goal reward) and the BERRY TREE',
+      ]],
+      ['STORIES', [
+        'Some choices now pay off later: send the OLD AMBER from PEWTER for an AERODACTYL at the CINNABAR LAB in Act 3; carry the DEVON GOODS and STEVEN finds you in HOENN’s Act 3',
+        'TEAM ROCKET, AQUA and MAGMA now recur and remember you (“join” at NUGGET BRIDGE to walk through SILPH CO.); the POKé FLUTE wakes ROUTE 12’s SNORLAX; WALLY remembers your help',
+      ]],
+      ['CURSES', [
+        'Added curses (purple held items) to some rewards: CURSED DOLL (-1 hand size), HEX LETTER (-1 discard, foes +5% damage), LAGGING TAIL (40% slower), ROTTEN SHROOM (-8% HP after each battle), IOU NOTE (prices +25%, battles pay 25% less)',
+        'Curses can’t be sold; a POKéMON CENTER CLEANSE removes one for a fee, MR. FUJI (Act 2) or MT. PYRE (HOENN Act 3) for free',
+      ]],
+      ['CO-OP: UP TO 4 PLAYERS', [
+        'Co-op rooms now hold up to 4 players; the host can START with 2, 3 or 4',
+        'Foes act more often with more players (twice a turn with 4) and have more HP; wild battles bring one POKéMON per player, two at a time',
+        'Map votes: a majority wins early, otherwise the most votes once everyone has voted; ties go to a coin flip',
+        'Added a status row per player (lead, HP, locked in); foe intents now show their target',
+        'Added CARRY ON to continue without a dropped player (they return via REJOIN)',
+        'All events are now in the co-op pool (battle choices hidden)',
+      ]],
+      ['NUZLOCKE (A8)', [
+        'Events no longer give gift or traded POKéMON; event catches count as the act’s one catch',
+      ]],
+      ['FIXES', [
+        'Fixed the gift event never giving EEVEE, LAPRAS or the HITMONs; they now come from BILL, SILPH CO. and the FIGHTING DOJO',
+        'Fixed the MOVE TUTOR teaching 120-power moves and EXPLOSION in Act 1; its lessons now scale with the act',
+        'Fixed a co-op desync when a hand switched your lead in face-down fights (SABRINA, PHOEBE)',
+      ]],
+    ],
+  },
+  {
+    v: 'v0.0.6',
+    sections: [
+      ['LEGENDARY POKéMON', [
+        'Added optional legendary nodes (gold glow): ZAPDOS, ARTICUNO and MOLTRES in Acts 2-4 (HOENN: REGIROCK, REGICE, REGISTEEL). Tougher than elites, with PRESSURE (every hand also costs a discard)',
+        'Each drops a unique held item: THUNDER FEATHER (+1 hand size), FROST FEATHER (-20% damage taken), FLAME FEATHER (heal 12% after battles), ROCK, ICE and STEEL CORE; each also gives +50% damage to its type',
+        'You then get one chance to catch it, at up to your best POKéMON’s level',
+      ]],
+      ['RIVAL BATTLES', [
+        'Added rival battles on a floor every path crosses in Acts 1-3: BLUE (KANTO) or MAY (HOENN), with the starter that beats yours. BLUE is also the CHAMPION',
+        'Rival rewards: a guaranteed rarer held item, +50% money and an item',
+        'Removed legendaries and rivals from the elite pools',
+      ]],
+      ['ASCENSION', [
+        'A8 is now NUZLOCKE: fainted POKéMON are released, you can only catch each act’s first wild POKéMON, and losing your team ends the run (gifts and the legendary catch exempt; not in co-op)',
+        'Moved Inflation (prices +25%, battles pay 20% less) into A4 Shoestring',
+        'Ascensions now unlock per starter (a win at An opens A(n+1) for that starter only); co-op rooms use the lowest of the players’ levels',
+        'Existing progress carried over: each starter unlocks one level above its highest cleared ascension',
+      ]],
+      ['STARTERS', [
+        'Added 7 starters (PIDGEY, MACHOP, NINCADA, GASTLY, ABRA, SWINUB, HOUNDOUR), covering every type',
+        'LARVITAR starts with ROCK THROW instead of SCREECH',
+        'Added shinies: win at A5+ to unlock your starter’s shiny form (SHINY button on the starter screen, cosmetic)',
+      ]],
+      ['NEW', [
+        'Added map sketching: right-drag (or PEN) to draw, ERASE to clear; co-op partners see your sketches',
+        'Added SETTINGS > CRT (OFF, SUBTLE, STRONG)',
+        'Added HQ audio (default): smoother, less crunchy music and cries; SETTINGS > AUDIO QUALITY restores GBA sound',
+        'Phones: the game fits in portrait, every menu closes by tap, and you can tap a held item in the shop to sell it',
+        'Cards are easier to read: darker text, fitted long names, readable power numbers on light types',
+        'Hovering a card shows its copy count, e.g. “PLUCK (3)”',
+        'RECORDS lists now show up to 50 entries and scroll (was 10)',
+        'Co-op: delete old rooms from REJOIN with X',
+      ]],
+      ['FIXES', [
+        'Fixed the rival battle freezing after BLUE’s intro; missing sounds no longer block battles',
+        'Fixed sound stalling the level-up and POKéMON CENTER screens',
+        'Fixed a full BAG throwing away found items: use, sell or leave them (the POKé MART won’t charge for items that don’t fit)',
+        'Fixed mangled sprites drawn at in-between sizes (BLUE in battle, starters, ELITE FOUR preview, icons)',
+        'Fixed the white capsules on the map: the elite and rival “!” now shows properly',
+        'Fixed map walking wobbling and the trainer facing the wrong way',
+        'Co-op: fixed faint picks, switches, balls and items sometimes doing nothing when your partner acted',
+        'Co-op: both players now get the same “?” event',
+      ]],
+      ['BALANCE', [
+        'Foes have about 50% more HP (not in co-op)',
+      ]],
+    ],
+  },
+  {
+    v: 'v0.0.5',
+    sections: [
+      ['DISCARD UPDATE', [
+        'Move copies now follow PP: attacks get PP/10 + 1 cards (2 to 5), status moves 1 or 2',
+        'Added a free discard of up to 2 cards once per turn; battle discards cut to 2 (was 3)',
+        'Foes have 40% more HP but hit 10% softer',
+        'A move learned over another keeps its PP UP copies',
+        'UP-GRADE counts cards above 10 (was 6), SOOT SACK +6% per FIRE card (was +10%), GOOD ROD +24% per discard left (was +16%)',
+      ]],
+      ['CO-OP (BETA)', [
+        'Added CO-OP (beta): create a room from the title screen and share the 5-letter code (sign-in and allowlist required)',
+        'Each player brings their own team, items and money; you vote on the map together; battles are 2 vs 2 (click a foe to target, then LOCK IN), in Speed order',
+        'TEAM UP: the second hand to hit the same foe in a turn deals +20%. Your items can heal or revive your partner’s POKéMON; if your team faints and your partner wins, your lead returns with 25% HP',
+        'UNLOCK takes back your hand until your partner locks in; REJOIN gets you back in after a reload',
+        'Co-op runs don’t count for records yet; each act cleared together unlocks a starter',
+        'Fixed co-op lead placement and blurry partner cards; co-op bosses have more HP',
+      ]],
+      ['STARTER UNLOCKS', [
+        'Reset starter unlocks to BULBASAUR, CHARMANDER and SQUIRTLE (TREECKO, TORCHIC and MUDKIP stay open in HOENN); other progress kept',
+        'Each act clear now lets you pick 1 of up to 3 random locked starters (each player in co-op); unlocked starters can join co-op runs',
+      ]],
+      ['FIXES', [
+        'Wild POKéMON no longer repeat within a run (evolutions can)',
+        'MIMIC and SKETCH now copy the foe’s next move into your next hand as a one-use card (TRANSFORM copies 2); draw cards now add cards next turn',
+        'Fixed the ACRO BIKE free discard being unlimited (now once per turn)',
+        'The POKé MART list now scrolls',
+      ]],
+    ],
+  },
+  {
+    v: 'v0.0.4',
+    sections: [
+      ['DAMAGE UPDATE', [
+        'Replaced chips and mult with real POKéMON damage (level, move power, ATK vs DEF or SP. ATK vs SP. DEF, STAB, type matchup)',
+        'Cards show their damage against the current foe; the left panel totals your hand',
+        'Combos now boost damage: PAIR +25%, TRIPLE +60%, FULL HOUSE +80%, QUAD +100%, COVERAGE +125%, PENTA +150% (vitamins raise them)',
+        'Foes now have POKéMON-scale HP',
+        'Held items and badges now add % or flat damage (CHARCOAL: FIRE cards +60%), and bonuses add instead of multiplying. MACH BIKE: 15% faster (was +2 Speed)',
+        'Rebalanced; CHARMANDER starts with METAL CLAW instead of SCRATCH',
+        'Updated HOW TO PLAY',
+      ]],
+    ],
+  },
+  {
+    v: 'v0.0.3',
+    sections: [
+      ['CHANGES', [
+        'Physical / special is now set per move, not by type (54 moves changed, e.g. SHADOW BALL special, CRUNCH physical)',
+        'Added 63 Gen 4 moves (SHADOW CLAW, the FANGS, X-SCISSOR, AURA SPHERE, STONE EDGE...), learned by 377 POKéMON as in Gen 4; enemy damage retuned',
+        'Enemy intent flashes KO! when it could knock out your lead',
+        'COVERAGE now beats QUAD',
+        'Enemies have more HP and hit harder',
+      ]],
+      ['FIXES', [
+        'Fixed the enemy attack and faint animation being skipped when your lead was knocked out',
+      ]],
+    ],
+  },
+  {
+    v: 'v0.0.2',
+    sections: [
+      ['NEW', [
+        'Each POKéMON has its own deck: your hand is your lead’s cards (hand size 5)',
+        'Cards and foe intents show type effectiveness and P/S fit',
+        'Added a HINT button, suggested hands early on, card dragging and keys (1-5 select, A attack, D discard)',
+        'You now choose your replacement when your lead faints (free)',
+        'Added 24 held items and removed the held item limit',
+        'Click a bag item to use or sell it',
+        'A2 now hides enemy moves',
+        'Mobile: pinch to zoom, two fingers to pan',
+        'Added RECORDS > INVITE one-time links (admins only)',
+      ]],
+      ['CHANGES', [
+        'Halved held item drops: elites 70%, gym leaders 50%, item balls 40%; Marts stock one and sell at most two per visit',
+        'Combos: NORMAL ranks like any type, COVERAGE = 4 different types; removed TEAM ATTACK and ECHO',
+        'Evolution: trade evolutions at Lv37 (Lv40 for held-item trades), EEVEE uses SUN/MOON STONE for ESPEON/UMBREON, NINCADA leaves a SHEDINJA, late evolutions by Lv48',
+        'RARE CANDY gives 3 levels (was 1)',
+        'Renamed combo upgrades (PAIR UP, TRIPLE UP...); rewrote move and ability text',
+        'Clearing an act fully heals (A0-A4); quieter default volume; rebalanced',
+      ]],
+      ['FIXES', [
+        'TMs are back in Marts; no duplicate shop or reward offers',
+        'Moves that can’t affect the foe (ELECTRIC vs GROUND, WATER vs WATER ABSORB) now deal no damage and show NO EFFECT',
+        'Fixed enemy drain/recoil, MAGIC COAT, SUBSTITUTE and FOCUS ENERGY',
+        'PROTECT / DETECT / ENDURE now get likelier to fail when repeated (Gen 3)',
+        'Low-HP alarm only plays in battle; status badges no longer cover HP; deck view, BIKER sprite and other display fixes',
+        'Removed the rewards screen after the final battle; fainting before your hand resolves is now shown',
+      ]],
+    ],
+  },
+  { v: 'v0.0.1', sections: [['', ['The first playable build.']]] },
+];

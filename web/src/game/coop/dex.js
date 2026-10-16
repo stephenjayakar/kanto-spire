@@ -8,6 +8,8 @@
 // partner's catch is "seen" for you because you met it in the same duo battle. On top of the run's own lists, the
 // battle on screen (or the one that ended the run, which has no reward screen) counts its foes that have been on
 // the field.
+import { D } from '../data.js';
+
 export function coopDex(g, p) {
   const run = g?.runs?.[p];
   const seen = new Set(), caught = new Set();
@@ -18,7 +20,7 @@ export function coopDex(g, p) {
   if (d && Array.isArray(d.enemies) && !g.away?.[p] && !d.away?.[p]) {
     d.enemies.forEach((e, i) => {
       const met = !Array.isArray(d.gone) || d.gone[i] != null || (Array.isArray(d.field) && d.field.includes(i));
-      if (met && e?.species) seen.add(e.species);
+      if (met && e?.species) seen.add(D.species[e.species]?.formOf || e.species); // (v0.6.0: GIRATINA_ORIGIN counts as GIRATINA)
     });
   }
   return { seen: [...seen], caught: [...caught] };

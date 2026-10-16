@@ -10,15 +10,16 @@
 // defeated / result / intent are accessors that delegate to the duo.
 import { D, typeEffect, speciesName } from '../data.js';
 import { Battle, newSide, makeEnemy, effectiveness, abilityOf } from '../battle.js';
-import { isFainted, maxHp, monName, typesOf, defaultMoves, DECK_RULES } from '../pokemon.js';
+import { isFainted, maxHp, monName, typesOf, defaultMoves, DECK_RULES, stats } from '../pokemon.js';
 import { BOSS_RULES, threatText } from '../bosses.js';
 import { CONSUMABLES, BALLS } from '../items.js';
 import { FIXED_DAMAGE, PROTECT_EFFECTS, preRollProtect } from '../effects.js';
+import { TRACE_BAN } from '../abilities.js';
 import { COOP_TUNING } from './tuning.js';
 
 const DOWN = Object.freeze({ outcome: 'down' });
 const TEAM_UP_DEF = { key: 'TEAM_UP', onHand(S) { S.times(1 + COOP_TUNING.teamUp / 100, 'TEAM UP'); } };
-const WEATHER_RULES = new Set(['FLANNERY', 'WALLACE', 'GLACIA']); // onBattleStart only sets the (shared) weather
+const WEATHER_RULES = new Set(['FLANNERY', 'WALLACE', 'GLACIA', 'WAKE', 'CANDICE', 'BERTHA', 'FLINT']); // onBattleStart only sets the (shared) weather
 
 // =====================================================================================================
 export class SubBattle extends Battle {
@@ -116,7 +117,9 @@ export class SubBattle extends Battle {
 
   setWeather(w, fromAbility) {
     if (this._noWeather) return;
-    return super.setWeather(w, fromAbility);
+    const r = super.setWeather(w, fromAbility);
+    if (this.duo && !this.dry) this.duo.syncForecast(); // (every FORECAST foe on the field, not just the focused one)
+    return r;
   }
 
   // Doubles: a lead's INTIMIDATE cuts the ATTACK of every foe on the field.
@@ -134,6 +137,7 @@ export class SubBattle extends Battle {
     if (abil === 'SAND_STREAM') this.setWeather('SAND', true);
     if (abil === 'SNOW_WARNING') this.setWeather('HAIL', true);
     if (this.bossRule?.onLeadEnter) this.bossRule.onLeadEnter(this, lead);
+    this.duo.syncForecast();
   }
 
   // Exact preview against the focused enemy. Battle.simulate replaces sides.enemy with a parsed copy:
@@ -295,6 +299,12 @@ export class DuoBattle {
     return this.field[1 - t] !== null ? 1 - t : null;
   }
   queueFor(slot) { return this.queues[this.slotQueue[slot]] || []; }
+  // FORECAST foes take the weather's type (as the host sees the weather: CLOUD NINE / AIR LOCK).
+  syncForecast() {
+    const h = this.host();
+    if (!h) return;
+    for (const ri of this.liveField()) if (this.enemies[ri]?.ability === 'FORECAST') h.withFocus(ri, () => h.syncEnemyTypes());
+  }
 
   // ---- lifecycle --------------------------------------------------------------------------------
   start() {
@@ -342,11 +352,18 @@ export class DuoBattle {
     if (e.threat && !this.threatShown) { this.threatShown = true; this.emit({ t: 'msg', text: threatText(e.threat, true, this.activeCount()), slot, ei: ri }); } // (once per battle)
     h.withFocus(ri, () => {
       if (spikes) { h.damageEnemy(Math.floor(e.maxHp * spikes / 8), 'SPIKES'); h.msg(`${h.monName(e)} is hurt by spikes!`); }
+      if (e.bossRule && BOSS_RULES[e.bossRule]?.onFoeEnter) BOSS_RULES[e.bossRule].onFoeEnter(h, e); // (v0.6.0: BERTHA, CYNTHIA's GARCHOMP)
+      // TRACE: it copies the ability of the lead it faces (the host's, like the solo foe copies your lead's)
+      const lead0 = h.lead(), la = lead0 && !isFainted(lead0) ? h.pab(lead0) : null;
+      if (e.ability === 'TRACE' && la && !TRACE_BAN.has(la)) { e.ability = la; h.msg(`${h.monName(e)} TRACED ${monName(lead0)}'s ${la.replace('_', ' ')}!`); }
       const ab = e.ability;
       if (ab === 'DRIZZLE') h.setWeather('RAIN', true);
       if (ab === 'DROUGHT') h.setWeather('SUN', true);
       if (ab === 'SAND_STREAM') h.setWeather('SAND', true);
       if (ab === 'SNOW_WARNING') h.setWeather('HAIL', true);
+      if (ab === 'MOLD_BREAKER') h.msg(`${h.monName(e)} breaks the mold!`);
+      // DOWNLOAD: +1 ATTACK or SP. ATK, whichever beats the weaker defense of the lead it faces
+      if (ab === 'DOWNLOAD' && lead0) { const st = stats(lead0); h.addStage('enemy', st.def < st.spd ? 'atk' : 'spa', 1, 'DOWNLOAD'); }
       h.sides.enemy.inTurn = Math.max(1, this.turn || 0);
       h.syncEnemyTypes();
     });
@@ -354,6 +371,14 @@ export class DuoBattle {
     if (e.ability === 'INTIMIDATE') {
       this.emit({ t: 'msg', text: `${h.monName(e)}'s INTIMIDATE cuts your ATTACK!`, slot, ei: ri });
       for (const s of this.aliveSubs()) s.withFocus(ri, () => s.addStage('player', 'atk', -1, 'INTIMIDATE', true));
+    }
+    // PRESSURE: every player loses a discard, once per battle (not on top of a legendary's PRESSURE rule)
+    if (e.ability === 'PRESSURE' && this.bossRule?.name !== 'PRESSURE') {
+      for (const s of this.aliveSubs()) {
+        if (s.pressureUsed) continue;
+        s.pressureUsed = true;
+        if (s.discardsLeft > 0) { s.discardsLeft--; s.withFocus(ri, () => s.msg(`${s.monName(e)} is exerting its PRESSURE! (-1 discard)`)); }
+      }
     }
   }
 
@@ -578,10 +603,14 @@ export class DuoBattle {
       if (it.spread && this.spreadGroup(slot)[0] !== it) continue; // (an all-target move is one action: its first intent)
       const s = this.subs[it.target];
       const spd = s.withFocus(it.ri, () => s.speedOf('enemy'));
-      actors.push({ kind: 'enemy', slot, i, ri: it.ri, prio: it.move.priority || 0, quick: 0, spd });
+      // (v0.6.0: MAYLENE's LUCARIO always moves first, boss rule foeFirst)
+      const first = !!s.withFocus(it.ri, () => this.bossRule?.foeFirst?.(s));
+      actors.push({ kind: 'enemy', slot, i, ri: it.ri, prio: it.move.priority || 0, quick: first ? 2 : 0, spd });
     }
     const order = (a) => (a.kind === 'enemy' ? 1 : 0);
-    actors.sort((a, b) => (b.prio - a.prio) || (b.quick - a.quick) || (b.spd - a.spd) || (order(a) - order(b)) || ((a.p ?? a.i) - (b.p ?? b.i)));
+    // (v0.6.0: LUCIAN's TRICK ROOM turn: the slower one moves first)
+    const tr = this.bossRule?.trickRoom?.(this.host()) ? -1 : 1;
+    actors.sort((a, b) => (b.prio - a.prio) || (b.quick - a.quick) || tr * (b.spd - a.spd) || (order(a) - order(b)) || ((a.p ?? a.i) - (b.p ?? b.i)));
     for (const [ai, a] of actors.entries()) {
       if (this.result) {
         // (the battle ended before this hand: a REST in it still heals and cures, v0.3.7)
@@ -709,7 +738,7 @@ export class DuoBattle {
         for (const s of this.aliveSubs()) s.weatherDamage(false, true);
         this.msg(this.weather === 'SAND' ? 'The sandstorm rages.' : 'Hail continues to fall.');
       }
-      if (--this.weatherTurns <= 0) { this.msg('The weather returned to normal.'); this.weather = null; this.emit({ t: 'weather', weather: null }); }
+      if (--this.weatherTurns <= 0) { this.msg('The weather returned to normal.'); this.weather = null; this.emit({ t: 'weather', weather: null }); this.syncForecast(); }
     }
     // Enemy residuals once per enemy (LEECH SEED heals the player who planted it).
     for (const ri of field) {

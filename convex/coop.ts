@@ -42,7 +42,9 @@ const HB_LEGACY = 5000; // older clients beat every 5 s and call a partner offli
 const NET_MAX = 99;
 
 // v0.1.0 One Spire rooms: "spire" (KANTO + HOENN) / "spire_kanto" (KANTO only) / v0.1.1 "spire_johto" (all three); kanto / hoenn = rooms from before it
-const worldV = v.union(v.literal("kanto"), v.literal("hoenn"), v.literal("spire"), v.literal("spire_kanto"), v.literal("spire_johto"));
+// v0.6.0: "spire_ks" (KANTO + SINNOH), "spire_sinnoh" (KANTO + HOENN + SINNOH), "spire_all" (all four)
+const worldV = v.union(v.literal("kanto"), v.literal("hoenn"), v.literal("spire"), v.literal("spire_kanto"), v.literal("spire_johto"),
+  v.literal("spire_ks"), v.literal("spire_sinnoh"), v.literal("spire_all")); // v0.6.0: SINNOH pools (regions.js COOP_POOLS)
 
 function randomFrom(abc: string, n: number) {
   let s = "";

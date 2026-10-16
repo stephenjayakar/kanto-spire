@@ -2,9 +2,28 @@
 // Game version and patch notes (shown from the title screen). Versions are major.minor.patch: every production
 // deploy that changes the game bumps the patch (v0.2.0 -> v0.2.1); the owner calls minor bumps (v0.1.x -> v0.2.0);
 // no major bumps yet. Each one gets a new top PATCH_NOTES entry; see AGENTS.md.
-export const VERSION = 'v0.5.27';
+export const VERSION = 'v0.6.0';
 
 export const PATCH_NOTES = [
+  {
+    v: 'v0.6.0',
+    sections: [
+      ['NEW: SINNOH', [
+        'A fourth region joins the spire: SINNOH, from Pokemon Platinum. It is open from your very first run (no win needed), so any act can take you there',
+        'Acts 1-3: ROARK and GARDENIA, then FANTINA and MAYLENE, then CRASHER WAKE, BYRON, CANDICE and VOLKNER, with their Platinum teams and portraits. Act 4: VICTORY ROAD and the POKéMON LEAGUE, with AARON, BERTHA, FLINT, LUCIAN and CHAMPION CYNTHIA',
+        "The post-game is the DISTORTION WORLD: CYRUS waits there, and at the end GIRATINA in its ORIGIN FORME. Every 3rd turn its DISTORTION flips the world: super-effective hands deal half damage and resisted ones deal double",
+        'Every GYM LEADER and ELITE FOUR member brings a rule: STEALTH ROCK, GRASSY TERRAIN, CONFUSE RAY, AURA, RAIN DANCE, BULWARK, SNOW WARNING, DISCHARGE, TARGET LOCK (punishes a lead that never switches), SANDSTORM, SUNNY DAY, TRICK ROOM, and CYNTHIA opens with a different POKéMON every time',
+        "Platinum's wild POKéMON, with morning, day and night, so Gen 4 POKéMON are everyday finds in SINNOH. TEAM GALACTIC (MARS, JUPITER, SATURN, CYRUS), MESPRIT, AZELF and UXIE as the acts' legendaries (each with its own held item), DIALGA and PALKIA at the SPEAR PILLAR, and 26 new \"?\" events (fossils, EEVEE, ROTOM, SPIRITOMB, the GREAT MARSH, eggs...)",
+        'TURTWIG, CHIMCHAR and PIPLUP join the starters you can unlock. Start with one and your rival is BARRY',
+        'Eight new badges, from the COAL BADGE to the BEACON BADGE',
+      ]],
+      ['CHANGES', [
+        'Every POKéDEX species (1-493) has a way to be caught or obtained, and a new check keeps it that way',
+        'Every ability does something in battle. Fixed: ROCK HEAD now stops FLARE BLITZ and HEAD SMASH recoil; MOLD BREAKER also gets past STURDY, status immunities, OWN TEMPO, the stat-drop blockers and the rest; in co-op a foe\'s TRACE, DOWNLOAD and PRESSURE work, and FORECAST follows the weather',
+        'Co-op rooms include SINNOH too (the host needs no win for it)',
+      ]],
+    ],
+  },
   {
     v: 'v0.5.27',
     sections: [

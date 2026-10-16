@@ -1,4 +1,4 @@
-// "?" events (v0.0.7, docs/EVENTS_DESIGN.md): per-act pools for KANTO, HOENN and JOHTO (v0.1.1), plus 6 shrines that can show up in
+// "?" events (v0.0.7, docs/EVENTS_DESIGN.md): per-act pools for KANTO, HOENN, JOHTO (v0.1.1) and SINNOH, plus 6 shrines that can show up in
 // any act and scale with it (25% of "?" rooms). Act events happen once per run, a shrine once per act.
 //
 // Event:  { id, title, npc | mon, world, acts: [actIndex...] | shrine: true, weight, music, text,
@@ -230,8 +230,8 @@ const SHRINES = [
         tip: 'Give a POKéMON (not your last) for a random, stronger species at its level +1.',
         run: (r, rng, mon) => {
           const target = bst(mon.species) + [30, 40, 50, 50, 50][act(r)];
-          let pool = Object.values(D.species).filter(s => s.dex && s.dex <= DEX_MAX && Math.abs(bstAll(s) - target) < 40 && !LEGENDARY.has(s.key) && s.key !== mon.species);
-          if (!pool.length) pool = Object.values(D.species).filter(s => s.dex && s.dex <= DEX_MAX && bstAll(s) >= target - 60 && !LEGENDARY.has(s.key));
+          let pool = Object.values(D.species).filter(s => s.dex && !s.form && s.dex <= DEX_MAX && Math.abs(bstAll(s) - target) < 40 && !LEGENDARY.has(s.key) && s.key !== mon.species);
+          if (!pool.length) pool = Object.values(D.species).filter(s => s.dex && !s.form && s.dex <= DEX_MAX && bstAll(s) >= target - 60 && !LEGENDARY.has(s.key));
           const s = rng.pick(pool);
           const nm = makeMon(s.key, r.capLevel(mon.level + 1), { rng, minIV: 10, caughtAct: act(r) });
           r.party.splice(r.party.indexOf(mon), 1, nm);
@@ -294,7 +294,7 @@ const SHRINES = [
 ];
 const dexBar = (r) => [10, 20, 32, 40, 55][act(r)] ?? 55;
 function postedTrade(r) {
-  const k = { kanto: [{ sp: 'MR_MIME' }, { sp: 'FARFETCHD', item: 'STICK' }, { sp: 'LICKITUNG', item: 'LEFTOVERS' }], hoenn: [{ sp: 'SEEDOT' }, { sp: 'PLUSLE' }, { sp: 'CORSOLA', item: 'SHELL_BELL' }], johto: [{ sp: 'DUNSPARCE' }, { sp: 'AIPOM', item: 'SILK_SCARF' }, { sp: 'SHUCKLE', item: 'HARD_STONE' }] }[regionIdOf(r)][act(r)];
+  const k = { kanto: [{ sp: 'MR_MIME' }, { sp: 'FARFETCHD', item: 'STICK' }, { sp: 'LICKITUNG', item: 'LEFTOVERS' }], hoenn: [{ sp: 'SEEDOT' }, { sp: 'PLUSLE' }, { sp: 'CORSOLA', item: 'SHELL_BELL' }], johto: [{ sp: 'DUNSPARCE' }, { sp: 'AIPOM', item: 'SILK_SCARF' }, { sp: 'SHUCKLE', item: 'HARD_STONE' }], sinnoh: [{ sp: 'ABRA' }, { sp: 'CHATOT', item: 'SHARP_BEAK' }, { sp: 'HAUNTER', item: 'SPELL_TAG' }] }[regionIdOf(r)]?.[act(r)];
   if (!k || !D.species[k.sp]) return null;
   if (k.item && has(r, k.item)) return { sp: k.sp };
   return k;
@@ -678,7 +678,7 @@ const KANTO = [
       { label: 'Trade 2 held items for 1 of 3 rare items', needsRelic: 2, cond: r => heldRelics(r).length >= 2, ai: r => 1.6 - relicKeep(r, null, 2), run: (r, rng, mon, keys) => { for (const k of keys) r.removeRelic(k); return { text: `VETERAN: ${keys.map(itemName).join(' and ')}? Fine gear. Take your pick of mine.`, relicChoices: relics(r, rng, 3, W.rare) }; } },
       { label: 'Trade your lowest-level POKéMON for his partner', mon: 'trade', cond: r => r.party.length >= 2, ai: r => 1.2, run: (r, rng) => {
         const low = [...r.party].sort((a, b) => a.level - b.level)[0];
-        const sp = rng.pick(VETERAN_PARTNERS[regionIdOf(r)]);
+        const sp = rng.pick(VETERAN_PARTNERS[regionIdOf(r)] || VETERAN_PARTNERS.kanto);
         const nm = gift(r, rng, sp, 0, 20);
         r.party.splice(r.party.indexOf(low), 1, nm); r.addSeen(sp, true);
         return { text: `VETERAN: ${monName(low)} will keep me company. Take good care of my ${speciesName(sp)}!`, traded: nm };
@@ -760,7 +760,7 @@ const KANTO = [
 ];
 const FOSSILS = { HELIX_FOSSIL: 'OMASTAR', DOME_FOSSIL: 'KABUTOPS', OLD_AMBER: 'AERODACTYL' };
 const PP_BALLS = { pool: ['HYPER_POTION', 'REVIVE', 'RARE_CANDY', 'HP_UP', 'PROTEIN', 'THUNDER_STONE'], foe: 'ELECTRODE', odds: [0.25, 0.35, 0.5], moves: ['TACKLE', 'SONIC_BOOM', 'SELF_DESTRUCT', 'SCREECH'], terrain: 'building', where: 'ball' };
-const VETERAN_PARTNERS = { kanto: ['ARCANINE', 'LAPRAS', 'MACHAMP', 'GYARADOS', 'SNORLAX', 'NINETALES'], hoenn: ['AGGRON', 'FLYGON', 'ALTARIA', 'WALREIN', 'GARDEVOIR', 'MILOTIC'], johto: ['AMPHAROS', 'HERACROSS', 'KINGDRA', 'SKARMORY', 'HOUNDOOM', 'URSARING'] };
+const VETERAN_PARTNERS = { kanto: ['ARCANINE', 'LAPRAS', 'MACHAMP', 'GYARADOS', 'SNORLAX', 'NINETALES'], hoenn: ['AGGRON', 'FLYGON', 'ALTARIA', 'WALREIN', 'GARDEVOIR', 'MILOTIC'], johto: ['AMPHAROS', 'HERACROSS', 'KINGDRA', 'SKARMORY', 'HOUNDOOM', 'URSARING'], sinnoh: ['LUXRAY', 'STARAPTOR', 'GASTRODON', 'BRONZONG', 'LUCARIO', 'HIPPOWDON'] };
 const WAREHOUSE = ['HERACROSS', 'SKARMORY', 'MILTANK', 'SNEASEL', 'HOUNDOOM', 'AMPHAROS', 'KINGDRA', 'PUPITAR'];
 const rocketToll = (r) => Math.max(100, Math.min(600, Math.floor(r.money * 0.25)));
 // The villain story across regions (One Spire): TEAM ROCKET in KANTO acts, TEAM AQUA / MAGMA in HOENN acts. Each
@@ -1499,6 +1499,344 @@ const JOHTO = [
 ];
 
 // =============================================================================================================
+// SINNOH (Platinum): TEAM GALACTIC's plot: VALLEY WINDWORKS (rocket1) -> VEILSTONE WAREHOUSE (rocket2) -> the GALACTIC
+// HQ gauntlet (rocket3; forced in act 3 once both earlier steps happened). The same flags as the other regions' villain
+// arcs, so the story crosses regions. Gifts and catches lean on Gen 4 species that are hard to place in wild pools
+// (fossils, babies, SPIRITOMB, ROTOM, RIOLU, GIBLE...). Trainers come from sinnoh.js; while a key is missing, a fight
+// falls back to a FireRed/JOHTO stand-in (sPool).
+// =============================================================================================================
+const S = (acts, e) => ({ world: 'sinnoh', acts, ...e });
+const tObj = (t) => (typeof t === 'string' ? D.trainers[t] : t);
+const okTrainer = (t) => { const o = tObj(t); return !!(o && !o.dummy && o.party?.length); };
+function sPool(keys, fallback) {
+  const l = keys.filter(okTrainer);
+  if (l.length) return l;
+  const f = (typeof fallback === 'function' ? fallback() : fallback || []).filter(okTrainer);
+  return f.length ? f : ROCKET_GRUNTS();
+}
+const GRUNT_FB = () => ['JOHTO_ROCKET_GRUNT', ...ROCKET_GRUNTS()];
+const ADMINS_FB = ['TEAM_ROCKET_ADMIN', 'TEAM_ROCKET_ADMIN_2'];
+const BOSS_FB = ['BOSS_GIOVANNI_2', 'BOSS_GIOVANNI'];
+const ACE_FB = () => trainersLike(/^COOLTRAINER_/, 3);
+const villainHeard = (r) => (flags(r).rocket1 === 'beat' ? ` "Word travels: you're the kid from ${rocket1At(r)}."` : flags(r).aqua1 === 'beat' ? ' "TEAM AQUA told us about a kid like you..."' : '');
+// The GALACTIC HQ: like the RADIO TOWER, three elites back to back with no heal (cfg.chainNext), the prize after the last.
+const HQ_LINES = {
+  COMMANDER_MARS: 'MARS: A kid made it past the warp panels? How cute. Let me fix that!',
+  COMMANDER_JUPITER: "JUPITER: The BOSS is busy. I'll be your opponent... and your last.",
+  COMMANDER_SATURN: "SATURN: I don't much care for CYRUS's new world. But I'll do my job.",
+  GALACTIC_BOSS_CYRUS: 'CYRUS: Emotions are a flaw. I will show you the strength of a world without them.',
+};
+const hqKeys = (r) => [seededPick(r, ['COMMANDER_MARS', 'COMMANDER_JUPITER'], 'hq'), 'COMMANDER_SATURN', 'GALACTIC_BOSS_CYRUS'];
+export function galacticFight(r, i = 0) {
+  const keys = hqKeys(r), last = i === keys.length - 1;
+  const pool = sPool([keys[i]], last ? BOSS_FB : ADMINS_FB);
+  const cfg = eliteFight(r, r.rng.fork(`hq${i}:${r.nodeId}`), pool, last ? { rewardRelicW: W.rare, rewardItems: ['RARE_CANDY'], winFlags: { rocket3: 'beat', galactic: 'stopped' } } : { noMoney: true });
+  const hp = RADIO_HP[i] ?? 1;
+  for (const e of cfg.enemies) { e.maxHp = Math.max(1, Math.round(e.maxHp * hp)); e.hp = e.maxHp; }
+  cfg.dmgScale *= RADIO_DMG[i] ?? 1;
+  cfg.intro = [`(${i + 1}/${keys.length}) ${HQ_LINES[keys[i]]}`];
+  cfg.chainStep = i;
+  if (!last) cfg.chainNext = (rr) => galacticFight(rr, i + 1);
+  return cfg;
+}
+const toughen = (cfg, k) => { for (const e of cfg.enemies) { e.maxHp = Math.round(e.maxHp * k); e.hp = e.maxHp; } return cfg; };
+const pickItems = (r, rng, list, n = 2, w = W.common) => { const ch = fromList(r, rng, n, list); return ch.length ? ch : relics(r, rng, n, w); };
+const catchOf = (rng, table) => rng.weighted(table, x => x[1])[0];
+const EVEE_STONES = () => ['FIRE_STONE', 'WATER_STONE', 'THUNDER_STONE'].filter(k => D.items[k]);
+const SINNOH_STONES = () => ['SHINY_STONE', 'DUSK_STONE', 'DAWN_STONE'].filter(k => D.items[k]);
+
+const SINNOH = [
+  // ---- Sinnoh 1: Twinleaf -> Eterna -------------------------------------------------------------------------
+  S([0], {
+    id: 'oreburgh_mine', title: 'OREBURGH MINE', npc: 'worker_m', weight: 1, music: 'mus_mt_moon',
+    text: "ROARK's miners have hit a seam of ancient rock. WORKER: Fossils keep turning up down here! Lend a hand and the museum will revive one for you. Or haul coal with us for a shift.",
+    choices: [
+      { label: 'Dig out a fossil (all -10% HP): CRANIDOS or SHIELDON', mon: 'gift', ai: r => roomAi(r) * 1.1 - hpAi(r, 0.1), run: (r, rng) => { hurt(r, 0.1); return { text: 'The OREBURGH MUSEUM revived both fossils you dug up! Which one comes with you?', monChoices: ['CRANIDOS', 'SHIELDON'].map(sp => gift(r, rng, sp, -1, 15)) }; },
+        nuz: { label: 'Dig for treasure (all -10% HP): 1 of 2 items', ai: r => 0.7 - hpAi(r, 0.1), run: (r, rng) => { hurt(r, 0.1); return { text: 'Under the coal, something glittered!', relicChoices: pickItems(r, rng, ['HARD_STONE', 'EVERSTONE', 'SOFT_SAND']) }; } } },
+      { label: 'Haul coal with the miners (lead +2 Lv, lead -20% HP)', cond: anyCanLevel, ai: r => 0.6 - hpAi(r, 0.08), run: (r) => { const l = alive(r)[0]; hurt(r, 0.2, [l]); const ev = lvUp(r, l, 2); return { text: `A long shift of hauling carts. ${grewText(l, ev)}`, levelEvents: [ev] }; } },
+      { label: r => `Sell the shards you dug up (+$${moneyReward(r, 400)})`, ai: () => 0.4, run: (r) => { const n = giveMoney(r, 400); return { text: `A collector in OREBURGH paid $${n} for your shards.` }; } },
+      LEAVE(),
+    ],
+  }),
+  S([0], {
+    id: 'valley_windworks', title: 'VALLEY WINDWORKS', npc: 'rocket_m', weight: 1.2, story: 'rocket', music: 'mus_encounter_rocket',
+    text: r => `TEAM GALACTIC has locked up the VALLEY WINDWORKS "for energy research", with the staff inside.${villainHeard(r)} A little girl begs you to save her dad. Out by the turbines, a balloon-like POKéMON drifts on the wind.${nuzNote(r)}`,
+    choices: [
+      { label: r => `Storm the windworks (elite: ${has(r, 'MAGNET') ? 'a held item' : 'MAGNET'})`, solo: true, minFloor: 4, ai: r => fightAi(r, 1.3), run: (r, rng) => ({ text: 'GRUNT: TEAM GALACTIC will make a new world, and brats like you are not invited!', battle: eliteFight(r, rng, sPool(['GALACTIC_GRUNT'], GRUNT_FB), { ...(has(r, 'MAGNET') ? { rewardRelicW: W.common } : { rewardRelic: 'MAGNET' }), winFlags: { rocket1: 'beat', rocket1At: 'VALLEY WINDWORKS' } }) }) },
+      { label: 'Sneak the WORKER out the back (all -15% HP): 2 items', ai: r => 0.5 - hpAi(r, 0.15), tip: 'The grunts get away with the power.',
+        run: (r, rng) => { hurt(r, 0.15); flags(r).rocket1 = 'ran'; const keys = twoFinds(r, rng); const overflow = found(r, keys); return { text: `You got him out through a maintenance hatch. WORKER: Thank you! Take these: ${keys.map(itemName).join(' and ')}.${fullNote(overflow)}`, overflow }; } },
+      { label: 'Wait by the turbines (50%: DRIFLOON)', mon: 'catch', cond: r => nuzCatchOk(r), ai: r => roomAi(r) * 0.5, run: (r, rng) => {
+        if (rng.chance(0.5)) { useNuzCatch(r); return { text: 'A DRIFLOON tugged at your sleeve... and decided to come along!', newMon: gift(r, rng, 'DRIFLOON') }; }
+        return { text: 'The wind died down. No balloons today: it must not be Friday.' };
+      } },
+      LEAVE(),
+    ],
+  }),
+  S([0], {
+    id: 'honey_tree', title: 'HONEY TREE', npc: null, mon: 'MUNCHLAX', weight: 1, music: 'mus_viridian_forest',
+    text: r => `A sweet-smelling tree on ROUTE 205. The FLOAROMA honey seller swears that slathered HONEY brings out rare POKéMON, if you're patient.${nuzNote(r)}`,
+    choices: [
+      { label: 'Slather HONEY and wait (all -10% HP): catch what comes', mon: 'catch', cond: r => nuzCatchOk(r), ai: r => roomAi(r) * 0.8 + 0.1 - hpAi(r, 0.1), run: (r, rng) => {
+        hurt(r, 0.1); useNuzCatch(r);
+        const sp = catchOf(rng, [['COMBEE', 3], ['BURMY', 3], ['CHERUBI', 2.5], ['AIPOM', 2], ['HERACROSS', 1], ['MUNCHLAX', 1]]);
+        return { text: `After hours of waiting, ${speciesName(sp)} came for the HONEY!${sp === 'MUNCHLAX' ? ' The honey seller will never believe you.' : ''}`, newMon: gift(r, rng, sp, 0, sp === 'MUNCHLAX' || sp === 'HERACROSS' ? 20 : 10) };
+      } },
+      { label: 'Shake the tree (50%: 2 items, else all -20% HP)', ai: r => 0.25 - hpAi(r, 0.1), run: (r, rng) => {
+        if (rng.chance(0.5)) { const keys = twoFinds(r, rng); const overflow = found(r, keys); return { text: `${keys.map(itemName).join(' and ')} fell out of the branches!${fullNote(overflow)}`, overflow }; }
+        hurt(r, 0.2); return { text: 'A swarm of angry COMBEE poured out! Your team got stung.' };
+      } },
+      { label: r => `Buy a jar of HONEY ($${cost(r, 200)}): heal 30%`, cond: r => canPay(r, 200), ai: r => (1 - teamHp(r)) * 1.3 - 0.1, run: (r) => { pay(r, 200); healAll(r, 0.3); return { text: 'Your team licked the jar clean and perked right up.' }; } },
+      LEAVE(),
+    ],
+  }),
+  S([0], {
+    id: 'floaroma', title: 'FLOAROMA MEADOW', npc: 'woman_2', weight: 1, music: 'mus_route3',
+    text: r => `The FLOAROMA flower shop lady waves you over: "Sweet flowers bring sweet POKéMON! Help me pick, and keep whatever you find." Past the meadow, the smoke of MR. FUEGO's IRONWORKS rises.${nuzNote(r)}`,
+    choices: [
+      { label: 'Catch a meadow POKéMON', mon: 'catch', cond: r => nuzCatchOk(r), ai: r => roomAi(r) * 0.6, run: (r, rng) => { useNuzCatch(r); const sp = catchOf(rng, [['BUDEW', 3], ['PACHIRISU', 2.5], ['SHELLOS', 2], ['BUNEARY', 1.5]]); return { text: `${speciesName(sp)} popped out of the flowers and into your POKé BALL!`, newMon: gift(r, rng, sp) }; } },
+      { label: 'Help at the IRONWORKS (all -15% HP): 1 of 2 items', ai: r => 0.8 - hpAi(r, 0.15), run: (r, rng) => { hurt(r, 0.15); return { text: 'MR. FUEGO: Fine work, kid! Take your pick.', relicChoices: pickItems(r, rng, ['CHARCOAL', 'MIRACLE_SEED', 'METAL_COAT']) }; } },
+      { label: 'Pick flowers with her (heal 25% + cure)', ai: r => (1 - teamHp(r)) * 1.4, run: (r) => { healAll(r, 0.25, true); return { text: 'The sweet scent of the meadow soothed your whole team.' }; } },
+      LEAVE(),
+    ],
+  }),
+
+  // ---- Sinnoh 2: Hearthome -> Veilstone ---------------------------------------------------------------------
+  S([1], {
+    id: 'bebe_eevee', title: "BEBE'S EEVEE", npc: 'woman_3', weight: 1, music: 'mus_poke_center',
+    text: '"I run the POKéMON STORAGE SYSTEM!" says BEBE, in her HEARTHOME house. "You keep filling my boxes, so here: this EEVEE needs a home. Or let me tidy up your team."',
+    choices: [
+      { label: 'Take the EEVEE + an evolution stone', mon: 'gift', ai: r => roomAi(r) * 1.3, run: (r, rng) => ({ text: 'BEBE: It likes you already! Pick a stone to go with it.', newMon: gift(r, rng, 'EEVEE', 0, 20), itemChoices: { keys: EVEE_STONES(), use: false } }),
+        nuz: { label: "BEBE's spare stones (1 of 3)", ai: () => 0.3, run: () => ({ text: 'BEBE: Then take one of these, for later.', itemChoices: { keys: EVEE_STONES(), use: false } }) } },
+      { label: 'Let BEBE sort your team (+1 copy of a card)', ai: () => 0.55, run: () => ({ text: 'BEBE: There, all in order! Pick a move.', addCopy: 1 }) },
+      { label: 'Rest at her place (heal 30%)', ai: r => (1 - teamHp(r)) * 1.4, run: (r) => { healAll(r, 0.3); return { text: 'BEBE made tea while your POKéMON napped.' }; } },
+    ],
+  }),
+  S([1], {
+    id: 'amity_square', title: 'AMITY SQUARE', npc: 'gentleman', weight: 1, music: 'mus_celadon',
+    text: "HEARTHOME's AMITY SQUARE lets trainers stroll with their POKéMON, who love digging up little treasures. Across the street, the POKéMON FAN CLUB chairman beams at you.",
+    choices: [
+      { label: 'Stroll with your team (they dig up 2 items)', ai: () => 0.4, run: (r, rng) => { const keys = twoFinds(r, rng); const overflow = found(r, keys); return { text: `Your POKéMON dug up ${keys.map(itemName).join(' and ')}!${fullNote(overflow)}`, overflow }; } },
+      { label: 'Visit the FAN CLUB (1 of 2 held items)', ai: () => 0.8, run: (r, rng) => ({ text: 'CHAIRMAN: Such lovely POKéMON! Please, take one of these.', relicChoices: pickItems(r, rng, ['SOOTHE_BELL', 'LUCKY_EGG', 'SILK_SCARF', 'AMULET_COIN']) }) },
+      { label: 'Relax on a bench (heal 30% + cure)', ai: r => (1 - teamHp(r)) * 1.5, run: (r) => { healAll(r, 0.3, true); return { text: 'A sunny afternoon in the square. Your team feels great.' }; } },
+    ],
+  }),
+  S([1], {
+    id: 'hallowed_tower', title: 'HALLOWED TOWER', npc: null, mon: 'SPIRITOMB', weight: 1, music: 'mus_poke_tower',
+    text: r => `On ROUTE 209 stands a small, cracked stone tower. The ODD KEYSTONE you found is said to bind 108 spirits. Put it back, and something will answer.${nuzNote(r)}`,
+    choices: [
+      { label: 'Set the KEYSTONE (elite wild battle: SPIRITOMB)', solo: true, minFloor: 4, ai: r => fightAi(r, 1.0, 0.8), run: (r, rng) => ({ text: 'The KEYSTONE clicked into place. A swirl of screaming spirits burst out: SPIRITOMB!', battle: wildFight(r, rng, 'SPIRITOMB', 1, { terrain: 'grass', cfg: { rewardRelicW: W.common } }) }) },
+      { label: 'Leave an offering (40%: SPIRITOMB follows you)', mon: 'catch', cond: r => nuzCatchOk(r), ai: r => roomAi(r) * 0.5, run: (r, rng) => {
+        if (rng.chance(0.4)) { useNuzCatch(r); return { text: 'A cold voice whispered from the stones... SPIRITOMB slid into your POKé BALL.', newMon: gift(r, rng, 'SPIRITOMB') }; }
+        return { text: 'Only the wind answered. The offering is gone in the morning.' };
+      } },
+      { label: 'Pocket the KEYSTONE (1 of 2 uncommon items + curse)', curse: 'CURSED_DOLL', ai: () => 1.0 - curseAi, tip: 'A CURSED DOLL (curse: -1 hand size) comes with it.',
+        run: (r, rng) => { const c = addCurse(r, 'CURSED_DOLL'); return { text: 'The KEYSTONE is warm in your pocket. Something follows you home.' + (c ? CURSE_TEXT(c) : ''), relicChoices: relics(r, rng, 2, W.uncommon), curse: c }; } },
+      LEAVE(),
+    ],
+  }),
+  S([1], {
+    id: 'old_chateau', title: 'OLD CHATEAU', npc: null, mon: 'ROTOM', weight: 1, music: 'mus_poke_mansion',
+    text: r => `Deep in ETERNA FOREST stands the OLD CHATEAU. Nobody has lived there for years, yet the old TV in the back room keeps flicking on by itself...${nuzNote(r)}`,
+    choices: [
+      { label: 'Inspect the TV (elite wild battle: ROTOM)', solo: true, minFloor: 4, ai: r => fightAi(r, 1.0, 0.8), run: (r, rng) => ({ text: 'The screen crackled and a grinning ROTOM leapt out of it!', battle: wildFight(r, rng, 'ROTOM', 1, { terrain: 'building', cfg: { rewardRelicW: W.common } }) }) },
+      { label: 'Leave the TV on overnight (40%: ROTOM)', mon: 'catch', cond: r => nuzCatchOk(r), ai: r => roomAi(r) * 0.5, run: (r, rng) => {
+        if (rng.chance(0.4)) { useNuzCatch(r); return { text: 'At midnight the static took shape. ROTOM zipped right into your POKé BALL!', newMon: gift(r, rng, 'ROTOM') }; }
+        return { text: 'Static all night. In the morning, the TV is unplugged... and the plug is in your bag.' };
+      } },
+      { label: 'Search the dusty halls (all -15% HP): 1 of 2 items', ai: r => 0.8 - hpAi(r, 0.15), run: (r, rng) => { hurt(r, 0.15); return { text: 'Something kept tapping your shoulder, but you found some treasures.', relicChoices: pickItems(r, rng, ['SPELL_TAG', 'CLEANSE_TAG', 'MAGNET']) }; } },
+      LEAVE('Run out!', 'You did not look back.'),
+    ],
+  }),
+  S([1], {
+    id: 'solaceon_daycare', title: 'SOLACEON DAY CARE', npc: 'old_woman', weight: 1, music: 'mus_sevii_45',
+    text: 'The SOLACEON DAY CARE couple fuss over an EGG a HIKER left behind: "He said it was too delicate for mountain trails. Would you take it? Or leave one of yours with us for a while."',
+    choices: [
+      { label: "Take the HIKER's EGG (HAPPINY hatches)", mon: 'gift', ai: r => roomAi(r) * 0.9 + 0.1, run: (r, rng) => ({ text: 'The EGG wobbled and cracked... HAPPINY! It cradles a round white stone like its own EGG.', newMon: gift(r, rng, 'HAPPINY', -2, 20) }),
+        nuz: { label: 'Help keep it warm (a LUCKY EGG)', show: r => !has(r, 'LUCKY_EGG'), ai: () => 0.5, run: (r) => { r.addRelic('LUCKY_EGG'); return { text: 'OLD WOMAN: You have such warm hands! Take this, dear.', relic: 'LUCKY_EGG' }; } } },
+      { label: r => `Board a POKéMON ($${cost(r, 800)}): +3 levels`, needsMon: 'alive', monFilter: canLevel, botMon: 'best', cond: r => canPay(r, 800) && anyCanLevel(r), ai: () => 0.7, run: (r, rng, mon) => { pay(r, 800); const ev = lvUp(r, mon, 3); return { text: grewText(mon, ev), levelEvents: [ev] }; } },
+      { label: 'Visit the SOLACEON RUINS (transform 2 cards)', needsMon: 'alive', botMon: 'worst', ai: () => 0.15, tip: 'Up to 2 cards of one POKéMON become random moves it can learn.',
+        run: (r, rng, mon) => { const ch = transformMoves(mon, rng, 2, powerCap(r)); return { text: ch.length ? `The UNOWN glyphs shimmered. ${monName(mon)}: ${ch.map(([a, b]) => `${moveName(a)} became ${moveName(b)}`).join(', ')}!` : 'Nothing happened...' }; } },
+      LEAVE(),
+    ],
+  }),
+  S([1], {
+    id: 'galactic_warehouse', title: 'GALACTIC WAREHOUSE', npc: 'rocket_m', weight: 1.2, story: 'rocket', music: 'mus_rocket_hideout',
+    text: r => `${flags(r).rocket1 === 'beat' ? `GRUNT: Hey, the brat from ${rocket1At(r)}! ` : flags(r).aqua1 === 'beat' ? 'GRUNT: TEAM AQUA warned us about you. ' : flags(r).rocket1 === 'paid' ? 'GRUNT: Oh, a generous one! ' : ''}TEAM GALACTIC's VEILSTONE warehouse is stuffed with stolen goods, the DEPT. STORE's TMs included. "New world, new rules. Want in?"`,
+    choices: [
+      { label: 'Raid the warehouse (elite: 1 of 3 held items)', solo: true, minFloor: 4, ai: r => fightAi(r, 1.5), run: (r, rng) => ({ text: 'GRUNT: Intruder! For the new world!', battle: eliteFight(r, rng, sPool(['GALACTIC_GRUNT_2', 'COMMANDER_JUPITER'], ['JOHTO_ROCKET_GRUNT_2']), { rewardRelicW: W.mid, winFlags: { rocket2: 'beat' } }) }) },
+      { label: '"Join": pay a held item, get a NUGGET', needsRelic: 1, cond: r => heldRelics(r).length >= 1, ai: () => 1.1, tip: 'Hand over one held item as "membership dues". Being a member may help at the GALACTIC HQ...',
+        run: (r, rng, mon, [k]) => { r.removeRelic(k); flags(r).rocket2 = 'joined'; const overflow = found(r, ['NUGGET']); return { text: `You handed over your ${itemName(k)}. GRUNT: Welcome to TEAM GALACTIC! Here, your signing bonus.${fullNote(overflow)}`, overflow }; } },
+      { label: 'Slip in by the loading dock (all -20% HP): a TM', ai: r => 0.55 - hpAi(r, 0.2), run: (r, rng) => { hurt(r, 0.2); flags(r).rocket2 ||= 'snuck'; return { text: 'You grabbed a crate of stolen TMs and ran. One of them suits your team!', tutor: tmTutor(r, rng, 2, 100) }; } },
+      LEAVE(),
+    ],
+  }),
+
+  // ---- Sinnoh 3: Pastoria -> Sunyshore ----------------------------------------------------------------------
+  S([2], {
+    id: 'great_marsh', title: 'GREAT MARSH', npc: null, mon: 'CARNIVINE', weight: 1, music: 'mus_fuchsia',
+    text: r => `PASTORIA's GREAT MARSH: mud up to your knees, binoculars at the gate, and POKéMON you won't find anywhere else in SINNOH. A SAFARI GAME comes with 30 SAFARI BALLS.${nuzNote(r)}`,
+    choices: [
+      { label: r => `Play the SAFARI GAME ($${cost(r, 500)}): catch a marsh POKéMON`, mon: 'catch', cond: r => nuzCatchOk(r) && canPay(r, 500), ai: r => roomAi(r) * 0.9 + 0.1, run: (r, rng) => {
+        pay(r, 500); useNuzCatch(r);
+        const sp = catchOf(rng, [['CROAGUNK', 3], ['SKORUPI', 3], ['CARNIVINE', 2.5], ['YANMA', 2], ['TANGELA', 1.5], ['QUAGSIRE', 1.5], ['KANGASKHAN', 0.5]]);
+        return { text: `Down to your last SAFARI BALL... got it! You caught ${speciesName(sp)}!`, newMon: gift(r, rng, sp, 0, 15) };
+      } },
+      { label: 'Wade through the deep mud (all -15% HP): 1 of 2 items', ai: r => 0.8 - hpAi(r, 0.15), run: (r, rng) => { hurt(r, 0.15); return { text: 'Squelch, squelch... something was stuck in the mud!', relicChoices: pickItems(r, rng, ['POISON_BARB', 'MIRACLE_SEED', 'SOFT_SAND', 'BLACK_GLASSES']) }; } },
+      { label: 'Ride the marsh tram (heal 25% + a BERRY)', ai: r => 0.2 + (1 - teamHp(r)), run: (r) => { healAll(r, 0.25); const overflow = found(r, ['SITRUS_BERRY']); return { text: `Your team dozed on the tram. The driver gave you a SITRUS BERRY.${fullNote(overflow)}`, overflow }; } },
+      LEAVE(),
+    ],
+  }),
+  S([2], {
+    id: 'iron_island', title: 'IRON ISLAND', npc: 'cooltrainer_m', weight: 1, music: 'mus_mt_moon',
+    text: 'RILEY, a calm man with a LUCARIO at his side, stops you in the IRON ISLAND mine: "TEAM GALACTIC is scaring the POKéMON down below. Will you help me clear them out?"',
+    choices: [
+      { label: r => (r.nuzlocke ? 'Fight beside RILEY (elite: a held item)' : 'Fight beside RILEY (elite: RIOLU or STEELIX)'), solo: true, minFloor: 4, ai: r => fightAi(r, 1.4), run: (r, rng) => {
+        const extra = r.nuzlocke ? { rewardRelicW: W.uncommon } : { rewardMons: [gift(r, rng, 'RIOLU', -1, 25), gift(r, rng, 'STEELIX', -3, 20)] };
+        return { text: 'RILEY: Stay close. LUCARIO, aura sphere!', battle: eliteFight(r, rng, sPool(['GALACTIC_GRUNT_3', 'GALACTIC_GRUNT_2'], ['JOHTO_ROCKET_GRUNT_3']), extra) };
+      } },
+      { label: "Escort RILEY through the mine (all -25% HP): his EGG (RIOLU)", mon: 'gift', ai: r => roomAi(r) * 1.2 - hpAi(r, 0.25), run: (r, rng) => { hurt(r, 0.25); return { text: 'RILEY: You have a strong aura. This EGG is for you. ...It hatched on the ferry: RIOLU!', newMon: gift(r, rng, 'RIOLU', -2, 20) }; },
+        nuz: { label: 'Escort RILEY (all -20% HP): 1 of 2 items', ai: r => 0.85 - hpAi(r, 0.2), run: (r, rng) => { hurt(r, 0.2); return { text: 'RILEY: Thank you. Take one of these.', relicChoices: pickItems(r, rng, ['BLACK_BELT', 'METAL_COAT', 'FOCUS_BAND'], 2, W.uncommon) }; } } },
+      { label: 'Mine some iron (all -10% HP): 1 of 2 items', ai: r => 0.75 - hpAi(r, 0.1), run: (r, rng) => { hurt(r, 0.1); return { text: 'Clang, clang... you chipped out something useful.', relicChoices: pickItems(r, rng, ['METAL_COAT', 'HARD_STONE', 'MAGNET']) }; } },
+      LEAVE(),
+    ],
+  }),
+  S([2], {
+    id: 'galactic_hq', title: 'GALACTIC HQ', npc: 'rocket_m', weight: 1.2, story: 'rocket', music: 'mus_rocket_hideout',
+    spawn: (p) => floorOf(p) >= 4, forced: (p) => rocketStory(p) && floorOf(p) >= 4, weightFn: (p) => (rocketStory(p) ? 3 : 1.2),
+    text: r => `TEAM GALACTIC has caught the three LAKE GUARDIANS and locked them in its VEILSTONE HQ, to forge a RED CHAIN and remake the universe!${villainJoined(r) ? ' The grunt at the door salutes: "Recruit! The BOSS is upstairs."' : rocketBeaten(r) >= 2 ? ' The grunts at the door go pale when they see you.' : flags(r).rocket1 === 'beat' ? ` "That's the kid from ${rocket1At(r)}!"` : ''} Two commanders and CYRUS himself stand in the way: no time to rest between them.`,
+    choices: [
+      { label: 'Storm the HQ (3 elite fights, no heal: rare item)', solo: true, minFloor: 4, ai: r => fightAi(r, 1.7, 0.9), tip: 'MARS or JUPITER, then SATURN, then CYRUS, back to back with no heal in between. Win all three: 1 of 3 rare held items and a RARE CANDY.',
+        run: (r) => ({ text: 'You ride the warp panels up. The first commander is waiting!', battle: galacticFight(r, 0) }) },
+      { label: r => (villainJoined(r) ? 'Walk in in uniform and free the LAKE GUARDIANS' : "Sneak to the guardians' cells (all -30% HP)"), ai: r => 1.4 - (villainJoined(r) ? 0 : hpAi(r, 0.3)), tip: '1 of 2 uncommon/rare held items. CYRUS leaves for SPEAR PILLAR...',
+        run: (r, rng) => { const joined = villainJoined(r); if (!joined) hurt(r, 0.3); flags(r).rocket3 ||= 'snuck'; return { text: `${joined ? 'Nobody stops someone in a GALACTIC uniform.' : 'Warp panels, dead ends, a very cross GLAMEOW...'} The freed LAKE GUARDIANS flash past you, leaving a gift behind.`, relicChoices: relics(r, rng, 2, W.high) }; } },
+      { label: 'Sabotage the warp panels (all -10% HP): a TM', ai: r => 0.6 - hpAi(r, 0.1), run: (r, rng) => { hurt(r, 0.1); return { text: 'You scrambled the warp panels from a maintenance room, and found a stash of TMs.', tutor: tmTutor(r, rng, 2, 120) }; } },
+      LEAVE('Walk away', 'Far off, on MT. CORONET, the sky over SPEAR PILLAR begins to warp.'),
+    ],
+  }),
+  S([2], {
+    id: 'snowpoint_temple', title: 'SNOWPOINT TEMPLE', npc: 'old_man_1', weight: 1, music: 'mus_sevii_cave',
+    text: r => `Past the blizzards of ROUTE 217 lies SNOWPOINT. Its TEMPLE's icy floors lead down to a chamber where something ancient sleeps, and the road there is thick with snow POKéMON.${nuzNote(r)}`,
+    choices: [
+      { label: 'Brave the icy floors (all -20% HP): 1 of 2 items', ai: r => 1.0 - hpAi(r, 0.2), run: (r, rng) => { hurt(r, 0.2); const ch = [...fromList(r, rng, 1, ['NEVER_MELT_ICE']), ...relics(r, rng, 1, W.uncommon)].filter((k, i, a) => a.indexOf(k) === i); return { text: 'Slip, slide, made it! A statue at the bottom held an offering.', relicChoices: ch.length ? ch : relics(r, rng, 2, W.common) }; } },
+      { label: 'Catch a snow POKéMON on ROUTE 217', mon: 'catch', cond: r => nuzCatchOk(r), ai: r => roomAi(r) * 0.5, run: (r, rng) => { useNuzCatch(r); const sp = catchOf(rng, [['SNOVER', 3], ['SNEASEL', 2], ['SWINUB', 2], ['SNORUNT', 1.5]]); return { text: `${speciesName(sp)} came out of the snowdrift, and you caught it!`, newMon: gift(r, rng, sp) }; } },
+      { label: 'Warm up at the lodge (heal 30% + cure)', ai: r => (1 - teamHp(r)) * 1.5, run: (r) => { healAll(r, 0.3, true); return { text: 'Hot cocoa by the fire. Your team thawed out.' }; } },
+      LEAVE(),
+    ],
+  }),
+  S([2], {
+    id: 'trophy_garden', title: 'POKéMON MANSION', npc: 'rich_boy', weight: 1, music: 'mus_poke_mansion',
+    text: r => `MR. BACKLOT of ROUTE 212's POKéMON MANSION shows off his TROPHY GARDEN: "Rare POKéMON turn up here every day! And my collection is the finest in SINNOH."${nuzNote(r)}`,
+    choices: [
+      { label: "Catch today's TROPHY GARDEN POKéMON", mon: 'catch', cond: r => nuzCatchOk(r), ai: r => roomAi(r) * 0.7, run: (r, rng) => { useNuzCatch(r); const sp = catchOf(rng, [['BONSLY', 3], ['MIME_JR', 3], ['CLEFFA', 1.5], ['PICHU', 1.5], ['PORYGON', 1], ['DITTO', 1], ['CHANSEY', 0.5]]); return { text: `MR. BACKLOT: Today it's ${speciesName(sp)}! Go on, it's yours.`, newMon: gift(r, rng, sp, 0, 15) }; } },
+      { label: r => `Buy from his collection ($${cost(r, 900)}): 1 of 3 held items`, cond: r => canPay(r, 900), ai: r => (r.money > cost(r, 900) + 600 ? 1.0 : -1), run: (r, rng) => { pay(r, 900); return { text: 'MR. BACKLOT: Only the finest! Pick one.', relicChoices: relics(r, rng, 3, W.mid) }; } },
+      { label: 'Tea with the maid (heal 30%)', ai: r => (1 - teamHp(r)) * 1.4, run: (r) => { healAll(r, 0.3); return { text: 'The MANSION maid served tea and cakes. Your team rested.' }; } },
+    ],
+  }),
+  S([2], {
+    id: 'wayward_cave', title: 'WAYWARD CAVE', npc: 'little_girl', weight: 1, music: 'mus_mt_moon',
+    text: r => `MIRA is lost in pitch-black WAYWARD CAVE, under the CYCLING ROAD: "There's a DRAGON TAMER deeper in. He guards a nest of little land sharks!"${nuzNote(r)}`,
+    choices: [
+      { label: r => (r.nuzlocke ? 'Challenge the DRAGON TAMER (elite: a held item)' : 'Challenge the DRAGON TAMER (elite: GIBLE or BRONZOR)'), solo: true, minFloor: 4, ai: r => fightAi(r, 1.4), run: (r, rng) => {
+        const extra = r.nuzlocke ? { rewardRelicW: W.uncommon } : { rewardMons: [gift(r, rng, 'GIBLE', -2, 25), gift(r, rng, 'BRONZOR', 0, 20)] };
+        return { text: 'DRAGON TAMER: You want a GIBLE? Earn it!', battle: eliteFight(r, rng, sPool(['SINNOH_DRAGON_TAMER'], ACE_FB), extra) };
+      } },
+      { label: 'Search the dark tunnels (all -25% HP): 35% GIBLE, else BRONZOR', mon: 'catch', cond: r => nuzCatchOk(r), ai: r => roomAi(r) * 0.7 - hpAi(r, 0.25), run: (r, rng) => {
+        hurt(r, 0.25); useNuzCatch(r);
+        if (rng.chance(0.35)) return { text: 'Something chomped your bag in the dark: a GIBLE! It would not let go, so it came along.', newMon: gift(r, rng, 'GIBLE', -2, 20) };
+        return { text: 'You bumped into a BRONZOR in the dark, and caught it.', newMon: gift(r, rng, 'BRONZOR') };
+      } },
+      { label: 'Guide MIRA out (all -15% HP): 1 of 2 items', ai: r => 0.8 - hpAi(r, 0.15), run: (r, rng) => { hurt(r, 0.15); return { text: 'MIRA: The light! Thank you! Here, I found these in the cave.', relicChoices: pickItems(r, rng, ['DRAGON_FANG', 'SOFT_SAND', 'HARD_STONE']) }; } },
+      LEAVE(),
+    ],
+  }),
+
+  // ---- Sinnoh 4: Victory Road -> Pokémon League (no event money) --------------------------------------------
+  S([3], {
+    id: 'boulders_s', title: 'VICTORY ROAD BOULDERS', npc: 'hiker', weight: 1, music: 'mus_victory_road',
+    text: "Boulders and ROCK CLIMB walls block SINNOH's VICTORY ROAD. Something glitters beyond them.",
+    choices: KANTO.find(e => e.id === 'boulders').choices,
+  }),
+  S([3], {
+    id: 'ace_trainer_s', title: 'SINNOH ACE TRAINER', npc: 'cooltrainer_f', weight: 1, music: 'mus_route11',
+    text: "ACE TRAINER: Only the best make it through SINNOH's VICTORY ROAD. Battle me! Or I'll tell you what I know about the ELITE FOUR...",
+    choices: [
+      { label: 'Battle! (elite: 1 of 3 held items)', solo: true, minFloor: 1, ai: r => fightAi(r, 1.4, 0.8), run: (r, rng) => ({ text: 'ACE TRAINER: Here I come!', battle: eliteFight(r, rng, sPool(['SINNOH_ACE_TRAINER_M', 'SINNOH_ACE_TRAINER_F'], ACE_FB), { rewardRelicW: W.high }) }) },
+      KANTO.find(e => e.id === 'acetrainer').choices[1],
+      LEAVE('Decline', 'ACE TRAINER: Your loss.'),
+    ],
+  }),
+  S([3], {
+    id: 'veteran_s', title: "THE VETERAN'S PARTNER", npc: 'old_man_2', weight: 1, music: 'mus_victory_road',
+    text: "VETERAN: I'm retiring after this season. One last battle? Or I'd like my gear and my partner to go to someone strong.",
+    choices: [
+      { label: 'One last battle (elite: 1 of 3 held items)', solo: true, minFloor: 1, ai: r => fightAi(r, 1.3, 0.8), run: (r, rng) => ({ text: 'VETERAN: Ha! Show this old-timer what you have!', battle: eliteFight(r, rng, sPool(['SINNOH_VETERAN'], ACE_FB), { rewardRelicW: W.high }) }) },
+      ...KANTO.find(e => e.id === 'veteran').choices,
+    ],
+  }),
+  S([3], {
+    id: 'galactic_remnants', title: 'GALACTIC REMNANTS', npc: 'rocket_m', weight: 1, story: 'rocket', music: 'mus_rocket_hideout',
+    text: r => `${flags(r).galactic === 'stopped' ? 'With CYRUS beaten at his own HQ, ' : 'With CYRUS gone since SPEAR PILLAR, '}the last GALACTIC grunts are selling off the warehouse loot by the SUNYSHORE docks.${villainJoined(r) ? ' "Members get the family price!"' : rocketBeaten(r) >= 2 ? ' They flinch when they see you.' : ''}`,
+    choices: KANTO.find(e => e.id === 'blackmarket').choices,
+  }),
+  S([3], {
+    id: 'sunyshore_market', title: 'SUNYSHORE MARKET', npc: 'sailor', weight: 1, music: 'mus_surf',
+    text: "SUNYSHORE's seaside market. A SAILOR back from far-off routes shows off the POKéMON he raised on board, and VOLKNER's VISTA LIGHTHOUSE looks out toward the POKéMON LEAGUE.",
+    choices: [
+      { label: r => `Buy a sailor's POKéMON ($${cost(r, 1500)}): 1 of 2`, mon: 'gift', cond: r => canPay(r, 1500), ai: r => (r.money > cost(r, 1500) + 600 ? roomAi(r) * 1.1 : -1), run: (r, rng) => { pay(r, 1500); return { text: 'SAILOR: Raised on salt air! Pick one.', monChoices: rng.sample(['CHATOT', 'MANTYKE', 'FINNEON', 'BUIZEL'], 2).map(sp => gift(r, rng, sp, 0, 15)) }; } },
+      { label: r => `Haggle at the stalls ($${cost(r, 1000)}): 1 of 3 held items`, cond: r => canPay(r, 1000), ai: r => (r.money > cost(r, 1000) + 500 ? 1.0 : -1), run: (r, rng) => { pay(r, 1000); return { text: 'STALL KEEPER: Fine, fine, you drive a hard bargain. Pick one.', relicChoices: relics(r, rng, 3, W.mid) }; } },
+      { label: 'Climb the VISTA LIGHTHOUSE (heal 35% + cure)', ai: r => (1 - teamHp(r)) * 1.6, run: (r) => { healAll(r, 0.35, true); return { text: 'The sea breeze at the top did your team good.' }; } },
+      LEAVE(),
+    ],
+  }),
+  S([3], {
+    id: 'provisions_s', title: 'POKéMON LEAGUE PROVISIONS', npc: 'clerk', weight: 1, music: 'mus_poke_center',
+    text: 'CLERK: Welcome to the SINNOH POKéMON LEAGUE! Last stop before the ELITE FOUR. Take one supply bundle, on the house.',
+    choices: provisionChoices(),
+  }),
+
+  // ---- Sinnoh post-game: Distortion World, Battle Zone ------------------------------------------------------
+  S([4], {
+    id: 'distortion_world', title: 'DISTORTION WORLD', npc: null, mon: 'GIRATINA', weight: 1, music: 'mus_sevii_dungeon',
+    text: 'Through the rift above SPEAR PILLAR lies the DISTORTION WORLD: waterfalls run sideways, islands float upside down, and CYRUS stands at the edge, still chasing his new world.',
+    choices: [
+      { label: 'Face CYRUS (tough elite: 1 of 3 rare items)', solo: true, ai: r => fightAi(r, 1.6, 0.85), run: (r, rng) => ({ text: 'CYRUS: In this world there is no spirit to hold me back. Come.', battle: toughen(eliteFight(r, rng, sPool(['GALACTIC_BOSS_CYRUS'], BOSS_FB), { rewardRelicW: W.rare }), 1.2) }) },
+      { label: 'Walk the upside-down paths (all -35% HP): 1 of 3 rare items', ai: r => 1.4 - hpAi(r, 0.35), run: (r, rng) => { hurt(r, 0.35); return { text: 'Up was down, then sideways. At the end of the path, a forgotten stash!', relicChoices: relics(r, rng, 3, W.rare) }; } },
+      { label: 'Take a shard of the rift (1 of 3 rare items + curse)', curse: 'HEX_LETTER', ai: () => 1.5 - curseAi, tip: 'A HEX LETTER (curse: -1 discard, foes +5% damage) comes with it.', run: (r, rng) => { const c = addCurse(r, 'HEX_LETTER'); return { text: 'The shard hums with a shadowy will.' + (c ? CURSE_TEXT(c) : ''), relicChoices: relics(r, rng, 3, W.rare), curse: c }; } },
+      { label: 'Rest by a sideways waterfall (full heal + cure)', ai: r => (1 - teamHp(r)) * 2.5, run: (r) => { healAll(r, 1, true); return { text: 'The strange water was cool and calming. Your POKéMON are fully rested.' }; } },
+    ],
+  }),
+  S([4], {
+    id: 'stark_mountain', title: 'STARK MOUNTAIN', npc: 'rocket_f', weight: 1, music: 'mus_victory_road',
+    text: 'Smoke pours from STARK MOUNTAIN. Ex-commanders MARS and JUPITER are climbing toward its molten core, and a cocky kid named BUCK wants to tag along with you.',
+    choices: [
+      { label: 'Stop the commanders (elite: 1 of 3 rare items)', solo: true, ai: r => fightAi(r, 1.5), run: (r, rng) => ({ text: 'MARS: Without CYRUS we need new power. Out of our way!', battle: eliteFight(r, rng, sPool(['COMMANDER_MARS', 'COMMANDER_JUPITER'], ADMINS_FB), { rewardRelicW: W.rare }) }) },
+      { label: 'Climb to the core with BUCK (all -40% HP, lead burned): 1 of 3 rare items', ai: r => 1.4 - hpAi(r, 0.4), run: (r, rng) => { hurt(r, 0.4); const l = alive(r)[0]; if (l) l.status = 'BRN'; return { text: 'BUCK: Whoa, hot hot hot! But look what was down here!', relicChoices: relics(r, rng, 3, W.rare) }; } },
+      { label: 'Dig on the slopes (a FIRE STONE + 1 of 2 vitamins)', ai: () => 0.8, run: (r, rng) => { const overflow = found(r, ['FIRE_STONE']); return { text: `The volcanic rock gave up a FIRE STONE, and more.${fullNote(overflow)}`, overflow, itemChoices: vitaminChoice(r, rng, 2) }; } },
+      LEAVE(),
+    ],
+  }),
+  S([4], {
+    id: 'battle_frontier_s', title: 'FIGHT AREA FRONTIER', npc: 'cooltrainer_m', weight: 1, music: 'mus_trainer_tower',
+    text: "The FIGHT AREA's BATTLE FRONTIER, where SINNOH's masters train. Take on the toughest of them, or watch from the stands.",
+    choices: [
+      { label: 'Challenge a master (tough elite: 1 of 3 rare items)', solo: true, ai: r => fightAi(r, 1.6, 0.85), run: (r, rng) => ({ text: 'MASTER: Only the strongest leave this hall standing!', battle: toughen(eliteFight(r, rng, sPool(['SINNOH_BLACK_BELT', 'SINNOH_PSYCHIC', 'SINNOH_DRAGON_TAMER', 'SINNOH_ACE_TRAINER_M', 'SINNOH_ACE_TRAINER_F'], ACE_FB), { rewardRelicW: W.rare }), 1.25) }) },
+      { label: 'Watch from the stands (1 of 3 vitamins)', ai: () => 0.8, run: (r, rng) => ({ text: 'You learned a lot just by watching!', itemChoices: vitaminChoice(r, rng, 3) }) },
+      LEAVE(),
+    ],
+  }),
+  S([4], {
+    id: 'resort_area', title: 'RESORT AREA VILLA', npc: 'beauty', weight: 1, music: 'mus_sevii_67',
+    text: "Your villa in the RESORT AREA! CYNTHIA drops by with EGGS from the champion's own breeders. Down the road, the RIBBON SYNDICATE runs a members-only spa.",
+    choices: [
+      { label: "Take one of CYNTHIA's EGGS", mon: 'gift', ai: r => roomAi(r) * 1.2, run: (r, rng) => { const sp = rng.pick(['GIBLE', 'RIOLU', 'MUNCHLAX', 'TOGEPI']); return { text: `CYNTHIA: Take good care of it. ...The EGG hatched into ${speciesName(sp)}!`, newMon: gift(r, rng, sp, -5, 20) }; },
+        nuz: { label: "CYNTHIA's spare stones (1 of 3)", ai: () => 0.3, run: () => ({ text: 'CYNTHIA: Then take one of these. They evolve POKéMON in surprising ways.', itemChoices: { keys: SINNOH_STONES(), use: false } }) } },
+      { label: 'Swim in the villa pool (full heal + cure)', ai: r => (1 - teamHp(r)) * 2.5, run: (r) => { healAll(r, 1, true); return { text: 'A few laps and a nap by the pool. Your POKéMON are fully rested.' }; } },
+      { label: 'Treat your team at the spa (1 of 3 vitamins)', ai: () => 0.8, run: (r, rng) => ({ text: 'The RIBBON SYNDICATE pampered your POKéMON. Pick a treat!', itemChoices: vitaminChoice(r, rng, 3) }) },
+    ],
+  }),
+];
+
+// =============================================================================================================
 // STORY FALLBACKS (One Spire): a story whose payoff region isn't on this run's path
 // =============================================================================================================
 // Is act 3 of this run in KANTO (where the CINNABAR LAB is)? (r.acts: a real run; the co-op probe has no acts.)
@@ -1595,7 +1933,7 @@ const MYTHIC_EVENTS = [
 // A "?" event's legendary gift (LATIAS, CELEBI): it is the run's one legendary.
 function legendGift(r, mon) { r.markLegendary?.(mon.species); return mon; }
 
-export const EVENTS = [...SHRINES, ...KANTO, ...HOENN, ...JOHTO, ...FALLBACKS, ...MYTHIC_EVENTS];
+export const EVENTS = [...SHRINES, ...KANTO, ...HOENN, ...JOHTO, ...SINNOH, ...FALLBACKS, ...MYTHIC_EVENTS];
 const BY_ID = new Map(EVENTS.map(e => [e.id, e]));
 export const eventById = (id) => BY_ID.get(id) || null;
 

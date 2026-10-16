@@ -33,6 +33,10 @@ const confuse = (ctx) => {
 const flinch = (ctx) => { if (chance({ ...ctx, flinchRoll: true }, ctx.move.chance)) ctx.b.flinch(ctx.them); };
 const heal = (frac) => (ctx) => ctx.b.healSide(ctx.us, ctx.user, frac, ctx.move.key);
 const nothing = () => {};
+// ROCK HEAD: no recoil from its own moves (DOUBLE-EDGE, TAKE DOWN, FLARE BLITZ, HEAD SMASH...).
+const recoilHit = (frac) => (ctx) => { if (ctx.b.abOf?.(ctx.us, ctx.user) !== 'ROCK_HEAD') ctx.b.recoil(ctx.us, ctx.user, frac, ctx.move.key); };
+// The target's ability as the user's move sees it (MOLD BREAKER ignores the defensive ones; battle.js defAb).
+const targetAb = (ctx) => (ctx.b.defAb ? ctx.b.defAb(ctx.them, ctx.target, ctx.b.abOf(ctx.us, ctx.user)) : ctx.b.abOf?.(ctx.them, ctx.target));
 
 // Damage modifiers: functions returning a power override or multiplier, evaluated when scoring.
 // powerFn(ctx) -> power
@@ -161,8 +165,8 @@ export const EFFECTS = {
   OVERHEAT: (ctx) => ctx.b.addStage(ctx.us, 'spa', -2, ctx.move.key),
   ABSORB: (ctx) => ctx.b.drainHeal(ctx, ctx.move.power >= 60 ? 0.2 : 0.12),
   DREAM_EATER: (ctx) => { if (ctx.target.status === 'SLP') ctx.b.drainHeal(ctx, 0.3); },
-  RECOIL: (ctx) => { if (ctx.b.abOf?.(ctx.us, ctx.user) !== 'ROCK_HEAD') ctx.b.recoil(ctx.us, ctx.user, 1 / 8, ctx.move.key); },
-  DOUBLE_EDGE: (ctx) => { if (ctx.b.abOf?.(ctx.us, ctx.user) !== 'ROCK_HEAD') ctx.b.recoil(ctx.us, ctx.user, 1 / 6, ctx.move.key); },
+  RECOIL: recoilHit(1 / 8),
+  DOUBLE_EDGE: recoilHit(1 / 6),
   RECOIL_IF_MISS: nothing,
   RECHARGE: (ctx) => ctx.b.setRecharge(ctx.us, ctx.user),
   RAMPAGE: (ctx) => { if (ctx.b.rng.chance(0.5)) ctx.b.confuse(ctx.us, false, true); },
@@ -170,8 +174,8 @@ export const EFFECTS = {
   TRAP: (ctx) => { ctx.b.sides[ctx.them].trapped = ctx.b.rng.int(2, 5); ctx.b.msg(`${ctx.b.sideName(ctx.them)} was trapped!`); },
   RAPID_SPIN: (ctx) => { const s = ctx.b.sides[ctx.us]; s.trapped = 0; s.seeded = false; s.spikes = 0; },
   PAY_DAY: (ctx) => { if (ctx.us === 'player') { const amt = 5 * ctx.user.level; ctx.b.payDay += amt; ctx.b.msg(`Coins scattered everywhere! (+$${amt})`); } },
-  THIEF: (ctx) => { if (ctx.us === 'player' && ctx.b.abOf?.('enemy', ctx.target) === 'STICKY_HOLD') return ctx.b.msg(`${ctx.b.monName(ctx.target)}'s STICKY HOLD keeps its things!`); if (ctx.us === 'player') { const amt = 10 * ctx.user.level; ctx.b.payDay += amt; ctx.b.msg(`${ctx.b.monName(ctx.user)} swiped some cash! (+$${amt})`); } },
-  KNOCK_OFF: (ctx) => { if (ctx.b.abOf?.(ctx.them, ctx.target) === 'STICKY_HOLD') return; ctx.b.sides[ctx.them].reflect = 0; ctx.b.sides[ctx.them].lightScreen = 0; },
+  THIEF: (ctx) => { if (ctx.us === 'player' && targetAb(ctx) === 'STICKY_HOLD') return ctx.b.msg(`${ctx.b.monName(ctx.target)}'s STICKY HOLD keeps its things!`); if (ctx.us === 'player') { const amt = 10 * ctx.user.level; ctx.b.payDay += amt; ctx.b.msg(`${ctx.b.monName(ctx.user)} swiped some cash! (+$${amt})`); } },
+  KNOCK_OFF: (ctx) => { if (targetAb(ctx) === 'STICKY_HOLD') return; ctx.b.sides[ctx.them].reflect = 0; ctx.b.sides[ctx.them].lightScreen = 0; },
   BRICK_BREAK: (ctx) => { if (ctx.b.sides[ctx.them].reflect || ctx.b.sides[ctx.them].lightScreen) ctx.b.msg('It shattered the barrier!'); ctx.b.sides[ctx.them].reflect = 0; ctx.b.sides[ctx.them].lightScreen = 0; },
   // The lead is out of reach until the turn ends: side.dodge names the move, so the Gen 3 exceptions apply
   // (SURF hits a DIVE user, EARTHQUAKE a DIG user...; see INVULN_HITS in battle.js).
@@ -188,8 +192,8 @@ export const EFFECTS = {
   FIRE_FANG: (ctx) => { status('BRN')(ctx); flinch(ctx); },
   ICE_FANG: (ctx) => { status('FRZ')(ctx); flinch(ctx); },
   THUNDER_FANG: (ctx) => { status('PAR')(ctx); flinch(ctx); },
-  FLARE_BLITZ: (ctx) => { ctx.b.recoil(ctx.us, ctx.user, 1 / 6, ctx.move.key); status('BRN')(ctx); },
-  HEAD_SMASH: (ctx) => ctx.b.recoil(ctx.us, ctx.user, 1 / 4, ctx.move.key),
+  FLARE_BLITZ: (ctx) => { recoilHit(1 / 6)(ctx); status('BRN')(ctx); },
+  HEAD_SMASH: recoilHit(1 / 4),
   CLOSE_COMBAT: (ctx) => { ctx.b.addStage(ctx.us, 'def', -1, ctx.move.key); ctx.b.addStage(ctx.us, 'spd', -1, ctx.move.key); },
   HAMMER_ARM: (ctx) => ctx.b.addStage(ctx.us, 'spe', -1, ctx.move.key),
   SPECIAL_ATTACK_UP_HIT: stage('spa', 1, true),
@@ -205,12 +209,12 @@ export const EFFECTS = {
   // The foe grows drowsy and falls asleep at the end of this turn (it skips its next move). Fails at once, with a
   // message, if it can't fall asleep (already statused, INSOMNIA / VITAL SPIRIT, SAFEGUARD, SUBSTITUTE...).
   YAWN: (ctx) => {
-    const why = ctx.b.sleepBlock(ctx.them);
+    const why = ctx.b.sleepBlock(ctx.them, ctx.move.key);
     if (why) { ctx.b.msg(why); return; }
     ctx.b.sides[ctx.them].yawn = 1;
     ctx.b.msg(`${ctx.b.sideName(ctx.them)} grew drowsy! It will fall asleep at the end of the turn.`);
   },
-  ATTRACT: (ctx) => { if (ctx.b.abOf?.(ctx.them, ctx.target) === 'OBLIVIOUS') return ctx.b.msg(`${ctx.b.sideName(ctx.them)} is OBLIVIOUS to it!`); if (ctx.us === 'player' && (ctx.target.isBoss || ctx.target.isElite || ctx.target.legendary)) return ctx.b.msg(`${ctx.b.sideName(ctx.them)} is unmoved!`); ctx.b.sides[ctx.them].infatuated = 3; ctx.b.msg(`${ctx.b.sideName(ctx.them)} fell in love!`); },
+  ATTRACT: (ctx) => { if (targetAb(ctx) === 'OBLIVIOUS') return ctx.b.msg(`${ctx.b.sideName(ctx.them)} is OBLIVIOUS to it!`); if (ctx.us === 'player' && (ctx.target.isBoss || ctx.target.isElite || ctx.target.legendary)) return ctx.b.msg(`${ctx.b.sideName(ctx.them)} is unmoved!`); ctx.b.sides[ctx.them].infatuated = 3; ctx.b.msg(`${ctx.b.sideName(ctx.them)} fell in love!`); },
   NIGHTMARE: (ctx) => { if (ctx.target.status === 'SLP') { ctx.b.sides[ctx.them].nightmare = true; ctx.b.msg(`${ctx.b.sideName(ctx.them)} began having a NIGHTMARE!`); } else ctx.b.msg('But it failed!'); },
   LEECH_SEED: (ctx) => {
     if (ctx.target.types?.includes('GRASS') || ctx.b.typesOfSide(ctx.them).includes('GRASS')) return ctx.b.msg("It doesn't affect the foe...");
@@ -278,7 +282,7 @@ export const EFFECTS = {
     const b = ctx.b, name = ctx.move.name || 'ROAR', ts = ctx.targetSide || b.sides[ctx.them], tgt = ctx.target;
     const fail = (why) => b.msg(`But it failed! (${why})`);
     if (ts?.protect && ctx.move.flags?.includes('PROTECT_AFFECTED')) return b.msg(`${b.sideName(ctx.them)} protected itself!`);
-    if (b.abOf?.(ctx.them, tgt) === 'SUCTION_CUPS') return b.msg(`${b.sideName(ctx.them)} anchors itself with SUCTION CUPS!`);
+    if (targetAb(ctx) === 'SUCTION_CUPS') return b.msg(`${b.sideName(ctx.them)} anchors itself with SUCTION CUPS!`);
     if (ts?.ingrain) return b.msg(`${b.sideName(ctx.them)} anchored itself with its roots!`);
     if (ctx.us === 'player') {
       const e = b.enemy();

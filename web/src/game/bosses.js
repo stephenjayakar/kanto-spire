@@ -1,6 +1,6 @@
 // Boss rules ("boss blinds"): each Gym Leader / Elite Four member bends the rules of the fight.
 import { monName } from './pokemon.js';
-import { D } from './data.js';
+import { D, typeEffect } from './data.js';
 import { LEGENDS } from './acts.js';
 
 export const BOSS_RULES = {
@@ -159,6 +159,93 @@ export const BOSS_RULES = {
   },
   LANCE_CHAMPION: { name: 'DRAGON MASTER', desc: 'His team hits 12% harder and heals 6% of their max HP every turn.', enemyDamageMult: 1.12, onTurnEnd(b) { b.healEnemy(0.06); } },
   RED: { name: '......', desc: 'His team hits 15% harder, and your first hand each battle deals half damage.', enemyDamageMult: 1.15, onScore(b, S) { if (b.handsPlayed === 0) S.times(0.5, '......'); } },
+  // Sinnoh (v0.6.0, Platinum). Built on the balance notes: every rule hits each co-op player the same way (per lead, per
+  // hand, or battle-wide, never a heal that out-heals a bigger room: v0.5.0's SLACK OFF lesson); healing is capped (no
+  // stall, a gauntlet RED flag); the late threats are TARGET LOCK (a one-POKéMON carry, Daniel's playbook) and one-turn
+  // twists rather than rules that snowball with the fight's length (the acts 3-5 proposal); act 3+ rooms that end up
+  // pushovers get a VETERAN cap + ramp (LATE_THREATS), tuned with tests/boss_gauntlet.mjs.
+  ROARK: {
+    name: 'STEALTH ROCK', desc: 'Pointed stones float around you: every POKéMON you send out loses 5% of its max HP, more if ROCK hits it hard (up to 20%).',
+    onLeadEnter(b, lead) {
+      if (!lead || lead.hp <= 0) return;
+      const eff = typeEffect('ROCK', b.ptypes ? b.ptypes(lead) : (D.species[lead.species]?.types || []));
+      b.recoil('player', lead, Math.min(0.2, Math.max(0.0125, 0.05 * eff)), 'STEALTH ROCK', true);
+      b.msg(`Pointed stones dug into ${monName(lead)}!`);
+    },
+  },
+  GARDENIA: {
+    // (no healing: a heal every turn, even capped, and then a once-per-POKéMON heal both left co-op rooms 30-50 points
+    // under solo in the gauntlet; her team is already tougher in co-op, two of them on the field at once)
+    name: 'GRASSY TERRAIN', desc: 'The first hand that hits each of her POKéMON in a turn deals 20% less damage.',
+    onScore(b, S) {
+      const e = b.enemy();
+      if (!e || e.terrainTurn === b.turn) return;
+      if (!b.dry) e.terrainTurn = b.turn;
+      S.times(0.8, 'GRASSY TERRAIN');
+    },
+  },
+  FANTINA: {
+    // (every lead, every time it came in, left her at 55% solo vs ~90% for the act 2 peers: now the first one only)
+    name: 'CONFUSE RAY', desc: 'Your first lead each battle starts confused for 1-2 hands.',
+    onLeadEnter(b, lead) { if (!lead || lead.hp <= 0 || b.confuseRayDone) return; b.confuseRayDone = true; b.confuse('player', false); const ps = b.sides.player; if (ps.confused > 2) ps.confused = 2; },
+  },
+  MAYLENE: {
+    name: 'AURA', desc: 'Her LUCARIO always moves first and hits 10% harder.',
+    foeFirst(b) { return b.enemy()?.species === 'LUCARIO'; },
+    enemyDamage(b) { return b.enemy()?.species === 'LUCARIO' ? 1.1 : 1; },
+  },
+  WAKE: { name: 'RAIN DANCE', desc: 'Rain all battle (WATER attacks stronger, FIRE weaker).', onBattleStart(b) { b.setWeather('RAIN', true); } },
+  BYRON: {
+    name: 'BULWARK', desc: 'Each of his POKéMON halves the first super-effective hand it takes. BASTIODON blocks it completely.',
+    onScore(b, S) {
+      const e = b.enemy();
+      if (!e || e.bulwarkUsed || !(S.bestEff > 1)) return;
+      if (!b.dry) e.bulwarkUsed = true; // (a preview predicts it without using it up)
+      S.times(e.species === 'BASTIODON' ? 0 : 0.5, 'BULWARK');
+      if (!b.dry) b.msg(`${monName(e)} braced itself! (BULWARK)`);
+    },
+  },
+  CANDICE: {
+    name: 'SNOW WARNING', desc: 'Hail all battle, and every 3rd turn 1 card in your hand freezes.',
+    onBattleStart(b) { b.setWeather('HAIL', true); },
+    onTurnStart(b) { if (b.turn % 3 || b.abOf?.('player') === 'SUCTION_CUPS') return; const p = b.deck.hand.filter(c => !c.frozen); if (p.length) b.rng.pick(p).frozen = true; },
+  },
+  VOLKNER: {
+    name: 'DISCHARGE', desc: "Every 3rd turn a DISCHARGE paralyzes your lead (GROUND types don't care).",
+    onTurnEnd(b) {
+      if (b.turn % 3) return;
+      for (const s of (b.duo ? b.duo.aliveSubs() : [b])) {
+        const lead = s.lead();
+        if (!lead || lead.hp <= 0 || lead.status || (s.ptypes ? s.ptypes(lead) : []).includes('GROUND')) continue;
+        s.inflictStatus('player', 'PAR', 'DISCHARGE', false, lead);
+      }
+    },
+  },
+  AARON: {
+    name: 'TARGET LOCK', desc: 'His POKéMON hit your lead 10% harder for every hand it has played in a row (up to +40%). Switching resets it.',
+    enemyDamage(b) { return 1 + 0.1 * Math.min(4, b.leadStreak || 0); },
+  },
+  BERTHA: {
+    name: 'SANDSTORM', desc: 'A sandstorm all battle, and each of her POKéMON comes out with +1 DEFENSE.',
+    onBattleStart(b) { b.setWeather('SAND', true); },
+    onFoeEnter(b) { b.addStage('enemy', 'def', 1, 'SANDSTORM'); },
+  },
+  FLINT: { name: 'SUNNY DAY', desc: 'Harsh sunlight all battle (FIRE attacks stronger, WATER weaker).', onBattleStart(b) { b.setWeather('SUN', true); } },
+  LUCIAN: {
+    name: 'TRICK ROOM', desc: 'Every 3rd turn the room twists for one turn: the slower POKéMON moves first.',
+    trickRoom(b) { return b.turn % 3 === 0; },
+    onTurnStart(b) { if (b.turn % 3 === 0) b.msg('The dimensions twisted! (TRICK ROOM: the slower POKéMON moves first this turn)'); },
+  },
+  CYNTHIA: {
+    name: "CHAMPION'S RESOLVE", desc: 'Her team hits 5% harder and she opens with a different POKéMON each time. GARCHOMP whips up a sandstorm when it comes out (SAND VEIL).',
+    enemyDamageMult: 1.05, // (1.12 in the first pass: in smart-bot S-S-S-S runs she alone killed 13% of the runs that reached her)
+    onFoeEnter(b, e) { if (e?.species !== 'GARCHOMP') return; e.ability = 'SAND_VEIL'; b.setWeather('SAND', true); },
+  },
+  GIRATINA_ORIGIN: {
+    name: 'DISTORTION', desc: 'Every 3rd turn the world flips: super-effective hands deal half damage and resisted ones deal double.',
+    onTurnStart(b) { if (b.turn % 3 === 0) b.msg('The world flipped! (DISTORTION: type matchups are reversed this turn)'); },
+    onScore(b, S) { if (b.turn % 3 || S.bestEff == null || S.bestEff === 1 || S.bestEff === 0) return; S.times(S.bestEff > 1 ? 0.5 : 2, 'DISTORTION'); },
+  },
 };
 
 for (const [k, v] of Object.entries(BOSS_RULES)) v.key = k;
@@ -200,6 +287,9 @@ export const LATE_THREATS = {
   // one ELITE FOUR room: HOENN's SIDNEY. Not rooms whose own rule grows with the fight's length (in the gauntlet LORELEI's
   // ICE BODY and KANTO BRUNO's FIGHTING SPIRIT sat at 60-73% solo whatever the cap and ramp; JOHTO's rooms stay as they were).
   ELITE_FOUR_SIDNEY: { cap: 0.85, coopCap: [0.4, 0.35, 0.3], ramp: 4 },
+  // v0.6.0 SINNOH: one room (LUCIAN sat at 100% everywhere in the first gauntlet run). BERTHA had one too, but in full
+  // smart-bot runs the five rooms compounded: 32% of runs that reached the SINNOH ELITE FOUR died there (JOHTO 3%)
+  ELITE_FOUR_LUCIAN: { cap: 0.85, coopCap: [0.45, 0.38, 0.33], ramp: 8 },
 };
 export const threatCoopCap = (t, n = 2) => (t.coopCap ? t.coopCap[Math.min(4, Math.max(2, n)) - 2] : null);
 export function threatText(t, coop = false, n = 2) {
@@ -224,6 +314,9 @@ export const BOSS_TYPES = {
   LEADER_FALKNER: 'FLYING', LEADER_BUGSY: 'BUG', LEADER_WHITNEY: 'NORMAL', LEADER_MORTY: 'GHOST', LEADER_CHUCK: 'FIGHTING',
   LEADER_JASMINE: 'STEEL', LEADER_PRYCE: 'ICE', LEADER_CLAIR: 'DRAGON',
   ELITE_FOUR_WILL: 'PSYCHIC', JOHTO_E4_KOGA: 'POISON', JOHTO_E4_BRUNO: 'FIGHTING', ELITE_FOUR_KAREN: 'DARK', CHAMPION_LANCE: 'DRAGON',
+  LEADER_ROARK: 'ROCK', LEADER_GARDENIA: 'GRASS', LEADER_FANTINA: 'GHOST', LEADER_MAYLENE: 'FIGHTING', LEADER_WAKE: 'WATER',
+  LEADER_BYRON: 'STEEL', LEADER_CANDICE: 'ICE', LEADER_VOLKNER: 'ELECTRIC',
+  ELITE_FOUR_AARON: 'BUG', ELITE_FOUR_BERTHA: 'GROUND', ELITE_FOUR_FLINT: 'FIRE', ELITE_FOUR_LUCIAN: 'PSYCHIC',
 };
 // -> [] (Mixed) or 1-2 type keys.
 export function bossTypes(key) {

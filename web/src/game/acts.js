@@ -1,5 +1,6 @@
 import { HOENN_LEGENDS } from './hoenn.js';
 import { JOHTO_LEGENDS, JOHTO_BIRDS, SILVER_INTROS } from './johto.js';
+import { SINNOH_LEGENDS, SINNOH_BIRDS, SINNOH_BIRD_PARTNER, SINNOH_STARTER_DECKS, BARRY_STARTER, BARRY_INTROS } from './sinnoh.js';
 import { D, typeEffect } from './data.js';
 import { GEN4_LEGENDS, RARE_LEGEND, ULTRA_RARE_LEGEND } from './gen4.js';
 
@@ -177,7 +178,7 @@ export const LEGENDS = {
   LEGEND_DEOXYS: { species: 'DEOXYS', title: 'DEOXYS', terrain: 'mountain', music: 'mus_vs_deoxys' },
 };
 
-Object.assign(LEGENDS, HOENN_LEGENDS, JOHTO_LEGENDS, GEN4_LEGENDS);
+Object.assign(LEGENDS, HOENN_LEGENDS, JOHTO_LEGENDS, GEN4_LEGENDS, SINNOH_LEGENDS);
 // (a world's / run's act list: game/regions.js actsFor / actsForRun)
 
 // Starters. BULBASAUR / CHARMANDER / SQUIRTLE are open from the start (TREECKO / TORCHIC / MUDKIP in
@@ -206,6 +207,8 @@ export const STARTERS = [
   { species: 'DRATINI', moves: ['WRAP', 'LEER', 'THUNDER_WAVE', 'TWISTER'] },
   { species: 'LARVITAR', moves: ['BITE', 'ROCK_THROW', 'LEER', 'SANDSTORM'] },
   { species: 'BELDUM', moves: ['TAKE_DOWN', 'TACKLE', 'IRON_DEFENSE', 'METAL_CLAW'] },
+  // v0.6.0 (SINNOH): only offered while the 'sinnoh' content is there (requires: caps.js; unlocks.js allStarters)
+  ...SINNOH_STARTER_DECKS.map(s => ({ ...s, requires: ['sinnoh', 'gen4'] })),
 ];
 export const GEN3_TYPES = ['NORMAL', 'FIRE', 'WATER', 'GRASS', 'ELECTRIC', 'ICE', 'FIGHTING', 'POISON', 'GROUND', 'FLYING', 'PSYCHIC', 'BUG', 'ROCK', 'GHOST', 'DRAGON', 'DARK', 'STEEL'];
 
@@ -216,12 +219,13 @@ export const GEN3_TYPES = ['NORMAL', 'FIRE', 'WATER', 'GRASS', 'ELECTRIC', 'ICE'
 export const RIVAL_STARTER = { BULBASAUR: 'CHARMANDER', CHARMANDER: 'SQUIRTLE', SQUIRTLE: 'BULBASAUR' };
 export const MAY_STARTER = { TREECKO: 'TORCHIC', TORCHIC: 'MUDKIP', MUDKIP: 'TREECKO' };
 export const SILVER_STARTER = { CHIKORITA: 'CYNDAQUIL', CYNDAQUIL: 'TOTODILE', TOTODILE: 'CHIKORITA' };
-const STARTER_TYPES = { BULBASAUR: ['GRASS', 'POISON'], CHARMANDER: ['FIRE'], SQUIRTLE: ['WATER'], TREECKO: ['GRASS'], TORCHIC: ['FIRE'], MUDKIP: ['WATER'], CHIKORITA: ['GRASS'], CYNDAQUIL: ['FIRE'], TOTODILE: ['WATER'] };
-// rival: the rival's home region ('kanto' = BLUE, 'hoenn' = MAY, 'johto' = SILVER), which decides the three starters they choose from.
+const STARTER_TYPES = { BULBASAUR: ['GRASS', 'POISON'], CHARMANDER: ['FIRE'], SQUIRTLE: ['WATER'], TREECKO: ['GRASS'], TORCHIC: ['FIRE'], MUDKIP: ['WATER'], CHIKORITA: ['GRASS'], CYNDAQUIL: ['FIRE'], TOTODILE: ['WATER'], TURTWIG: ['GRASS'], CHIMCHAR: ['FIRE'], PIPLUP: ['WATER'] };
+// rival: the rival's home region ('kanto' = BLUE, 'hoenn' = MAY, 'johto' = SILVER, 'sinnoh' = BARRY), which decides the three starters they choose from.
 const RIVAL_PICKS = {
   kanto: { fixed: RIVAL_STARTER, opts: ['CHARMANDER', 'SQUIRTLE', 'BULBASAUR'] },
   hoenn: { fixed: MAY_STARTER, opts: ['TORCHIC', 'MUDKIP', 'TREECKO'] },
   johto: { fixed: SILVER_STARTER, opts: ['CYNDAQUIL', 'TOTODILE', 'CHIKORITA'] },
+  sinnoh: { fixed: BARRY_STARTER, opts: ['CHIMCHAR', 'PIPLUP', 'TURTWIG'] },
 };
 // How well `theirs` (a type list) beats `mine`: [is it super effective, its best STAB multiplier on you, minus yours on it].
 function matchup(theirs, mine) {
@@ -251,7 +255,8 @@ export function counterStarter(playerStarter, rival = 'kanto') {
   const home = bestOf(picks.opts, mine);
   if (home.super) return home.best;
   const fam = new Set(evoLine(familyBase(playerStarter)));
-  const any = bestOf([...picks.opts, ...STARTERS.map(s => s.species).filter(sp => !picks.opts.includes(sp) && !fam.has(sp) && D.species?.[sp])], mine);
+  // (v0.6.0: the SINNOH three are left out here: GRASS / FIRE / WATER are covered, and earlier picks stay the same)
+  const any = bestOf([...picks.opts, ...STARTERS.filter(s => !s.requires).map(s => s.species).filter(sp => !picks.opts.includes(sp) && !fam.has(sp) && D.species?.[sp])], mine);
   return any.best || home.best;
 }
 // Which of the region's own three starters a rival's authored team is built around (FireRed's BLUE teams are keyed by
@@ -312,6 +317,7 @@ export const RIVAL_INTROS = {
   MAY_2: ["MAY: Hey, it's you again! I've been training really hard since our last battle.", "MAY: {R} is a lot stronger now. Show me what you've got!"],
   MAY_3: ["MAY: Wow, you've gotten so strong! But me and {R} won't lose this time!"],
   ...SILVER_INTROS,
+  ...BARRY_INTROS,
 };
 
 // ---- Legendary birds (and Hoenn's REGIS) --------------------------------------------------------
@@ -325,6 +331,7 @@ export const BIRDS = {
   LEGEND_REGICE: { item: 'ICE_CORE', moves: ['ICY_WIND', 'ICE_PUNCH', 'CURSE', 'ANCIENT_POWER'] },
   LEGEND_REGISTEEL: { item: 'STEEL_CORE', moves: ['METAL_CLAW', 'ANCIENT_POWER', 'IRON_DEFENSE', 'AMNESIA'] },
   ...JOHTO_BIRDS,
+  ...SINNOH_BIRDS,
 };
 // Co-op (v0.3.11): a legendary node fields two legendaries, the act's own and the next one of its trio (each player
 // may catch one of the two). Each player picks either legendary's held item, whatever they caught (v0.5.6,
@@ -333,6 +340,7 @@ export const BIRD_PARTNER = {
   LEGEND_ZAPDOS: 'LEGEND_ARTICUNO', LEGEND_ARTICUNO: 'LEGEND_MOLTRES', LEGEND_MOLTRES: 'LEGEND_ZAPDOS',
   LEGEND_REGIROCK: 'LEGEND_REGICE', LEGEND_REGICE: 'LEGEND_REGISTEEL', LEGEND_REGISTEEL: 'LEGEND_REGIROCK',
   LEGEND_RAIKOU: 'LEGEND_ENTEI', LEGEND_ENTEI: 'LEGEND_SUICUNE', LEGEND_SUICUNE: 'LEGEND_RAIKOU',
+  ...SINNOH_BIRD_PARTNER,
 };
 
 // ---- Mythic "?" events (v0.3.25: events.js CERULEAN CAVE, FARAWAY ISLAND, BIRTH ISLAND, SKY PILLAR) ------------------

@@ -444,7 +444,7 @@ export class MapScene {
         break;
       }
       case 'rival': { // (HGSS walkers, 'hgss/...', have 32x32 frames; FireRed's are 16x32)
-        const sp = regionOf(run.rivalRegion).rival.sprite, fw = sp.startsWith('hgss/') ? 32 : 16;
+        const sp = regionOf(run.rivalRegion).rival.sprite, fw = /^(hgss|platinum)\//.test(sp) ? 32 : 16; // (and Platinum's, v0.6.0)
         draw(ctx, `gfx/overworld/people/${sp}.png`, x - fw / 2, y - 28 + bob, { sx: 0, sy: 0, sw: fw, sh: 32 });
         draw(ctx, 'gfx/misc/emotes/exclamation.png', x - 8, y - 33 + bob + Math.sin(this.t * 5) * 1, { sx: 32, sy: 0, sw: 16, sh: 16 }); // frame 2 = the full ! balloon (0-1 are its pop-in)
         break;
@@ -467,7 +467,8 @@ export class MapScene {
         // HOENN bosses: Emerald's walkers (optional 'emerald' pack) once loaded, else their pic as before
         const em = !sp && (run.act.gauntlet ? (run.summitRegion === 'hoenn' ? 'wallace' : null) : EM_BOSS_WALKER[run.boss]);
         if (em && ready(img(`gfx/overworld/people/emerald/${em}.png`))) sp = `emerald/${em}`;
-        if (sp) draw(ctx, `gfx/overworld/people/${sp}.png`, x - 16, y - 58 + bob, { sx: 0, sy: 0, sw: 16, sh: 32, scale: 2 });
+        if (sp && sp.startsWith('platinum/')) draw(ctx, `gfx/overworld/people/${sp}.png`, x - 32, y - 58 + bob, { sx: 0, sy: 0, sw: 32, sh: 32, scale: 2 }); // (v0.6.0: Platinum's walkers have 32x32 frames)
+        else if (sp) draw(ctx, `gfx/overworld/people/${sp}.png`, x - 16, y - 58 + bob, { sx: 0, sy: 0, sw: 16, sh: 32, scale: 2 });
         else if (!LEGENDS[run.boss]) { const t = D.trainers[run.act.gauntlet ? run.act.gauntlet[0] : run.boss]; if (t) drawTrainer(ctx, t.pic, x - 32, y - 60 + bob); } // 1x, as tall as the Kanto bosses' 2x overworld sprites
         else if (LEGENDS[run.boss]) {
           // FireRed has overworld sprites for a few legendaries only (no RAYQUAZA, DEOXYS is deoxys_n): else its icon, 2x

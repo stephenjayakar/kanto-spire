@@ -3,6 +3,7 @@
 
 import { HOENN_PARTIES, HOENN_TRAINER_INFO, HOENN_TRAINERS } from './hoenn.js';
 import { JOHTO_TRAINERS } from './johto.js';
+import { SINNOH_TRAINERS, applySinnoh } from './sinnoh.js';
 import { SPECIAL_MOVES, PHYSICAL_MOVES } from './move_categories.js';
 import { MOVE_DESC, ABILITY_DESC } from './text_overrides.js';
 import { ABILITY_TEXT, GEN4_ABILITIES } from './abilities.js';
@@ -29,6 +30,7 @@ export async function loadData(loader) {
   }));
   // Gen 4 species (v0.4.0, gen4.js): their own file next to FireRed's species.json, merged in on every load.
   try { applyGen4(D, await loadGen4(loader)); } catch (e) { console.warn('data load failed', 'gen4', e); }
+  applySinnoh(D); // (v0.6.0: GIRATINA's ORIGIN FORME, the DISTORTION WORLD's boss; sinnoh.js)
   indexData();
   return D;
 }
@@ -44,7 +46,7 @@ function indexData() {
   for (const [key, s] of Object.entries(D.species)) {
     s.key = key;
     byId.species[s.id] = s;
-    if (s.dex) byDex[s.dex] = s;
+    if (s.dex && !s.form) byDex[s.dex] = s; // (forms like GIRATINA_ORIGIN share their species' number)
   }
   for (const [key, m] of Object.entries(D.moves)) { m.key = key; byId.moves[m.id] = m; }
   // Overworld uses and friendship flavor mean nothing here.
@@ -88,6 +90,10 @@ function indexData() {
   // Johto trainers (v0.1.1): FireRed has none, so they're whole trainer objects authored in johto.js
   for (const [key, t] of Object.entries(JOHTO_TRAINERS)) {
     D.trainers[key] = { female: false, items: [], maps: [], rematchOf: null, double: false, ...t, party: t.party.map(p => ({ ...p })), key, dummy: false, johto: true };
+  }
+  // Sinnoh trainers (v0.6.0, Platinum): authored in sinnoh.js like JOHTO's
+  for (const [key, t] of Object.entries(SINNOH_TRAINERS)) {
+    D.trainers[key] = { female: false, items: [], maps: [], rematchOf: null, double: false, ...t, party: t.party.map(p => ({ ...p })), key, dummy: false, sinnoh: true };
   }
 }
 

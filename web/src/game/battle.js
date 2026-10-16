@@ -203,6 +203,14 @@ export class Battle {
   abOf(side, mon = this.activeMon(side)) { return !mon ? null : side === 'enemy' ? mon.ability : this.pab(mon); }
   // The defender's ability as an attacker with `atkAb` sees it: MOLD BREAKER ignores the defensive ones.
   defAb(side, mon, atkAb) { const a = this.abOf(side, mon); return atkAb === 'MOLD_BREAKER' && BREAKABLE.has(a) ? null : a; }
+  // The same for an effect with source `src` landing on `side`: a move (src = a move key) of the other side's active
+  // POKéMON ignores the defensive ability when that POKéMON has MOLD BREAKER (status / stat / confusion immunities).
+  // (src === true: some move, e.g. a flinch)
+  moveAb(side, mon, src) {
+    const a = this.abOf(side, mon);
+    if (!a || !src || (src !== true && !D.moves[src]) || !BREAKABLE.has(a)) return a;
+    return this.abOf(side === 'player' ? 'enemy' : 'player') === 'MOLD_BREAKER' ? null : a;
+  }
   // Your POKéMON's types in this battle (COLOR CHANGE, FORECAST, MULTITYPE).
   ptypes(mon) {
     if (!mon) return [];
@@ -410,7 +418,7 @@ export class Battle {
     // v0.5.2: and a POKéMON that played one of those cards (dodge or not) can't play one again the next turn.
     else if ((ms.landing === this.turn && (move.effect === 'SEMI_INVULNERABLE' || PROTECT_EFFECTS.has(move.effect))) || (ms.semiBlock === this.turn && move.effect === 'SEMI_INVULNERABLE')) { playable = false; reason = 'LANDING'; }
     else if (this.pab(owner) === 'TRUANT' && this.handsPlayed % 2 === 1) { playable = false; reason = 'LOAFING'; }
-    else if (move.effect === 'EXPLOSION' && this.dampOut()) { playable = false; reason = 'DAMP'; }
+    else if (move.effect === 'EXPLOSION' && this.dampOut() && this.pab(owner) !== 'MOLD_BREAKER') { playable = false; reason = 'DAMP'; }
     const power = move.power || 0;
     const statVal = physical ? st.atk : st.spa;
     // rawPower: move power + attacking stat (a rough "how strong is this card" number for bots)
@@ -546,6 +554,7 @@ export class Battle {
     else this.msg(`${this.trainer?.name || 'Foe'} sent out ${speciesName(e.species)}!`);
     if (e.bossRule && BOSS_RULES[e.bossRule]) this.emit({ t: 'bossRule', rule: e.bossRule, name: BOSS_RULES[e.bossRule].name, desc: BOSS_RULES[e.bossRule].desc });
     if (e.threat && !this.dry && !this.threatShown) { this.threatShown = true; this.msg(threatText(e.threat)); } // (once per battle)
+    if (e.bossRule && BOSS_RULES[e.bossRule]?.onFoeEnter) BOSS_RULES[e.bossRule].onFoeEnter(this, e); // (v0.6.0: BERTHA, CYNTHIA's GARCHOMP)
     if (this.sides.enemy.spikes) {
       const d = Math.floor(e.maxHp * this.sides.enemy.spikes / 8);
       this.damageEnemy(d, 'SPIKES');
@@ -581,6 +590,7 @@ export class Battle {
     if (ab === 'SAND_STREAM') this.setWeather('SAND', true);
     if (ab === 'SNOW_WARNING') this.setWeather('HAIL', true);
     if (this.bossRule?.onLeadEnter) this.bossRule.onLeadEnter(this, lead);
+    this.syncEnemyTypes(); // (a CLOUD NINE / AIR LOCK lead coming in or leaving changes a FORECAST foe's type)
   }
 
   // Ability state of a lead that comes out (co-op duo battles call this too): TRACE, MOLD BREAKER, DOWNLOAD, SLOW START.
@@ -669,7 +679,7 @@ export class Battle {
     });
     // self-KO moves (SELF-DESTRUCT, EXPLOSION): never for a boss / elite / legendary; others only as a last resort
     // when nearly beaten (v0.3.11)
-    const barred = (m) => isSelfKO(m.key) && (e.isBoss || e.isElite || e.legendary || e.hp > e.maxHp * SELF_KO_HP || this.dampOut());
+    const barred = (m) => isSelfKO(m.key) && (e.isBoss || e.isElite || e.legendary || e.hp > e.maxHp * SELF_KO_HP || (this.dampOut() && e.ability !== 'MOLD_BREAKER'));
     let usable = options.map((m, i) => i).filter(i => !barred(options[i]));
     // v0.5.2: no FLY / DIG / DIVE / BOUNCE two turns in a row for foes either (if it has another move)
     if (this.ms(e.uid).semiBlock === this.turn) { const grounded = usable.filter(i => options[i].effect !== 'SEMI_INVULNERABLE'); if (grounded.length) usable = grounded; }
@@ -687,7 +697,7 @@ export class Battle {
   // (effects.js: addStage's caps and stat-loss blockers, statusBlock, confuse, the side flags). Damaging moves: never.
   enemyMoveUseless(m, e, lead) {
     if (!m || m.power > 0 || FIXED_DAMAGE[m.effect]) return false;
-    const es = this.sides.enemy, ps = this.sides.player, eff = m.effect, pab = lead ? this.pab(lead) : null;
+    const es = this.sides.enemy, ps = this.sides.player, eff = m.effect, pab = lead ? this.moveAb('player', lead, m.key) : null;
     if (eff === 'CURSE' && this.typesOfMon('enemy', e).includes('GHOST')) return !!ps.cursed;
     if (eff === 'BELLY_DRUM' && e.hp <= e.maxHp / 2) return true;
     if (FOE_SELF_UP[eff]) return FOE_SELF_UP[eff].every(st => es.stages[st] >= 6);
@@ -782,6 +792,9 @@ export class Battle {
     const pPrio = playerCards ? Math.max(0, ...playerCards.map(c => (PROTECT_EFFECTS.has(c.move.effect) && protectOk === false ? 0 : c.move.priority || 0))) : 0;
     const ePrio = enemyMove?.priority || 0;
     if (pPrio !== ePrio) return ePrio > pPrio;
+    // (v0.6.0 boss rules: MAYLENE's LUCARIO always moves first; LUCIAN's TRICK ROOM turn, the slower one moves first)
+    if (this.bossRule?.foeFirst?.(this)) return true;
+    if (this.bossRule?.trickRoom?.(this)) return this.speedOf('enemy') < this.speedOf('player');
     if (this.mods.quickClaw && (this.handsPlayed === 0 || this.quickClawProc)) return false;
     return this.speedOf('enemy') > this.speedOf('player');
   }
@@ -858,6 +871,7 @@ export class Battle {
     if (!physical && this.mods.spDmgTaken) mult *= 1 + this.mods.spDmgTaken;
     if (target.species === 'DITTO' && this.run.hasRelic('METAL_POWDER')) mult *= 0.6;
     if (this.bossRule?.enemyDamageMult) mult *= this.bossRule.enemyDamageMult;
+    if (this.bossRule?.enemyDamage) mult *= this.bossRule.enemyDamage(this); // (v0.6.0: AARON's TARGET LOCK, MAYLENE's LUCARIO)
     if (e.isBoss && this.turn >= 6) mult *= Math.min(2, 1 + 0.15 * (this.turn - 5)); // bosses enrage in long fights
     return Math.max(1, Math.round(dmg * mult));
   }
@@ -909,7 +923,7 @@ export class Battle {
     if (!cards.length) return null;
     const infos = cards.map(c => this.cardInfo(c));
     const e = this.enemy();
-    const snap = JSON.stringify({ sides: this.sides, ms: this.monState, en: this.enemies.map(x => [x.hp, x.status, x.sleepTurns, x.toxic]), party: this.run.party.map(m => [m.hp, m.status]), relics: this.run.relics.map(r => r.state), payDay: this.payDay, chains: this.chains, weather: this.weather, wt: this.weatherTurns, stats: this.run.stats, cp: this.run.comboPlays, fs: this.freeSwitches, dl: this.discardsLeft });
+    const snap = JSON.stringify({ sides: this.sides, ms: this.monState, en: this.enemies.map(x => [x.hp, x.status, x.sleepTurns, x.toxic, x.types]), party: this.run.party.map(m => [m.hp, m.status]), relics: this.run.relics.map(r => r.state), payDay: this.payDay, chains: this.chains, weather: this.weather, wt: this.weatherTurns, stats: this.run.stats, cp: this.run.comboPlays, fs: this.freeSwitches, dl: this.discardsLeft });
     const intentSnap = this.intent ? JSON.stringify(this.intent) : null, batonSnap = this.batonPass;
     const rng = this.rng, evLen = this.events.length, piles = Object.entries(this.decks).map(([k, p]) => [k, { draw: p.draw.slice(), hand: p.hand.slice(), discard: p.discard.slice(), gone: p.gone.slice() }]), streak = this.leadStreak, fsw = this.faintSwitch, fc = this.faintCount, lead = this.leadUid, result = this.result, parts = new Set(this.participants), msLen = this.run.party.map(m => m.moves.map(x => x.copies));
     this.dry = true;
@@ -919,7 +933,7 @@ export class Battle {
     const o = JSON.parse(snap);
     this.dry = false; this.rng = rng; this.events.length = evLen; for (const [k, p] of piles) Object.assign(this.decks[k], p); this.leadStreak = streak; this.faintSwitch = fsw; this.faintCount = fc; this.leadUid = lead; this.result = result; this.participants = parts; this.intent = intentSnap ? JSON.parse(intentSnap) : null; this.batonPass = batonSnap;
     for (const side of ['player', 'enemy']) { this.sides[side] = o.sides[side]; }
-    this.monState = o.ms; this.enemies.forEach((x, i) => { [x.hp, x.status, x.sleepTurns, x.toxic] = o.en[i]; });
+    this.monState = o.ms; this.enemies.forEach((x, i) => { [x.hp, x.status, x.sleepTurns, x.toxic, x.types] = o.en[i]; });
     this.run.party.forEach((m, i) => { [m.hp, m.status] = o.party[i]; });
     this.run.relics.forEach((r, i) => { r.state = o.relics[i]; });
     this.payDay = o.payDay; this.chains = o.chains; this.weather = o.weather; this.weatherTurns = o.wt; this.run.stats = o.stats; this.run.comboPlays = o.cp; this.freeSwitches = o.fs; this.discardsLeft = o.dl;
@@ -1249,12 +1263,12 @@ export class Battle {
         }
         // Special fixed-damage effects
         if (move.effect === 'OHKO') {
-          if (enemy.isBoss || enemy.isElite || enemy.legendary || enemy.level > owner.level || enemy.ability === 'STURDY') { this.emit({ t: 'card', id: info.id, dmg: 0, label: 'NO EFFECT' }); break; }
+          if (enemy.isBoss || enemy.isElite || enemy.legendary || enemy.level > owner.level || this.defAb('enemy', enemy, this.pab(owner)) === 'STURDY') { this.emit({ t: 'card', id: info.id, dmg: 0, label: 'NO EFFECT' }); break; }
           S.ohko = true; this.emit({ t: 'card', id: info.id, dmg: 0, label: 'ONE-HIT KO!' }); break;
         }
         if (move.effect === 'SUPER_FANG') { if (S.fangUsed) { this.emit({ t: 'card', id: info.id, dmg: 0, label: 'FAILED' }); break; } S.fangUsed = true; const left = Math.max(0, enemy.hp - S.fixed); const d = Math.floor(left * (enemy.isBoss || enemy.isElite ? 0.125 : 0.5)); S.fixed += d; this.emit({ t: 'card', id: info.id, dmg: 0, label: `-${d} HP` }); break; }
         if (move.effect === 'ENDEAVOR') { if (S.endeavorUsed || owner.uid !== this.leadUid) { this.emit({ t: 'card', id: info.id, dmg: 0, label: 'FAILED' }); break; } S.endeavorUsed = true; const left = Math.max(0, enemy.hp - S.fixed); let d = Math.max(0, left - Math.floor(enemy.maxHp * this.hpFrac('player', owner))); if (enemy.isBoss || enemy.isElite) d = Math.min(d, Math.floor(enemy.maxHp * 0.25)); S.fixed += d; this.emit({ t: 'card', id: info.id, dmg: 0, label: `-${d} HP` }); break; }
-        if (move.effect === 'MEMENTO') { this.addStage('enemy', 'atk', -2, move.key); this.addStage('enemy', 'spa', -2, move.key); S.after.push(() => this.selfFaint('player', owner)); this.emit({ t: 'card', id: info.id, dmg: 0, label: 'MEMENTO' }); break; }
+        if (move.effect === 'MEMENTO') { this.addStage('enemy', 'atk', -2, move.key, true); this.addStage('enemy', 'spa', -2, move.key, true); S.after.push(() => this.selfFaint('player', owner)); this.emit({ t: 'card', id: info.id, dmg: 0, label: 'MEMENTO' }); break; }
         let dmg, eff, srcs = [];
         let label = null;
         if (FIXED_DAMAGE[move.effect]) {
@@ -1308,6 +1322,7 @@ export class Battle {
     // ANTICIPATION (foe): it braces for your first super-effective hand
     if (bestEff > 1 && this.defAb('enemy', enemy, this.pab(this.lead())) === 'ANTICIPATION' && !es.braced) { es.braced = true; S.times(0.75, 'ANTICIPATION'); }
     for (const [def, inst] of this.relicHooks('onHand')) def.onHand(S, inst.state);
+    S.bestEff = bestEff; // (v0.6.0: BYRON's BULWARK, GIRATINA's DISTORTION read the hand's best matchup)
     if (this.bossRule?.onScore) this.bossRule.onScore(this, S);
     if (confusedPenalty) S.times(0.5, 'CONFUSED');
     if (ps.focus > 0) ps.focus--;
@@ -1500,7 +1515,7 @@ export class Battle {
       if (dmg >= lead.hp) {
         if (ps.endure) { dmg = lead.hp - 1; this.msg(`${monName(lead)} endured the hit!`); }
         else if (this.mods.focusBand && !this.focusBandUsed) { dmg = lead.hp - 1; this.focusBandUsed = true; this.msg(`${monName(lead)} hung on using its FOCUS BAND!`); }
-        else if (this.pab(lead) === 'STURDY' && lead.hp === maxHp(lead)) { dmg = lead.hp - 1; this.msg(`${monName(lead)} held on with STURDY!`); }
+        else if (this.defAb('player', lead, e.ability) === 'STURDY' && lead.hp === maxHp(lead)) { dmg = lead.hp - 1; this.msg(`${monName(lead)} held on with STURDY!`); }
 
       }
       const eff = typeEffect(move.type, this.ptypes(lead));
@@ -1537,7 +1552,7 @@ export class Battle {
     if (tab === 'TANGLED_FEET' && this.sides.player.confused > 0) acc *= 0.5;
     if (e.ability === 'COMPOUND_EYES') acc *= 1.3;
     if (e.ability === 'HUSTLE' && !isSpecialMove(move.key, move.type)) acc *= 0.8;
-    if (move.effect === 'OHKO') { if (lead.level > e.level || this.pab(lead) === 'STURDY') return false; acc = (30 + e.level - lead.level) / 100; }
+    if (move.effect === 'OHKO') { if (lead.level > e.level || tab === 'STURDY') return false; acc = (30 + e.level - lead.level) / 100; }
     return this.rng.next() < acc;
   }
 
@@ -1630,10 +1645,10 @@ export class Battle {
   }
 
   // Why `side`'s active POKéMON can't fall asleep right now, as a message (null = it can). Mirrors inflictStatus.
-  sleepBlock(side) {
+  sleepBlock(side, src) {
     const mon = this.activeMon(side);
     if (!mon || isFainted2(mon)) return 'But it failed!';
-    const ab = side === 'enemy' ? mon.ability : this.pab(mon);
+    const ab = this.moveAb(side, mon, src);
     if (mon.status) return `${this.monName(mon)} is already ${mon.status === 'SLP' ? 'asleep' : 'afflicted'}!`;
     if (this.sides[side].safeguard) return `${this.sideName(side)} is protected by SAFEGUARD!`;
     if (this.sides[side].substitute) return 'But it failed!';
@@ -1650,7 +1665,7 @@ export class Battle {
   statusBlock(side, st, src, mon = this.activeMon(side), subBlocks = true) {
     if (!mon || isFainted2(mon)) return '';
     const types = this.typesOfMon(side, mon);
-    const ab = side === 'enemy' ? mon.ability : this.pab(mon);
+    const ab = this.moveAb(side, mon, src);
     if (mon.status) return `${this.monName(mon)} is already ${st === 'SLP' ? 'asleep' : 'afflicted'}!`;
     if (ab === 'LEAF_GUARD' && this.wx() === 'SUN' && src !== 'REST') return `${this.monName(mon)}'s LEAF GUARD protects it!`;
     if (this.sides[side].safeguard && src !== 'REST') return `${this.sideName(side)} is protected by SAFEGUARD!`;
@@ -1690,7 +1705,7 @@ export class Battle {
 
   confuse(side, announce, self) {
     const mon = this.activeMon(side);
-    const ab = side === 'enemy' ? mon.ability : this.pab(mon);
+    const ab = self ? this.abOf(side, mon) : this.moveAb(side, mon, true);
     if (ab === 'OWN_TEMPO' || (side === 'player' && this.mods.noConfuse)) { if (announce) this.msg(`${this.monName(mon)} can't be confused!`); return; }
     if (this.sides[side].confused) { if (announce) this.msg(`${this.monName(mon)} is already confused!`); return; }
     if (this.sides[side].safeguard && !self) { if (announce) this.msg(`${this.sideName(side)} is protected by SAFEGUARD!`); return; }
@@ -1704,7 +1719,7 @@ export class Battle {
   flinch(side, always) {
     const mon = this.activeMon(side);
     if (!mon) return;
-    const ab = side === 'enemy' ? mon.ability : this.pab(mon);
+    const ab = this.moveAb(side, mon, true);
     if (ab === 'INNER_FOCUS' || ab === 'SHIELD_DUST') return;
     if (side === 'player' && this.ms(mon.uid).flinchedTurn === this.turn - 1) return;
     this.sides[side].flinch = true;
@@ -1712,7 +1727,7 @@ export class Battle {
   // The chance (0-1) that the foe's move makes your lead flinch if it lands before your hand (intents and tooltips).
   flinchChance(move, e = this.enemy(), lead = this.lead()) {
     if (!move || !e || !lead || !(move.power > 0)) return 0;
-    const ab = this.pab(lead);
+    const ab = this.defAb('player', lead, e.ability);
     if (ab === 'INNER_FOCUS' || ab === 'SHIELD_DUST' || this.ms(lead.uid).flinchedTurn === this.turn - 1) return 0;
     let p = 0;
     if (FLINCH_EFFECTS.has(move.effect)) p = (move.chance || 0) / 100;
@@ -1725,7 +1740,7 @@ export class Battle {
   addStage(side, stat, n, src, fromFoe) {
     const s = this.sides[side];
     const mon = this.activeMon(side);
-    const ab = mon ? (side === 'enemy' ? mon.ability : this.pab(mon)) : null;
+    const ab = mon ? (fromFoe ? this.moveAb(side, mon, src) : this.abOf(side, mon)) : null;
     if (src === 'INTIMIDATE' && (ab === 'OBLIVIOUS' || ab === 'INNER_FOCUS')) { this.msg(`${this.sideName(side)}'s ${ab.replace('_', ' ')} ignores the INTIMIDATE!`); return; }
     if (ab === 'SIMPLE') n *= 2;
     if (n < 0 && fromFoe) {

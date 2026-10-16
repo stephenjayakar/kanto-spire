@@ -1,7 +1,9 @@
 // Packs web/assets/ into files and uploads the changed ones to Convex file storage, where GET /pack serves them
 // to allowlisted accounts only (the hosted static site has no assets).
-// Usage: node tools/upload_packs.cjs [--prod] [--dry] [--out <dir>]
+// Usage: node tools/upload_packs.cjs [--prod] [--dry] [--out <dir>] [--only <name>[,<name>...]]
 //   --dry        build and print the packs, upload nothing
+//   --only a,b   build every pack, but upload ONLY the named ones and prune nothing: adds one new pack (e.g. sinnoh)
+//                to a deployment whose other packs were uploaded from a machine with different assets
 //   --out <dir>  write every pack as <dir>/<name>-<hash>.ksp (default: the browser tests' pack cache, tests/pack_cache.cjs:
 //                PACK_CACHE_DIR or <tmp>/kanto-spire-packs, so tests never download what was just uploaded; PACK_CACHE=0 skips it)
 //
@@ -17,6 +19,10 @@
 // v0.4.0 (Gen 4 is part of the game, game/gen4.js): data/gen4/species.json goes in 'data' (loaded at boot with the
 // rest), the cries (sound/gen4/) in the lazy 'sound' pack, the sprites (gfx/gen4/pokemon/) in the lazy 'pokemon-gen4'
 // pack: Gen 4 species are wild finds, not starters or menu art, so boot only grows by the species file.
+// SINNOH (tools/extract_platinum.py): every file under a 'platinum' folder (gfx/trainers/platinum/,
+// gfx/overworld/people/platinum/, gfx/platinum/...) goes in the lazy 'sinnoh' pack. net/assetpack.js fetches lazy
+// packs from the manifest (no client change per pack), and engine/assets.js falls back to FireRed / Gen 4 art while
+// the pack is absent or still loading.
 const fs = require('fs'), path = require('path'), crypto = require('crypto'), zlib = require('zlib'), os = require('os');
 const { execFileSync } = require('child_process');
 const { optimizePng } = require('./pngopt.cjs');
@@ -24,6 +30,8 @@ const { optimizePng } = require('./pngopt.cjs');
 const root = path.join(__dirname, '..'), assets = path.join(root, 'web', 'assets');
 const args = process.argv.slice(2);
 const prod = args.includes('--prod'), dry = args.includes('--dry');
+const only = args.includes('--only') ? new Set(String(args[args.indexOf('--only') + 1] || '').split(',').filter(Boolean)) : null;
+if (only && !only.size) { console.error('--only needs a pack name (e.g. --only sinnoh)'); process.exit(1); }
 const outDir = args.includes('--out') ? path.resolve(args[args.indexOf('--out') + 1])
   : process.env.PACK_CACHE === '0' ? null : (process.env.PACK_CACHE_DIR || path.join(require('os').tmpdir(), 'kanto-spire-packs'));
 if (!fs.existsSync(path.join(assets, 'data'))) { console.error('web/assets is missing; run the extract tools first.'); process.exit(1); }
@@ -34,11 +42,12 @@ const POKEMON_BUCKETS = 8;
 const SKIP = ['hgss_music'];
 // (retro: the AUDIO STYLE: RETRO Game Boy music bank, tools/extract_retro_music.mjs. Newer clients fetch it only when a
 // player picks RETRO: net/assetpack.js ON_DEMAND; older ones load it in the background like the other lazy packs.)
-const LAZY = new Set(['sound', 'anims', 'hgss', 'emerald', 'pokemon-gen4', 'retro']);
+const LAZY = new Set(['sound', 'anims', 'hgss', 'emerald', 'pokemon-gen4', 'retro', 'sinnoh']);
 function fnv1a(s) { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619) >>> 0; return h; }
 // Which pack a file goes in (each stays far under the 20 MB HTTP action response limit).
 function packOf(rel) {
   if (SKIP.some(d => rel.startsWith(d + '/'))) return null;
+  if (rel.split('/').slice(0, -1).includes('platinum')) return 'sinnoh'; // (Platinum art: before the gfx/pokemon buckets)
   if (rel.startsWith('gfx/gen4/pokemon/')) return 'pokemon-gen4';
   if (rel.includes('/hgss/')) return 'hgss';
   if (rel.startsWith('retro/')) return 'retro'; // (Pokemon Red + Silver music for AUDIO STYLE: RETRO)
@@ -129,9 +138,18 @@ const mb = n => (n / 1048576).toFixed(2);
     for (const list of Object.values(byName)) list.map(f => [f, fs.statSync(path.join(outDir, f)).mtimeMs]).sort((a, b) => b[1] - a[1]).slice(3).forEach(([f]) => fs.unlinkSync(path.join(outDir, f)));
     console.log('wrote', packs.length, 'packs to', outDir);
   }
-  if (dry) return;
+  if (only) {
+    const unknown = [...only].filter(n => !packs.some(p => p.name === n));
+    if (unknown.length) { console.error(`--only: no such pack: ${unknown.join(', ')}`); process.exit(1); }
+    console.log(`--only: uploading ${[...only].join(', ')}; other packs untouched, nothing pruned`);
+  }
+  if (dry) {
+    for (const p of packs) if (p.lazy && (!only || only.has(p.name))) console.log(`${p.name} dirs: ${p.dirs.join(' ')}`);
+    return;
+  }
   const current = Object.fromEntries((convex('packs:list') || []).map(p => [p.name, p]));
   for (const p of packs) {
+    if (only && !only.has(p.name)) continue;
     const c = current[p.name];
     const same = c && c.hash === p.hash && !!c.zsize === !!p.gz && !!c.lazy === !!p.lazy && JSON.stringify(c.dirs || []) === JSON.stringify(p.dirs || []);
     if (same) { console.log(`${p.name}: unchanged`); continue; }
@@ -140,7 +158,9 @@ const mb = n => (n / 1048576).toFixed(2);
     convex('packs:record', { name: p.name, storageId, hash: p.hash, size: p.data.length, ...z, ...(p.lazy ? { lazy: true, dirs: p.dirs } : {}) });
     console.log(`${p.name}: uploaded`);
   }
-  const removed = convex('packs:prune', { keep: packs.map(p => p.name) });
-  if (removed) console.log(`pruned ${removed} old pack(s)`);
+  if (!only) {
+    const removed = convex('packs:prune', { keep: packs.map(p => p.name) });
+    if (removed) console.log(`pruned ${removed} old pack(s)`);
+  }
   console.log(`done (${prod ? 'prod' : 'dev'})`);
 })().catch(e => { console.error(e.message || e); process.exit(1); });

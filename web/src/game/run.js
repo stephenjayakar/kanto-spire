@@ -3,7 +3,7 @@ import { RNG, randomSeedString } from './rng.js';
 import { D, expYield, expForLevel, isSpecial, speciesName, typeEffect } from './data.js';
 import { canUseStone, makeMon, maxHp, healFull, healFrac, isFainted, gainExp, addLevels, teachMove, knowsMove, canLearn, typesOf, setUidCounter, nextUid, itemEvolution, evolve, monName, defaultMoves, defaultCopies, DECK_RULES, NO_PLAYER_MOVES, LEGENDARY } from './pokemon.js';
 import { LEGENDS, STARTERS, rivalKey, BIRDS, RIVAL_INTROS, counterStarter, rivalParty , blueParty, MYTHICS, swapBoss } from './acts.js';
-import { actsForRun, regionOf, drawSpire, rivalFor, validSpire, spireCode, SPIRE, timeOfDay, areaPool, withFinds, pickSummit2, DOUBLE_SUMMIT_ASC } from './regions.js';
+import { actsForRun, regionOf, drawSpire, rivalFor, validSpire, spireCode, SPIRE, timeOfDay, areaPool, withFinds, pickSummit2, DOUBLE_SUMMIT_ASC, spireRequires } from './regions.js';
 import { HOENN_TRAINER_CLASSES } from './hoenn.js';
 import { generateMap } from './map.js';
 import { makeEnemy, abilityOf } from './battle.js';
@@ -82,12 +82,12 @@ export const TUNING = {
   partyHp: [1, 0.9, 0.85, 0.8, 0.75, 0.7],
   bossPartyHp: [1, 0.85, 0.72, 0.62, 0.55, 0.5],
   dmgScale: [1.46, 1.27, 1.04, 0.83, 0.83],
-  worldScale: { hoenn: { hp: [0.825, 0.925, 1.035], dmg: 1.08 }, johto: { hp: [0.92, 1.0, 1.06], dmg: 1.1 } }, // HOENN / JOHTO acts: hp per act, damage overall
+  worldScale: { hoenn: { hp: [0.825, 0.925, 1.035], dmg: 1.08 }, johto: { hp: [0.92, 1.0, 1.06], dmg: 1.1 }, sinnoh: { hp: [0.88, 1.0, 0.98], dmg: 1.05 } }, // HOENN / JOHTO / SINNOH acts: hp per act, damage overall (SINNOH: smart-bot S-S-S-S vs J-J-J-J runs, tests/balance.mjs --regions)
   gauntletHp: [1.48, 1.6, 1.75, 1.87, 2.07], // Elite Four / Champion HP scale (x real HP, before kindHp and party size)
   // held-item supply (about half of what it used to be): chance per elite / boss / item ball; Marts stock one
   relicOdds: { elite: 0.7, boss: 0.5, treasure: 0.4 }, shopRelics: 1, shopRelicBuys: 2,
   bossHpAct: [0.95, 0.8, 0.8, 1, 1],
-  bossHp: { MISTY: 0.7, BLAINE: 0.8 }, // per-leader HP (DMG system: full type resistances wall CHARMANDER here)
+  bossHp: { MISTY: 0.7, BLAINE: 0.8, ROARK: 0.8, GARDENIA: 0.85 }, // per-leader HP (DMG system: full type resistances wall CHARMANDER here; v0.6.0 ROARK: ROCK walls the same teams, 55% solo at full HP)
   // money: flat-ish pay per act (the old level-based pay snowballed into unspendable piles)
   trainerPay: 150, wildPay: 40, shopActScale: 0.3,
   // hpMult scales all enemy HP and dmgMult all enemy damage (discard update: 1.62 / 0.9, was 1.16 / 1: foes take
@@ -151,6 +151,8 @@ export class Run {
       summit2 = pickSummit2(r.seed, first, r.regions ? r.regions.acts : [], pool);
     }
     if (summit2) r.summit2 = summit2;
+    // (v0.6.0) the content caps the run's regions need (caps.js): a run started with HeartGold can go on with Platinum
+    r.requires = r.regions ? spireRequires(r.regions, summit2) : [...(regionOf(world).requires || [])];
     if (coop) r.coop = true;
     // (v0.5.22) solo only: the player's POKéDEX at the start of the run (dexBiasFrom), for wildConfig's bias toward
     // unseen / uncaught species. Co-op never sets it (each player's dex differs; lockstep needs the same picks).
@@ -392,6 +394,7 @@ export class Run {
   }
 
   addSeen(species, caught) {
+    species = D.species[species]?.formOf || species; // (v0.6.0: GIRATINA_ORIGIN counts as GIRATINA)
     if (!this.seen.includes(species)) this.seen.push(species);
     if (caught && !this.caughtSpecies.includes(species)) this.caughtSpecies.push(species);
   }
@@ -647,7 +650,7 @@ export class Run {
     if (blue && t) t = { ...t, party: blueParty(t.party, this.starter) };
     if (t.dummy) t = { ...this.genericTrainer(rng, floor, Math.min(6, this.partyCap(floor) + 1), 2), name: t.name || 'ACE', pic: t.pic, className: t.className, class: t.class };
     const isRocket = /ROCKET|GIOVANNI/.test(t.key);
-    const isRival = /RIVAL|^MAY|^SILVER/.test(t.key);
+    const isRival = /RIVAL|^MAY|^SILVER|^BARRY/.test(t.key);
     let rule = isRival ? 'RIVAL' : isRocket && asc9 ? 'ROCKET' : null;
     if (asc9 && !rule) rule = rng.pick(ELITE_RULE_POOL);
     const enemies = this.makeTrainerEnemies(rng, t, target, 'elite', Math.min(6, this.partyCap(floor) + 1), { floor, rule });
@@ -717,8 +720,8 @@ export class Run {
   legendConfig(rng, floor, key) {
     const L = LEGENDS[key], B = BIRDS[key];
     if (!L || !B) return this.eliteConfig(rng, floor);
-    const lvl = this.levelFor(floor) + TUNING.bird.lvl;
-    const e = makeEnemy(L.species, lvl, { rng, hpScale: this.hpScaleFor(floor, 'legend') * TUNING.bird.hp[Math.min(this.actIndex, TUNING.bird.hp.length - 1)], isBoss: false, isElite: true, legendary: true, bossRule: 'LEGEND', ivs: ivsFrom(200) });
+    const lvl = this.levelFor(floor) + TUNING.bird.lvl + (B.lvl || 0); // (v0.6.0: B.lvl / B.fightMoves, SINNOH's lake guardians)
+    const e = makeEnemy(L.species, lvl, { rng, moves: B.fightMoves || null, hpScale: this.hpScaleFor(floor, 'legend') * TUNING.bird.hp[Math.min(this.actIndex, TUNING.bird.hp.length - 1)], isBoss: false, isElite: true, legendary: true, bossRule: 'LEGEND', ivs: ivsFrom(200) });
     e.legendary = true;
     const offer = !(this.legendsCaught || []).includes(L.species) ? { species: L.species, key } : null;
     return { kind: 'elite', legendNode: key, enemies: [e], terrain: L.terrain, music: L.music, dmgScale: this.dmgScale() * TUNING.bird.dmg, rng, legend: L.title, rewardRelic: B.item, catchOffer: offer };
@@ -830,7 +833,7 @@ export class Run {
     const key = this.boss;
     if (LEGENDS[key]) {
       const L = LEGENDS[key];
-      const e = makeEnemy(L.species, this.bossLevel(), { rng, hpScale: this.hpScaleFor(this.act.floors, 'legend') * 1.4, isBoss: true, legendary: true, bossRule: 'LEGEND', ivs: ivsFrom(255) });
+      const e = makeEnemy(L.species, this.bossLevel(), { rng, moves: L.rule ? L.moves || null : null, hpScale: this.hpScaleFor(this.act.floors, 'legend') * 1.4, isBoss: true, legendary: true, bossRule: L.rule || 'LEGEND', ivs: ivsFrom(255) }); // (v0.6.0: L.rule, GIRATINA ORIGIN's DISTORTION)
       e.legendary = true;
       return { kind: 'boss', legendBoss: true, enemies: [e], terrain: L.terrain, music: L.music, dmgScale: this.dmgScale() * 1.1, rng, legend: L.title };
     }
@@ -861,6 +864,8 @@ export class Run {
     const j = act.secondSummitAt && i >= act.secondSummitAt ? i - act.secondSummitAt : i; // (A10's second block ramps like the first)
     const hp = TUNING.gauntletHp[Math.min(j, TUNING.gauntletHp.length - 1)] * (TUNING.hpMult ?? 1) / this.hpScaleFor(act.floors, 'boss') * (act.summitHp ? act.summitHp[Math.min(i, act.summitHp.length - 1)] : regionOf(this.summitRegion).summit.hp);
     const enemies = this.makeTrainerEnemies(rng, t, lvl, 'boss', 6, { floor: act.floors, rule, rules, hpMult: hp * TUNING.kindHp.boss });
+    // (v0.6.0) CYNTHIA's CHAMPION'S RESOLVE: she opens with a different POKéMON each time (her ace stays last)
+    if (rule === 'CYNTHIA' && enemies.length > 2) { const k = rng.int(0, enemies.length - 2); enemies.unshift(...enemies.splice(k, 1)); }
     this.addThreat(key, enemies);
     const info = this.trainerInfo(t);
     if (champion) { info.title = `CHAMPION ${info.name}`; info.encounterSong = key === 'RS_CHAMPION' || t.champion ? 'mus_encounter_gym_leader' : 'mus_encounter_rival'; }
@@ -1175,6 +1180,8 @@ export class Run {
     def('ascension', 0);
     def('world', 'kanto');
     def('dexBias', null); // (v0.5.22) no POKéDEX bias for runs started before it
+    // (v0.6.0) the content caps the run needs, from the regions it visits (caps.js)
+    if (!Array.isArray(o.requires)) o.requires = o.regions && validSpire(o.regions) ? spireRequires(o.regions, o.summit2) : [...(regionOf(o.world).requires || [])];
     // (v0.5.0 abilities) a save from before the Gen 4 ability lists changed: its Gen 4 mons keep the ability they had
     if (!o.abilityRules) {
       for (const m of o.party || []) {

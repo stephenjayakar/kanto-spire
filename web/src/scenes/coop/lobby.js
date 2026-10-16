@@ -390,7 +390,7 @@ export class CoopLobbyScene {
     // the region pool (the host's: HOENN acts join once the host has won a run, JOHTO acts after 2 wins)
     text(ctx, 'REGIONS', 430, 210, { color: 'whiteSoft', font: 'small' });
     text(ctx, isSpireWorld(world) ? coopWorldRegions(world) : coopWorldLabel(world), 560, 210, { align: 'center', color: 'gold', font: 'small' });
-    textBlock(ctx, "Each act draws its region from the run seed. HOENN joins after the host's 1st win, JOHTO after the 2nd.", 430, 226, 186, { color: 'gray', font: 'small', lineHeight: 10 });
+    textBlock(ctx, "Each act draws its region from the run seed. SINNOH is in from the start, HOENN joins after the host's 1st win, JOHTO after the 2nd.", 430, 226, 186, { color: 'gray', font: 'small', lineHeight: 10 });
     // the NUZLOCKE switch (host: a button; the others see the host's choice)
     if (nuzOpt) {
       const on = !!room.nuzlocke;

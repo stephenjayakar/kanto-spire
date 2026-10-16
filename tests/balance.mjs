@@ -25,9 +25,10 @@ const LETTER = Object.fromEntries(REGION_IDS.map(id => [REGIONS[id].letter, id])
 const toRegion = (s) => { const id = LETTER[String(s).trim().toUpperCase()] || (REGIONS[String(s).trim().toLowerCase()] ? String(s).trim().toLowerCase() : null); if (!id) throw new Error('unknown region ' + s); return id; };
 const FORCED = arg('regions') ? arg('regions').split(/[,-]/).map(toRegion) : null;
 const SPIRE = !!FORCED || process.argv.includes('--spire');
-const POOL = arg('pool') ? arg('pool').split(',').map(toRegion) : REGION_IDS.filter(id => id !== 'johto'); // (K,H: a 3-region pool needs --pool K,H,J)
+const POOL = arg('pool') ? arg('pool').split(',').map(toRegion) : ['kanto', 'hoenn']; // (K,H: a 3-region pool needs --pool K,H,J; v0.6.0 SINNOH: --pool K,H,J,S / --regions S,S,S,S)
 const STARTERS_ARG = arg('starters') === 'six' ? ['BULBASAUR', 'TORCHIC', 'SQUIRTLE', 'TREECKO', 'CHARMANDER', 'MUDKIP']
   : arg('starters') === 'nine' ? ['BULBASAUR', 'TORCHIC', 'CYNDAQUIL', 'SQUIRTLE', 'TREECKO', 'CHIKORITA', 'CHARMANDER', 'MUDKIP', 'TOTODILE']
+  : arg('starters') === 'twelve' ? ['BULBASAUR', 'TORCHIC', 'CYNDAQUIL', 'TURTWIG', 'SQUIRTLE', 'TREECKO', 'CHIKORITA', 'CHIMCHAR', 'CHARMANDER', 'MUDKIP', 'TOTODILE', 'PIPLUP']
   : arg('starters') ? arg('starters').split(',') : null;
 const LABEL = FORCED ? `spire ${FORCED.slice(0, 4).map(id => REGIONS[id].letter).join('-')}` : SPIRE ? `spire pool ${POOL.map(id => REGIONS[id].letter).join(',')}` : WORLD;
 // The forced act regions for one run: E4 / post-game letters 5-6, else a seeded pick from the visited regions.

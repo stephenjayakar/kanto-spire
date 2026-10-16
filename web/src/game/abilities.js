@@ -6,8 +6,9 @@
 //                   one lookup: it sees TRACE copies (sides[side].traced) for the player.
 //   effectiveness() (battle.js) the defensive type-matchup abilities (immunities, THICK FAT / HEATPROOF / FILTER...).
 //   run.js          the field abilities (partyAbilityMods below, folded into Run.mods()).
-//   this file       the shared tables and every ability's in-game text (ABILITY_TEXT replaces text_overrides.js's
-//                   ABILITY_DESC "No effect in battle here." entries; data.js applies it).
+//   this file       the shared tables and every ability's in-game text (ABILITY_TEXT; data.js applies it over
+//                   text_overrides.js's old ABILITY_DESC, now empty).
+//   tests/abilities_coverage.test.mjs fails if an ability has no text or no code: add both for a new ability.
 //
 // Gen 4 abilities: the 31 HeartGold abilities of the Gen 4 species (gen4/species.json gen4Abilities) get D.abilities
 // entries here (GEN4_ABILITIES) and the species use their HGSS lists (gen4.js applyGen4). A mon's ability is picked
@@ -165,7 +166,7 @@ export const ABILITY_TEXT = {
   SIMPLE: 'Every stat change on its side counts double.',
   UNAWARE: "Ignores the other side's stat changes.",
   RIVALRY: '25% more damage against foes that share a type with it.',
-  MOLD_BREAKER: "Its attacks ignore the target's defensive ability (LEVITATE, WONDER GUARD, STURDY, the absorbs...).",
+  MOLD_BREAKER: "Its moves ignore the target's defensive ability (LEVITATE, WONDER GUARD, STURDY, the absorbs, LIMBER, CLEAR BODY...), and DAMP can't stop its EXPLOSION.",
   ANTICIPATION: "Yours: if the foe's next attack is super effective on it, switching is free that turn. Enemy: your first super-effective hand against it does 25% less.",
   HONEY_GATHER: 'With it in your party, 20% chance to find a berry after each won battle.',
   FLOWER_GIFT: "In sunshine, your team's physical cards do 50% more, and it takes less damage from special attacks.",

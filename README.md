@@ -2,8 +2,8 @@
 
 A browser roguelike deckbuilder: **Pokémon FireRed × Slay the Spire**. Your Pokémon's moves are your cards,
 same-type cards form combos on top of real Gen 3 damage, and you climb a branching spire whose acts roll
-Kanto, Hoenn or Johto. It has gym leaders with special rules, rivals who counter your starter, legendaries,
-21 starters, ascensions A0–A10 (A8 is a Nuzlocke), and optional 2–4 player online co-op.
+Kanto, Hoenn, Johto or Sinnoh. It has gym leaders with special rules, rivals who counter your starter, legendaries,
+24 starters, ascensions A0–A10 (A8 is a Nuzlocke), and optional 2–4 player online co-op.
 
 > **Unofficial fan project, not affiliated with Nintendo, Creatures or Game Freak.** This repository contains
 > **no game assets**: you extract them yourself from your own copy of Pokémon FireRed. `web/assets/` is
@@ -21,6 +21,9 @@ Player-facing rules: [docs/GAME.md](docs/GAME.md).
 - Optional:
   - **Pokémon HeartGold ROM** (USA, SHA1 `4fcded0e2713dc03929845de631d0932ea2b5a37`) plus
     `pip install ndspy`, for the Johto trainer portraits. Without it, Johto trainers have no portrait.
+  - **Pokémon Platinum ROM** (USA Rev 1, SHA1 `0862ec35b24de5c7e2dcb88c9eea0873110d755c`, or Rev 0,
+    `ce81046eda7d232513069519cb2085349896dec7`) plus `pip install ndspy`, for the Sinnoh trainer portraits, walkers and
+    Giratina's Origin Forme. Without it, Sinnoh trainers show FireRed stand-ins.
   - **Pokémon Emerald ROM** (USA, SHA1 `f3ae088181bf583e55daf962a92bb46f4f1d07b7`) plus the
     [pret/pokeemerald](https://github.com/pret/pokeemerald) decomp cloned into `pokeemerald/`, for Hoenn's music
     (Emerald's soundtrack in Hoenn acts), Emerald's trainer portraits, front sprites and Hoenn boss walkers. Without
@@ -45,6 +48,7 @@ python tools/legend_icons.py     # legendary held-item icons (after extract_gfx)
 python tools/extract_anims.py    # FireRed move animations               -> web/assets/anims
 node   tools/extract_sound.js    # music, sound effects, cries           -> web/assets/sound
 python tools/extract_hgss.py path/to/heartgold.nds   # optional: Johto portraits
+python tools/extract_platinum.py path/to/platinum.nds  # optional: Sinnoh portraits, walkers, Giratina Origin
 git clone --depth 1 https://github.com/pret/pokeemerald          # optional: Emerald (Hoenn) music and art
 python tools/extract_emerald.py path/to/emerald.gba  # -> web/assets/sound/emerald, web/assets/gfx/**/emerald
 node tools/extract_retro_music.mjs --red pokered.gb --silver pokesilver.gbc  # optional: AUDIO STYLE RETRO -> web/assets/retro

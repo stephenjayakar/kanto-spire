@@ -11,6 +11,7 @@ import { retroSong, RETRO_NEXT, savedRetroMix } from './audio/retro.js';
 import { TitleScene } from './scenes/title.js';
 import { initCloud, Cloud, signedIn, signIn, authToken, packManifest, dropAuth, pendingInvite } from './net/cloud.js';
 import { loadPacks } from './net/assetpack.js';
+import { setCaps, capsFromPacks } from './game/caps.js';
 import * as flow from './scenes/flow.js';
 import * as engine from './engine/core.js';
 import { CRT } from './engine/crt.js';
@@ -44,8 +45,10 @@ async function boot() {
   if (Cloud.packs) {
     const loading = document.getElementById('loading');
     try {
+      const list = await packManifest();
+      setCaps(capsFromPacks(list.map(p => p.name))); // (v0.6.0: content caps from the server's packs, game/caps.js)
       await loadPacks({
-        siteUrl: Cloud.siteUrl, token: authToken, list: await packManifest(),
+        siteUrl: Cloud.siteUrl, token: authToken, list,
         onProgress: (n, total) => { if (loading) loading.textContent = `Loading game data... ${(n / 1048576).toFixed(1)} / ${(total / 1048576).toFixed(1)} MB`; },
       });
     } catch (e) {

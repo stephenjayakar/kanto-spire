@@ -13,7 +13,8 @@ import { drawStarterMon, typeIcon, ChoiceModal } from './common.js';
 import { FrontAnim } from '../anim/front_anim.js';
 import { goToMap } from './flow.js';
 import { isStarterUnlocked, ascUnlocked, ascDefault } from '../game/unlocks.js';
-import { unlockedRegions, regionOf, SPIRE, orList, JOHTO_WINS } from '../game/regions.js';
+import { unlockedRegions, regionOf, SPIRE, orList, JOHTO_WINS, regionAvailable } from '../game/regions.js';
+import { capsOk } from '../game/caps.js';
 import { showPendingStarterOffer } from './unlock.js';
 import { TitleScene } from './title.js';
 
@@ -30,7 +31,7 @@ export class StarterScene {
   unlocked(st) { return isStarterUnlocked(G.meta, st.species, SPIRE); }
   // One Spire (v0.1.0): no world select; every run climbs the same spire, its acts' regions drawn from the seed.
   buildList() {
-    this.list = STARTERS.filter(s => D.species[s.species]);
+    this.list = STARTERS.filter(s => D.species[s.species] && capsOk(s.requires)); // (v0.6.0: the SINNOH three need the 'sinnoh' content)
     this.sel = 1;
   }
   update(dt) { this.t += dt; }
@@ -48,9 +49,10 @@ export class StarterScene {
     panel(ctx, 150, 8, 476, 40, 'paper');
     const regions = unlockedRegions(G.meta);
     textBlock(ctx, regions.length > 1 ? `OAK: Welcome to KANTO SPIRE! Every act of the climb leads to ${orList(regions.map(id => regionOf(id).name))}, and you never know which. Choose your partner POKéMON!` : 'OAK: Welcome to KANTO SPIRE! Three GYMS, VICTORY ROAD and the ELITE FOUR stand between you and the top. Choose your partner POKéMON!', 162, 13, 452, { color: 'dark' });
-    // starter grid (21 starters, one for every type): sprites at 1x, cropped to their pixels and centred
+    // starter grid (21-24 starters, one for every type): sprites at 1x, cropped to their pixels and centred
     // in the cell (never resampled), with type colour bars
-    const per = 7, cw = 64, ch = 60, gap = 4, gy = 52;
+    // (v0.6.0: 24 starters with SINNOH's three: 8 narrower cells a row, so the grid stays 3 rows above the info panel)
+    const per = this.list.length > 21 ? 8 : 7, cw = per === 8 ? 56 : 64, ch = 60, gap = 4, gy = 52;
     const rows = Math.ceil(this.list.length / per);
     const gx = 150 + (476 - (per * (cw + gap) - gap)) / 2;
     this.list.forEach((st, i) => {
@@ -131,11 +133,14 @@ export class StarterScene {
     if (button(ctx, 'BACK', 14, H - 34, 70, 24, { color: '#806060' })) setScene(new TitleScene());
     // the regions this spire can draw its acts from (no world select since v0.1.0)
     text(ctx, 'REGIONS', 74, 210, { align: 'center', color: 'white', font: 'small' });
-    regions.forEach((id, i) => text(ctx, regionOf(id).name, 74, 222 + i * 11, { align: 'center', color: 'gold', font: 'small' }));
-    if (regions.length < 2) text(ctx, 'HOENN: locked', 74, 233, { align: 'center', color: 'gray', font: 'small' });
-    else if (!regions.includes('johto')) text(ctx, 'JOHTO: locked', 74, 244, { align: 'center', color: 'gray', font: 'small' });
+    // (v0.6.0: up to four regions, then the ones still locked, one line each)
+    const locked = [!regions.includes('hoenn') && 'HOENN', !regions.includes('johto') && regionAvailable('johto') && 'JOHTO'].filter(Boolean);
+    const lh = regions.length + locked.length > 4 ? 9 : 11;
+    regions.forEach((id, i) => text(ctx, regionOf(id).name, 74, 222 + i * lh, { align: 'center', color: 'gold', font: 'small' }));
+    locked.forEach((n, i) => text(ctx, `${n}: locked`, 74, 222 + (regions.length + i) * lh, { align: 'center', color: 'gray', font: 'small' }));
     const names = orList(regions.map(id => regionOf(id).name));
-    if (hover(14, 206, 120, 40)) tip('ONE SPIRE', regions.length > 1 ? `Each act draws its region from the run seed: ${names}, with their own GYM LEADERS, areas and events. The ELITE FOUR and the post-game come from a region you visited.${regions.includes('johto') ? '' : ` Win ${JOHTO_WINS} runs and JOHTO acts join too.`}` : 'Every act is in KANTO for now. Become CHAMPION once and HOENN acts join the spire: each act then draws its region from the run seed.', { width: 220 });
+    const howTo = [!regions.includes('hoenn') && 'Become CHAMPION once and HOENN acts join.', locked.includes('JOHTO') && ` Win ${JOHTO_WINS} runs and JOHTO acts join too.`].filter(Boolean).join(' ');
+    if (hover(14, 206, 120, 46)) tip('ONE SPIRE', regions.length > 1 ? `Each act draws its region from the run seed: ${names}, with their own GYM LEADERS, areas and events. The ELITE FOUR and the post-game come from a region you visited.${howTo ? ' ' + howTo : ''}` : 'Every act is in KANTO for now. Become CHAMPION once and HOENN acts join the spire: each act then draws its region from the run seed.', { width: 220 });
     if (button(ctx, 'BEGIN!', 14, H - 64, 120, 26, { color: THEME.green, disabled: !this.unlocked(st) })) this.start(st);
     drawTips(ctx);
   }

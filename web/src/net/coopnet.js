@@ -57,7 +57,7 @@ export const closeLive = () => closeCloudLive();
 // ---- lobby ----------------------------------------------------------------------------------
 // This client plays rooms of up to MAX_PLAYERS (the server keeps a room at 2 while an older 2-player client is in it).
 const MAX_PLAYERS = 4;
-// opts: { ascension = 0, world = 'spire' } -> { roomId, code }   (world: 'spire' | 'spire_johto' | 'spire_kanto'; legacy 'kanto' / 'hoenn')
+// opts: { ascension = 0, world = 'spire' } -> { roomId, code }   (world: 'spire' | 'spire_johto' | 'spire_kanto' | v0.6.0 'spire_ks' | 'spire_sinnoh' | 'spire_all'; legacy 'kanto' / 'hoenn')
 // (v0.3.6: the room records the game version and logic id it was created on)
 export const createRoom = (opts = {}) => m('coop:create', { ascension: opts.ascension ?? 0, world: opts.world ?? 'spire', maxPlayers: MAX_PLAYERS, gameVersion: VERSION, engine: LOGIC_ID });
 // -> { roomId, slot, code, status }   (joining a room you are already in returns your slot: REJOIN)

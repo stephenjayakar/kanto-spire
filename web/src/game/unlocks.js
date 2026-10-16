@@ -5,6 +5,7 @@
 import { STARTERS } from './acts.js';
 import { HOENN_STARTERS } from './hoenn.js';
 import { regionOf } from './regions.js';
+import { capsOk } from './caps.js';
 
 export const STARTER_VER = 2; // meta.starterVer: 2 = the explicit unlockedStarters list (reset in v0.0.5)
 export const KANTO_STARTERS = ['BULBASAUR', 'CHARMANDER', 'SQUIRTLE'];
@@ -45,7 +46,8 @@ export function isStarterUnlocked(meta, species, world = 'kanto') {
 }
 
 // Every starter species in STARTERS order; has(species) filters out ones without data (e.g. D.species).
-export const allStarters = (has) => STARTERS.map(s => s.species).filter(s => !has || has(s));
+// (v0.6.0: a starter whose content isn't there, STARTERS[i].requires, e.g. the SINNOH three without the 'sinnoh' cap, is left out)
+export const allStarters = (has) => STARTERS.filter(s => capsOk(s.requires)).map(s => s.species).filter(s => !has || has(s));
 export const lockedStarters = (meta, has) => allStarters(has).filter(s => !(meta?.unlockedStarters || KANTO_STARTERS).includes(s));
 
 // The starters a player can bring in a world: its defaults first, then their unlocked ones.

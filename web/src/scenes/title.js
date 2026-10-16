@@ -265,10 +265,10 @@ const ABOUT = [
   ]],
   ['ONE SPIRE', [
     'Every run climbs the same spire: Acts 1 to 3 end at a GYM LEADER, Act 4 is VICTORY ROAD, then the ELITE FOUR and the CHAMPION, and an optional post-game after that',
-    'Each act draws its region from the run seed: KANTO at first, HOENN acts join once you have won a run, and JOHTO acts after your 2nd win. The region decides the act’s areas, GYM LEADERS (and badges), elites, events and legendary. Levels follow the act, not the region',
+    'Each act draws its region from the run seed: KANTO and SINNOH from the start, HOENN acts join once you have won a run, and JOHTO acts after your 2nd win. The region decides the act’s areas, GYM LEADERS (and badges), elites, events and legendary. Levels follow the act, not the region',
     'The act-clear screen shows the next act’s region and its possible GYM LEADERS, so you can plan your team. The ELITE FOUR and the post-game come from a region you visited',
-    'One rival follows you all the way: MAY if your starter is from HOENN, SILVER if it is from JOHTO, BLUE otherwise',
-    'JOHTO acts run from morning to night: the first third of the act is morning, then day, then night, and each brings its own wild POKéMON',
+    'One rival follows you all the way: MAY if your starter is from HOENN, SILVER if it is from JOHTO, BARRY if it is from SINNOH, BLUE otherwise',
+    'JOHTO and SINNOH acts run from morning to night: the first third of the act is morning, then day, then night, and each brings its own wild POKéMON',
   ]],
   ['THE MAP', [
     'Your rival waits on a floor every path crosses in Acts 1-3. Their starter beats yours, but beating them pays a guaranteed held item',

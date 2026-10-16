@@ -7,6 +7,7 @@ export const BASE = 'assets/';
 export function img(path) {
   let im = cache.get(path);
   if (!im) {
+    if (!FALLBACK.has(path)) { const fb = sinnohFallback(path); if (fb) FALLBACK.set(path, fb); }
     im = new Image();
     // (optional art, e.g. the Emerald pack's: a path with a fallback (setFallback) shows the fallback instead)
     im.onerror = () => {
@@ -33,6 +34,27 @@ export function preload(paths) {
 // Art that may not exist yet (HGSS icons before tools/ extraction has run): the path drawn instead when it fails.
 const FALLBACK = new Map();
 export const setFallback = (path, alt) => { if (path !== alt) FALLBACK.set(path, alt); };
+// SINNOH art (lazy 'sinnoh' pack, tools/extract_platinum.py: every path with a 'platinum' folder) stands in for itself
+// with FireRed / Gen 4 art when the pack is absent (local dev without the extraction, a deployment without the pack)
+// or failed: a portrait -> a FireRed trainer pic in the same role, a walker -> HGSS SILVER's (the same 32x32-frame
+// layout; FireRed's walkers have 16x32 frames), GIRATINA's Origin Forme -> the Altered Forme's file of the same name.
+// (setFallback still wins: img() only fills in paths that have no fallback yet.)
+const SINNOH_PIC = {
+  roark: 'leader_brock', gardenia: 'leader_erika', maylene: 'battle_girl', wake: 'black_belt', fantina: 'leader_sabrina',
+  byron: 'hiker', candice: 'elite_four_lorelei', volkner: 'leader_lt_surge', aaron: 'bug_maniac', bertha: 'expert_f',
+  flint: 'leader_blaine', lucian: 'psychic_m', cynthia: 'cool_trainer_f', barry: 'rival_early', cyrus: 'leader_giovanni',
+  mars: 'magma_admin_f', jupiter: 'aqua_admin_f', saturn: 'magma_admin_m', galactic_grunt_m: 'rocket_grunt_m',
+  galactic_grunt_f: 'rocket_grunt_f', ace_trainer_m: 'cool_trainer_m', ace_trainer_f: 'cool_trainer_f',
+};
+function sinnohFallback(path) {
+  if (!path.includes('platinum/')) return null;
+  let m = /^gfx\/trainers\/platinum\/(\w+)\.png$/.exec(path);
+  if (m) return `gfx/trainers/${SINNOH_PIC[m[1]] || (/_f$/.test(m[1]) ? 'cool_trainer_f' : 'cool_trainer_m')}.png`;
+  if (/^gfx\/overworld\/people\/platinum\/\w+\.png$/.test(path)) return 'gfx/overworld/people/hgss/silver.png';
+  m = /^gfx\/platinum\/pokemon\/giratina_origin\/(\w+\.png)$/.exec(path);
+  if (m) return `gfx/gen4/pokemon/giratina/${m[1]}`;
+  return null;
+}
 export function draw(ctx, path, x, y, opts = {}) {
   let im = typeof path === 'string' ? img(path) : path;
   if (im?._failed && FALLBACK.has(path)) im = img(FALLBACK.get(path));

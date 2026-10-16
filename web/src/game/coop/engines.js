@@ -52,13 +52,16 @@ import { RNG } from '../rng.js';
 // v0.5.19 does: lower A5+ level caps (offsets +1 / +1 / -1 / -2, post-game -1); v0.5.18 is frozen as 'v0518'.
 // v0.5.27 does: ROAR / WHIRLWIND force a trainer's foe out at the end of the turn (a random benched one comes in), a foe's
 // ROAR drags out a random POKéMON of yours, and PROTECT / INGRAIN block them; v0.5.19-v0.5.26 is frozen as 'v0519'.
-export const LOGIC_ID = 'v0527';
+// v0.6.0 does: the SINNOH region (Platinum: its acts, trainers, boss rules, pools, BARRY, the Sinnoh starters, GIRATINA
+// ORIGIN), the SINNOH co-op pools, every ability doing something, CYNTHIA's lead rotation; v0.5.27 is frozen as 'v0527'.
+export const LOGIC_ID = 'v060';
 // Actions from before v0.3.6 carry no stamp: they were played on v0.3.5 (or, for older rooms, earlier; the
 // replay checks the clients' logged checksums and tries every frozen engine, see resume.js).
 export const UNSTAMPED = 'v035';
 // Frozen copies, newest first: id -> the versions it covers and its loader (dynamic import: only fetched when a
 // room needs it).
 export const FROZEN = {
+  v0527: { versions: 'v0.5.27', load: () => import('../../legacy/v0527/engine.js') },
   v0519: { versions: 'v0.5.19-v0.5.26', load: () => import('../../legacy/v0519/engine.js') },
   v0518: { versions: 'v0.5.18', load: () => import('../../legacy/v0518/engine.js') },
   v0517: { versions: 'v0.5.17', load: () => import('../../legacy/v0517/engine.js') },

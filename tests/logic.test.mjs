@@ -21,13 +21,14 @@ import { generateShop, buyItem } from '../web/src/game/shop.js';
 import { EVENTS } from '../web/src/game/events.js';
 import { bossTypes, bossTypeLabel, BOSS_TYPES } from '../web/src/game/bosses.js';
 import * as U from '../web/src/game/unlocks.js';
+import { ALL_CAPS } from '../web/src/game/caps.js';
 import { pickHandAnim, resolveAnimMove, GEN4_ANIM, orderTurnEvents } from '../web/src/anim/pick.js';
 
 await loadData(async f => JSON.parse(fs.readFileSync('web/assets/data/' + f, 'utf8')));
 let pass = 0, fail = 0;
 const t = (name, fn) => { try { fn(); pass++; } catch (e) { fail++; console.log('FAIL', name, '-', e.message, process.env.STACK ? e.stack : ''); } };
 
-t('data counts', () => { assert.equal(Object.keys(D.species).length, 493, 'FireRed 386 + Gen 4 107 (v0.4.0)'); assert.ok(Object.keys(D.moves).length >= 354); });
+t('data counts', () => { assert.equal(Object.keys(D.species).filter(k => !D.species[k].form).length, 493, 'FireRed 386 + Gen 4 107 (v0.4.0)'); assert.deepEqual(Object.keys(D.species).filter(k => D.species[k].form), ['GIRATINA_ORIGIN'], 'v0.6.0: the one form key'); assert.ok(Object.keys(D.moves).length >= 354); });
 t('type chart', () => { assert.equal(typeEffect('WATER', ['FIRE']), 2); assert.equal(typeEffect('ELECTRIC', ['GROUND']), 0); assert.equal(typeEffect('GRASS', ['FIRE', 'FLYING']), 0.25); assert.equal(typeEffect('NORMAL', ['GHOST']), 0); });
 t('stat formula', () => { assert.equal(calcStat(39, 31, 50, true), 39 * 2 + 31 > 0 ? Math.floor((78 + 31) * 50 / 100) + 60 : 0); });
 t('exp curves', () => { assert.equal(expForLevel('MEDIUM_FAST', 10), 1000); assert.equal(expForLevel('FAST', 10), 800); assert.equal(expForLevel('MEDIUM_SLOW', 100), 1059860); });
@@ -544,6 +545,8 @@ t('starters: the v0.0.5 starters keep their moves (v0.0.6: LARVITAR gets ROCK TH
     'PIKACHU:THUNDER_SHOCK,CHARGE_BEAM,QUICK_ATTACK,GROWL', 'EEVEE:TACKLE,TAIL_WHIP,SAND_ATTACK,QUICK_ATTACK', 'CHIKORITA:TACKLE,GROWL,RAZOR_LEAF,POISON_POWDER',
     'CYNDAQUIL:TACKLE,LEER,SMOKESCREEN,EMBER', 'TOTODILE:SCRATCH,LEER,RAGE,WATER_GUN', 'TREECKO:POUND,LEER,ABSORB,QUICK_ATTACK', 'TORCHIC:SCRATCH,GROWL,FOCUS_ENERGY,EMBER',
     'MUDKIP:TACKLE,GROWL,MUD_SLAP,WATER_GUN', 'DRATINI:WRAP,LEER,THUNDER_WAVE,TWISTER', 'LARVITAR:BITE,ROCK_THROW,LEER,SANDSTORM', 'BELDUM:TAKE_DOWN,TACKLE,IRON_DEFENSE,METAL_CLAW',
+    // (v0.6.0: the SINNOH three, gated on the 'sinnoh' content)
+    'TURTWIG:TACKLE,WITHDRAW,ABSORB,RAZOR_LEAF', 'CHIMCHAR:SCRATCH,LEER,EMBER,TAUNT', 'PIPLUP:POUND,GROWL,BUBBLE,PECK',
   ]);
   assert.ok(STARTERS.every(s => !('unlock' in s)));
 });
@@ -939,11 +942,11 @@ t('ascension: the shiny unlock (A5+) and Nuzlocke (A8) rules are unchanged', () 
     const ids = new Set();
     for (const ev of EV.EVENTS) {
       assert.ok(!ids.has(ev.id), 'duplicate id ' + ev.id); ids.add(ev.id);
-      assert.ok(ev.shrine || ((['kanto', 'hoenn', 'johto'].includes(ev.world) || (ev.world === null && ev.follows)) && ev.acts.length && ev.acts.every(a => a >= 0 && a <= 4)), ev.id);
+      assert.ok(ev.shrine || ((['kanto', 'hoenn', 'johto', 'sinnoh'].includes(ev.world) || (ev.world === null && ev.follows)) && ev.acts.length && ev.acts.every(a => a >= 0 && a <= 4)), ev.id);
       assert.ok(ev.choices.length >= 2 && ev.choices.length <= 5, ev.id);
     }
     assert.equal(EV.EVENTS.filter(e => e.shrine).length, 6);
-    for (const world of ['kanto', 'hoenn', 'johto']) for (let a = 0; a <= 4; a++) assert.ok(EV.EVENTS.filter(e => e.world === world && e.acts.includes(a)).length >= 4, `${world} act ${a + 1} pool`);
+    for (const world of ['kanto', 'hoenn', 'johto', 'sinnoh']) for (let a = 0; a <= 4; a++) assert.ok(EV.EVENTS.filter(e => e.world === world && e.acts.includes(a)).length >= 4, `${world} act ${a + 1} pool`);
     for (const old of ['gift', 'hiker', 'cooltrainer', 'itemball', 'trade', 'oak', 'rocket']) assert.ok(!ids.has(old), 'retired event still there: ' + old);
   });
 
@@ -1302,10 +1305,14 @@ t('ascension: the shiny unlock (A5+) and Nuzlocke (A8) rules are unchanged', () 
   });
 
   t('v0.1.0 unlocks: KANTO-only spire before a first win; HOENN starters kept by players who had HOENN', () => {
-    assert.deepEqual(RG.unlockedRegions({ unlocks: {} }), ['kanto']); assert.deepEqual(RG.unlockedRegions({}), ['kanto']);
-    assert.deepEqual(RG.unlockedRegions({ unlocks: { win: true } }), ['kanto', 'hoenn']);
-    for (let i = 0; i < 50; i++) assert.deepEqual(Run.create({ seed: 'NEW' + i, world: 'spire', pool: RG.unlockedRegions({ unlocks: {} }) }).regions.acts, ['kanto', 'kanto', 'kanto', 'kanto']);
-    assert.equal(RG.coopWorldFor({ unlocks: {} }), 'spire_kanto'); assert.equal(RG.coopWorldFor({ unlocks: { win: true } }), 'spire');
+    // (v0.6.0: SINNOH is open from the start whenever its content is there; without it, as before)
+    assert.deepEqual(RG.unlockedRegions({ unlocks: {} }), ['kanto', 'sinnoh']); assert.deepEqual(RG.unlockedRegions({}), ['kanto', 'sinnoh']);
+    assert.deepEqual(RG.unlockedRegions({ unlocks: { win: true } }), ['kanto', 'hoenn', 'sinnoh']);
+    const noPt = { ...ALL_CAPS, sinnoh: false };
+    assert.deepEqual(RG.unlockedRegions({ unlocks: {} }, noPt), ['kanto']); assert.deepEqual(RG.unlockedRegions({ unlocks: { win: true } }, noPt), ['kanto', 'hoenn']);
+    for (let i = 0; i < 50; i++) assert.deepEqual(Run.create({ seed: 'NEW' + i, world: 'spire', pool: RG.unlockedRegions({ unlocks: {} }, noPt) }).regions.acts, ['kanto', 'kanto', 'kanto', 'kanto']);
+    for (let i = 0; i < 50; i++) assert.ok(Run.create({ seed: 'NEW' + i, world: 'spire', pool: RG.unlockedRegions({ unlocks: {} }) }).regions.acts.every(id => id === 'kanto' || id === 'sinnoh'));
+    assert.equal(RG.coopWorldFor({ unlocks: {} }), 'spire_ks'); assert.equal(RG.coopWorldFor({ unlocks: { win: true } }), 'spire_sinnoh');
     // migration: a player with HOENN access keeps TREECKO / TORCHIC / MUDKIP (once), a new player doesn't get them
     const vet = { unlocks: { win: true }, starterVer: 2, unlockedStarters: ['BULBASAUR', 'CHARMANDER', 'SQUIRTLE', 'DRATINI'] };
     assert.equal(U.migrateSpireMeta(vet), true);
@@ -1495,15 +1502,21 @@ t('ascension: the shiny unlock (A5+) and Nuzlocke (A8) rules are unchanged', () 
   });
 
   t('v0.1.1 JOHTO unlock: after the 2nd win (or meta.unlocks.johto); endRun sets it; co-op room worlds', () => {
-    assert.deepEqual(RG.unlockedRegions({ totalWins: 0, unlocks: {} }), [Kt]);
-    assert.deepEqual(RG.unlockedRegions({ totalWins: 1, unlocks: { win: true } }), [Kt, Ht]);
-    assert.deepEqual(RG.unlockedRegions({ totalWins: 2, unlocks: { win: true } }), [Kt, Ht, J]);
-    assert.deepEqual(RG.unlockedRegions({ totalWins: 1, unlocks: { win: true, johto: true } }), [Kt, Ht, J]);
+    const NOPT = { ...ALL_CAPS, sinnoh: false }; // (as before v0.6.0: without the SINNOH content)
+    assert.deepEqual(RG.unlockedRegions({ totalWins: 0, unlocks: {} }, NOPT), [Kt]);
+    assert.deepEqual(RG.unlockedRegions({ totalWins: 1, unlocks: { win: true } }, NOPT), [Kt, Ht]);
+    assert.deepEqual(RG.unlockedRegions({ totalWins: 2, unlocks: { win: true } }, NOPT), [Kt, Ht, J]);
+    assert.deepEqual(RG.unlockedRegions({ totalWins: 1, unlocks: { win: true, johto: true } }, NOPT), [Kt, Ht, J]);
     assert.equal(RG.johtoUnlocked({}), false); assert.equal(RG.johtoUnlocked({ totalWins: 1 }), false); assert.equal(RG.johtoUnlocked({ totalWins: 2 }), true); assert.equal(RG.johtoUnlocked({ unlocks: { johto: true } }), true);
     assert.equal(RG.JOHTO_WINS, 2);
-    assert.equal(RG.coopWorldFor({ totalWins: 0, unlocks: {} }), 'spire_kanto');
-    assert.equal(RG.coopWorldFor({ totalWins: 1, unlocks: { win: true } }), 'spire');
-    assert.equal(RG.coopWorldFor({ totalWins: 2, unlocks: { win: true } }), 'spire_johto');
+    assert.equal(RG.coopWorldFor({ totalWins: 0, unlocks: {} }, NOPT), 'spire_kanto');
+    assert.equal(RG.coopWorldFor({ totalWins: 1, unlocks: { win: true } }, NOPT), 'spire');
+    assert.equal(RG.coopWorldFor({ totalWins: 2, unlocks: { win: true } }, NOPT), 'spire_johto');
+    // v0.6.0: with SINNOH
+    assert.equal(RG.coopWorldFor({ totalWins: 0, unlocks: {} }), 'spire_ks');
+    assert.equal(RG.coopWorldFor({ totalWins: 1, unlocks: { win: true } }), 'spire_sinnoh');
+    assert.equal(RG.coopWorldFor({ totalWins: 2, unlocks: { win: true } }), 'spire_all');
+    assert.equal(RG.coopWorldRegions('spire_all'), 'KANTO + HOENN + JOHTO + SINNOH');
     assert.ok(RG.COOP_WORLDS.includes('spire_johto')); assert.ok(RG.isSpireWorld('spire_johto')); assert.ok(!RG.isSpireWorld('kanto'));
     assert.equal(RG.coopWorldRegions('spire_johto'), 'KANTO + HOENN + JOHTO'); assert.equal(RG.coopWorldRegions('spire'), 'KANTO + HOENN');
     // co-op 'spire' rooms (hosts without JOHTO, and every room made before v0.1.1) never draw JOHTO
@@ -1526,7 +1539,7 @@ t('ascension: the shiny unlock (A5+) and Nuzlocke (A8) rules are unchanged', () 
     const steps = [];
     for (const [res, seed] of [['lose', 'JUL0'], ['win', 'JUW1'], ['lose', 'JUL2'], ['postgame', 'JUW2']]) {
       st.endRun(Run.create({ starter: 'CHARMANDER', seed, world: 'spire', pool: [Kt] }), res);
-      steps.push([st.G.meta.totalWins, !!st.G.meta.unlocks.johto, RG.unlockedRegions(st.G.meta).join(',')]);
+      steps.push([st.G.meta.totalWins, !!st.G.meta.unlocks.johto, RG.unlockedRegions(st.G.meta, { ...ALL_CAPS, sinnoh: false }).join(',')]);
     }
     t('v0.1.1 JOHTO unlock: endRun sets meta.unlocks.johto on the 2nd win (not the 1st, not on a loss)', () => {
       assert.deepEqual(steps, [[0, false, 'kanto'], [1, false, 'kanto,hoenn'], [1, false, 'kanto,hoenn'], [2, true, 'kanto,hoenn,johto']]);
@@ -1711,7 +1724,8 @@ t('ascension: the shiny unlock (A5+) and Nuzlocke (A8) rules are unchanged', () 
           assert.ok(D.species[species], `${where}: unknown species ${species}`);
           assert.ok(D.species[species].dex >= 1 && D.species[species].dex <= 493, `${where}: ${species} is not in the POKéDEX (#1-493)`);
           // the games' own tables stay Gen 1-3: Gen 4 only comes in through extra / rare finds
-          if (D.species[species].dex > 386) assert.ok([...(ar.extra || []), ...(ar.rare || [])].includes(species), `${where}: ${species} (Gen 4) in a base pool`);
+          // (v0.6.0: SINNOH's own tables are Platinum's, Gen 4 species included)
+          if (D.species[species].dex > 386 && rid !== 'sinnoh') assert.ok([...(ar.extra || []), ...(ar.rare || [])].includes(species), `${where}: ${species} (Gen 4) in a base pool`);
         }
         const added = [...(ar.extra || []), ...(ar.rare || [])];
         const base = new Set(all.slice(0, all.length - added.length).map(e => e.species));

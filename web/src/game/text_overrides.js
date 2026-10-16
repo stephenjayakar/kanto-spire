@@ -151,47 +151,6 @@ export const MOVE_DESC = {
   FRUSTRATION: 'A weak, bitter attack: always 40 power.',
 };
 
-export const ABILITY_DESC = {
-  // ---- does nothing here ----
-  STENCH: 'No effect in battle here.',
-  BATTLE_ARMOR: 'No effect in battle here.',
-  SHELL_ARMOR: 'No effect in battle here.',
-  DAMP: 'No effect in battle here.',
-  OBLIVIOUS: 'No effect in battle here.',
-  CLOUD_NINE: 'No effect in battle here.',
-  AIR_LOCK: 'No effect in battle here.',
-  COLOR_CHANGE: 'No effect in battle here.',
-  SUCTION_CUPS: 'No effect in battle here.',
-  LIGHTNING_ROD: 'No effect in battle here.',
-  SERENE_GRACE: 'No effect in battle here.',
-  ILLUMINATE: 'No effect in battle here.',
-  TRACE: 'No effect in battle here.',
-  MAGNET_PULL: 'No effect in battle here.',
-  SOUNDPROOF: 'No effect in battle here.',
-  CACOPHONY: 'No effect in battle here.',
-  PRESSURE: 'No effect in battle here.',
-  EARLY_BIRD: 'No effect in battle here.',
-  PICKUP: 'No effect in battle here.',
-  CUTE_CHARM: 'No effect in battle here.',
-  PLUS: 'No effect in battle here.',
-  MINUS: 'No effect in battle here.',
-  FORECAST: 'No effect in battle here.',
-  STICKY_HOLD: 'No effect in battle here.',
-  MARVEL_SCALE: 'No effect in battle here.',
-  LIQUID_OOZE: 'No effect in battle here.',
-  ROCK_HEAD: 'No effect in battle here.',
-
-  // ---- works differently ----
-  VOLT_ABSORB: 'ELECTRIC moves have no effect on it.',
-  WATER_ABSORB: 'WATER moves have no effect on it.',
-  FLASH_FIRE: 'FIRE moves have no effect on it.',
-  STURDY: 'Immune to one-hit KO moves. Your POKéMON with it also survive a hit from full HP.',
-  SHIELD_DUST: 'A foe with it ignores the added effects of your attacks. No effect for your POKéMON.',
-  SHADOW_TAG: 'You cannot run from a wild foe with this ability.',
-  ARENA_TRAP: 'You cannot run from a wild foe with this ability.',
-  RUN_AWAY: 'With it in the lead, you always get away from wild battles (unless trapped).',
-  NATURAL_CURE: 'Cures its status problem when you switch it out.',
-  GUTS: 'Your POKéMON only: ups ATTACK and ignores the burn penalty while it has a status problem.',
-  CLEAR_BODY: 'Prevents the foe from lowering its stats.',
-  WHITE_SMOKE: 'Prevents the foe from lowering its stats.',
-};
+// Ability text lives in abilities.js ABILITY_TEXT (every ability does something since v0.5.0; data.js applies it after
+// this table). Kept empty so older imports still work.
+export const ABILITY_DESC = {};

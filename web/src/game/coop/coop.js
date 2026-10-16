@@ -266,7 +266,7 @@ export class CoopGame {
     this.seed = String(a.seed ?? 'COOP');
     this.ascension = Math.max(0, Math.min(10, a.ascension | 0));
     // One Spire rooms: 'spire' draws from KANTO + HOENN, 'spire_johto' (v0.1.1: a host with JOHTO) from all three,
-    // 'spire_kanto' (a host without HOENN yet) from KANTO only. Legacy rooms ('kanto' / 'hoenn', started before
+    // 'spire_kanto' (a host without HOENN yet) from KANTO only; v0.6.0's SINNOH pools: regions.js COOP_POOLS. Legacy rooms ('kanto' / 'hoenn', started before
     // v0.1.0) keep their fixed world.
     const spire = !!COOP_POOLS[a.world];
     this.worldName = spire ? SPIRE : REGIONS[a.world] ? a.world : 'kanto';
@@ -290,7 +290,8 @@ export class CoopGame {
     this.wiped = starters.map(() => false);
     // (v0.3.25) A room with HOENN acts was opened by a player who has beaten a CHAMPION (regions.js coopWorldFor): the
     // CERULEAN CAVE mythic can show up. Any other player who has posts a 'champ' action (setChamp).
-    if ((COOP_POOLS[a.world] || []).length > 1) this.world.flags.champ = true;
+    // (v0.6.0: SINNOH is in every pool, so it's HOENN that tells: 'spire_ks' = KANTO + SINNOH is a host without a win)
+    if ((COOP_POOLS[a.world] || []).includes('hoenn')) this.world.flags.champ = true;
     setUidCounter(1e9 + this.seq * 1000 + 500);
     this.mirror();
     this.phase = 'map';

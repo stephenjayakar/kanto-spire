@@ -4,6 +4,8 @@
 import { ACTS } from './acts.js';
 import { HOENN_ACTS, HOENN_TRAINER_CLASSES } from './hoenn.js';
 import { JOHTO_ACTS, JOHTO_TRAINER_CLASSES } from './johto.js';
+import { SINNOH_ACTS, SINNOH_TRAINER_CLASSES, SINNOH_STARTERS } from './sinnoh.js';
+import { getCaps, capsOk } from './caps.js';
 import { D } from './data.js';
 import { RNG } from './rng.js';
 
@@ -23,6 +25,7 @@ export const REGIONS = {
     professor: { name: 'OAK', title: 'PROF. OAK', npc: 'oak' },
     pc: { title: "BILL'S PC", npc: 'bill', text: "BILL: Hiya! I'm a POKéMANIAC! Want to trade? Send one over and I'll send back something surprising!" },
     postgame: { title: 'LEGEND OF KANTO', line: 'You conquered the SEVII ISLANDS!' },
+    requires: [], // (v0.6.0: the content caps the region needs, caps.js)
   },
   hoenn: {
     id: 'hoenn', name: 'HOENN', letter: 'H', acts: HOENN_ACTS,
@@ -35,6 +38,7 @@ export const REGIONS = {
     professor: { name: 'BIRCH', title: 'PROF. BIRCH', npc: 'scientist' },
     pc: { title: "LANETTE'S PC", npc: 'woman_2', text: 'LANETTE: My PC BOX system can swap POKéMON with trainers all over! Send one over, or take a posted trade.' },
     postgame: { title: 'LEGEND OF HOENN', line: 'You calmed RAYQUAZA at the SKY PILLAR!' },
+    requires: [], // (falls back to FireRed's art without Emerald's)
   },
   // v0.1.1 "JOHTO" (HeartGold): trainers are authored in johto.js (FireRed's data has no Johto trainers); every Johto
   // party is Gen 1-2. dayNight: the act's areas carry pool: { morn, day, nite } (HGSS encounter slots), picked by the
@@ -50,6 +54,21 @@ export const REGIONS = {
     professor: { name: 'ELM', title: 'PROF. ELM', npc: 'scientist' },
     pc: { title: "BILL'S PC", npc: 'bill', text: "BILL: Hiya! I'm in GOLDENROD now, visiting my folks. Want to trade? Send one over and I'll send back something surprising!" },
     postgame: { title: 'LEGEND OF JOHTO', line: 'You defeated RED at the summit of MT. SILVER!' },
+    requires: ['johto'],
+  },
+  // v0.6.0 "SINNOH" (Platinum): built like JOHTO (sinnoh.js); acts 1-3 GYM LEADERS (2 / 2 / 4), act 4 the POKéMON LEAGUE
+  // (CYNTHIA), the DISTORTION WORLD post-game (GIRATINA ORIGIN). Open whenever the 'sinnoh' cap is on (no win needed).
+  sinnoh: {
+    id: 'sinnoh', name: 'SINNOH', letter: 'S', acts: SINNOH_ACTS,
+    starters: SINNOH_STARTERS,
+    genericTrainers: true, trainerClasses: SINNOH_TRAINER_CLASSES,
+    mapTheme: 'grass', dayNight: true,
+    rival: { name: 'BARRY', sprite: 'platinum/barry', encounterSong: 'mus_encounter_rival', keyed: false, line: 'CHIMCHAR' },
+    summit: { place: 'POKéMON LEAGUE', sprite: 'platinum/cynthia', hp: 1, spireHp: [1, 1, 1, 1, 1], spireDmg: [1, 1, 1, 1, 1] },
+    professor: { name: 'ROWAN', title: 'PROF. ROWAN', npc: 'oak' },
+    pc: { title: "BEBE'S PC", npc: 'woman_2', text: "BEBE: Hi! I'm BEBE, I look after the PC BOX system here in SINNOH. Want to trade? Send one over and I'll send back something surprising!" },
+    postgame: { title: 'LEGEND OF SINNOH', line: 'You faced GIRATINA in the DISTORTION WORLD!' },
+    requires: ['sinnoh', 'gen4'],
   },
 };
 export const REGION_IDS = Object.keys(REGIONS);
@@ -82,19 +101,30 @@ export const GAUNTLET_LEVELS = [44, 45, 46, 47, 49];
 // The regions a player's spire draws from: KANTO only until their first win (existing players who had HOENN
 // access, meta.unlocks.win, get HOENN acts straight away); JOHTO acts join after the 2nd win (v0.1.1: players who
 // already have 2+ wins get them straight away; meta.unlocks.johto is set by endRun).
+// v0.6.0: SINNOH acts are in every player's spire from the start, whenever the 'sinnoh' content is there (caps.js; always
+// on the hosted build): no win needed. Every region also needs its content caps (REGIONS[id].requires).
 export const JOHTO_WINS = 2;
 export const johtoUnlocked = (meta) => !!meta?.unlocks?.johto || (meta?.totalWins || 0) >= JOHTO_WINS;
-export function unlockedRegions(meta) {
+export const regionAvailable = (id, caps = getCaps()) => !!REGIONS[id] && capsOk(REGIONS[id].requires, caps);
+export function unlockedRegions(meta, caps = getCaps()) {
   const out = meta?.unlocks?.win ? ['kanto', 'hoenn'] : ['kanto'];
   if (johtoUnlocked(meta)) out.push('johto');
-  return out;
+  out.push('sinnoh');
+  return out.filter(id => regionAvailable(id, caps));
+}
+// The caps a spire draw needs: every region it visits (acts, summit, post-game, A10's second summit).
+export function spireRequires(sp, summit2 = null) {
+  if (!validSpire(sp)) return [];
+  const ids = new Set([...sp.acts, sp.summit, sp.post, ...(summit2 ? [summit2] : [])]);
+  return [...new Set([...ids].flatMap(id => REGIONS[id]?.requires || []))].sort();
 }
 
-// The run's rival: MAY for a HOENN starter (national dex 252-386), SILVER for a JOHTO one (152-251), else BLUE.
-// They counter your starter and grow every act, whatever the act's region.
+// The run's rival: MAY for a HOENN starter (national dex 252-386), SILVER for a JOHTO one (152-251), BARRY for a
+// SINNOH one (387-395: the TURTWIG / CHIMCHAR / PIPLUP lines), else BLUE. They counter your starter and grow every act,
+// whatever the act's region.
 export function rivalFor(starter) {
   const dex = D.species?.[starter]?.dex || 0;
-  return dex >= 252 && dex <= 386 ? 'hoenn' : dex >= 152 && dex <= 251 ? 'johto' : 'kanto';
+  return dex >= 387 && dex <= 395 ? 'sinnoh' : dex >= 252 && dex <= 386 ? 'hoenn' : dex >= 152 && dex <= 251 ? 'johto' : 'kanto';
 }
 
 // ---- day / night (JOHTO acts) ------------------------------------------------------------------------------
@@ -175,11 +205,21 @@ export function spireActs(sp, rival = 'kanto') {
 }
 
 // Co-op room worlds: One Spire ('spire' = KANTO + HOENN, 'spire_johto' = all three (v0.1.1, a host with JOHTO),
-// 'spire_kanto' = a host who hasn't won yet) and the legacy worlds of rooms started before v0.1.0.
-export const COOP_WORLDS = ['spire', 'spire_johto', 'spire_kanto', 'kanto', 'hoenn'];
-export const COOP_POOLS = { spire: ['kanto', 'hoenn'], spire_johto: ['kanto', 'hoenn', 'johto'], spire_kanto: ['kanto'] };
+// 'spire_kanto' = a host who hasn't won yet) and the legacy worlds of rooms started before v0.1.0. v0.6.0 adds the
+// SINNOH pools: 'spire_ks' (KANTO + SINNOH), 'spire_sinnoh' (KANTO + HOENN + SINNOH), 'spire_all' (all four).
+export const COOP_WORLDS = ['spire', 'spire_johto', 'spire_kanto', 'spire_ks', 'spire_sinnoh', 'spire_all', 'kanto', 'hoenn'];
+export const COOP_POOLS = {
+  spire: ['kanto', 'hoenn'], spire_johto: ['kanto', 'hoenn', 'johto'], spire_kanto: ['kanto'],
+  spire_ks: ['kanto', 'sinnoh'], spire_sinnoh: ['kanto', 'hoenn', 'sinnoh'], spire_all: ['kanto', 'hoenn', 'johto', 'sinnoh'],
+};
 export const isSpireWorld = (w) => !!COOP_POOLS[w];
-export const coopWorldFor = (meta) => { const n = unlockedRegions(meta); return n.includes('johto') ? 'spire_johto' : n.length > 1 ? 'spire' : 'spire_kanto'; };
+// The host's pool as a room world: the world whose pool is exactly theirs, else the biggest one inside it.
+export const coopWorldFor = (meta, caps = getCaps()) => {
+  const n = new Set(unlockedRegions(meta, caps));
+  if (n.has('johto')) n.add('hoenn'); // (as before v0.6.0: a JOHTO room always had HOENN too)
+  const fits = Object.entries(COOP_POOLS).filter(([, p]) => p.every(id => n.has(id))).sort((a, b) => b[1].length - a[1].length);
+  return fits[0]?.[0] || 'spire_kanto';
+};
 export const coopWorldRegions = (w) => (COOP_POOLS[w] || [w]).map(id => regionOf(id).name).join(' + ');
 
 // ---- A10 double summit (v0.5.13) --------------------------------------------------------------------------------
@@ -197,7 +237,8 @@ export function pickSummit2(seed, summit, visited = [], pool = null) {
   const first = summitNames(summit);
   const fresh = (id) => ![...summitNames(id)].some(n => first.has(n));
   const others = (ids, f = () => true) => [...new Set(ids)].filter(id => REGIONS[id] && id !== summit && f(id));
-  const tiers = [others(visited, fresh), others(pool || [], fresh), others(visited), others(pool || []), others(REGION_IDS, fresh), others(REGION_IDS)];
+  const pre6 = REGION_IDS.filter(id => id !== 'sinnoh'); // (v0.6.0: a legacy world without a pool keeps its pre-SINNOH pick)
+  const tiers = [others(visited, fresh), others(pool || [], fresh), others(visited), others(pool || []), others(pre6, fresh), others(pre6), others(REGION_IDS, fresh), others(REGION_IDS)];
   const cands = tiers.find(c => c.length) || [];
   return cands.length ? new RNG(`${seed}:summit2`).pick(cands) : null;
 }
