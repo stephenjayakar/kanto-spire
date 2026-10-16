@@ -84,6 +84,11 @@ export function migrateAnimSetting(s) {
 }
 // sync: when the cloud copy follows (net/savesync.js): 'checkpoint' = now, 'defer' = with the next upload,
 // undefined = within half a minute.
+// (v0.6.4) OAK's map intro at the start of a run shows once ever: meta.introSeen (a local + cloud meta flag, so per
+// player; absent in older saves). A player who already finished a run has seen it before the flag existed.
+export const shouldShowIntro = (m = G.meta) => !!m && !m.introSeen && !m.totalRuns && !(m.runs || []).length;
+export function markIntroSeen() { if (G.meta && !G.meta.introSeen) { G.meta.introSeen = true; saveMeta(); } }
+
 export function saveMeta(sync) { try { localStorage.setItem(saveKeys.meta, JSON.stringify(G.meta)); } catch {} queueProgressSync(sync); }
 
 const endedRuns = new WeakSet(); // (runs endRun has finished: a late save never snapshots them again)

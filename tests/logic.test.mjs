@@ -827,6 +827,24 @@ t('ascension: a win unlocks the next level for that starter only', () => {
 {
   globalThis.localStorage ||= { _s: {}, getItem(k) { return this._s[k] ?? null; }, setItem(k, v) { this._s[k] = String(v); }, removeItem(k) { delete this._s[k]; } };
   const st = await import('../web/src/game/state.js');
+  t('v0.6.4 OAK map intro: only the first run ever; the flag persists in the meta save; old saves with runs skip it', () => {
+    localStorage.removeItem(st.saveKeys.meta);
+    st.loadMeta();
+    assert.equal(st.shouldShowIntro(), true, 'a brand-new player sees it');
+    st.markIntroSeen();
+    assert.equal(st.shouldShowIntro(), false);
+    assert.equal(JSON.parse(localStorage.getItem(st.saveKeys.meta)).introSeen, true, 'saved to localStorage (and so the cloud meta)');
+    st.loadMeta();
+    assert.equal(st.shouldShowIntro(), false, 'a later session (reload) still skips it');
+    // an existing save from before v0.6.4 (no introSeen): untouched, and skips the intro once it has a finished run
+    const old = { totalRuns: 3, runs: [{ starter: 'BULBASAUR' }], unlocks: { act2: true }, settings: { music: 0.2 } };
+    localStorage.setItem(st.saveKeys.meta, JSON.stringify(old));
+    st.loadMeta();
+    assert.equal(st.G.meta.introSeen, undefined); assert.equal(st.G.meta.totalRuns, 3); assert.equal(st.G.meta.unlocks.act2, true);
+    assert.equal(st.shouldShowIntro(), false, 'a returning player has seen it already');
+    assert.equal(st.shouldShowIntro({ totalRuns: 0, runs: [] }), true, 'an old save without a finished run sees it once');
+    localStorage.removeItem(st.saveKeys.meta);
+  });
   st.G.meta = { unlocks: {}, maxAscension: 0, bestAscensionWon: -1, dexSeen: [], dexCaught: [], runs: [], totalWins: 0, totalRuns: 0, shinies: [], shinyOn: {}, ascBy: {}, ascVer: U.ASC_VER, settings: {} };
   const r = Run.create({ starter: 'SQUIRTLE', ascension: 2, seed: 'ASCWIN' });
   st.endRun(r, 'win');

@@ -4,7 +4,7 @@ import { draw, img, ready, itemPath, trainerPath } from '../engine/assets.js';
 import { text, textBlock, measure } from '../engine/font.js';
 import { swirlBackground, BG_THEMES, button, panel, pixBox, rect, drawTips, tip, tip as showTip, THEME } from '../engine/ui.js';
 import { D, TYPE_COLORS } from '../game/data.js';
-import { G, saveRun, animFast } from '../game/state.js';
+import { G, saveRun, animFast, markIntroSeen } from '../game/state.js';
 import { reachable, NODE_INFO } from '../game/map.js';
 import { eliteIcon } from '../game/elite_icon.js';
 import { LEGENDS, BIRD_PARTNER, MYTHICS } from '../game/acts.js';
@@ -64,6 +64,7 @@ export class MapScene {
   }
   async intro() {
     this.busy = true;
+    markIntroSeen(); // (v0.6.4: once ever, set up front so a reload mid-intro doesn't show it again)
     await this.msg.say(`OAK: ${D.species[G.run.starter].name} looks happy to be with you!`);
     await this.msg.say('OAK: Pick a path across the map. Battles give money and new moves, POKéMON CENTERS let you rest.');
     await this.msg.say('OAK: In battle, attack cards of the same TYPE form combos: PAIR, TRIPLE and more. Every POKéMON has its own deck, and your hand comes from the lead. Every card deals real damage, and combos add a bonus!');
