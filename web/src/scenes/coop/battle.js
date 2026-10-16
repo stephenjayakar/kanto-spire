@@ -628,8 +628,7 @@ export class CoopBattleScene {
           await this.say(`${this.many ? 'Your team' : `You and ${this.s.nameOf(this.pa)}`} got away safely!`); // (an ESCAPE ROPE, v0.5.6)
         } else {
           Sound.fadeOutBGM?.(60);
-          if (this.cfg.softLose) await this.say(`${this.cfg.legend || 'The mythic'} threw every team out! Every team that fought lost 30% HP, but the run goes on.`); // (v0.3.25)
-          else await this.say(this.many ? 'Every team is out of usable POKéMON... You blacked out!' : 'Both teams are out of usable POKéMON... You blacked out!');
+          await this.say(this.many ? 'Every team is out of usable POKéMON... You blacked out!' : 'Both teams are out of usable POKéMON... You blacked out!');
         }
         break;
       }

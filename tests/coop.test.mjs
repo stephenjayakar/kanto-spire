@@ -1263,12 +1263,12 @@ t('co-op Pokédex: every player (P2 too) records what they met and caught', () =
       assert.ok(g.runs.every(r => r.legendTaken === "MEWTWO" && r.party.some(m => m.species === "MEWTWO")), "every bot took its own MEWTWO: " + JSON.stringify(g.runs.map(r => [r.legendTaken, r.party.map(m => m.species), (r.runLog?.events || []).slice(-4)])));
     }
   });
-  t('v0.3.25 co-op mythic loss: the run goes on (teams thrown out, -30% HP), back on the map', () => {
+  t('v0.6.1 co-op mythic loss is GAME OVER (playtest: losing to CERULEAN CAVE MEWTWO sent the room back to the map)', () => {
     const { g, cfg } = throughMythic(rollSeed('MEWTWO', 2, 'CL_'), 2, false);
-    assert.ok(cfg?.mythic === 'MEWTWO');
-    assert.equal(g.phase, 'map', 'not game over');
-    assert.ok(g.events.some(e => e.t === 'softLoss'));
-    assert.ok(g.runs.every(r => r.party.every(m => m.hp >= 1)), 'everyone standing');
+    assert.ok(cfg?.mythic === 'MEWTWO' && !cfg.softLose);
+    assert.equal(g.result, 'lose');
+    assert.equal(g.phase, 'over', 'a lost mythic fight ends the room like any lost battle');
+    assert.ok(!g.events.some(e => e.t === 'softLoss'));
     assert.ok(g.runs.every(r => !r.legendTaken));
   });
   t('v0.3.25 co-op boss swap is based on the room: anyone owning the post-game boss swaps it for everyone', () => {
@@ -1585,11 +1585,6 @@ t('nuzlocke: everyone out = the run is lost; a mythic soft loss releases nobody'
   assert.equal(g.battle.result?.outcome, 'lose');
   g.afterBattle();
   assert.equal(g.phase, 'over');
-  // (Run.softLoss, NUZLOCKE too: a lost mythic fight throws the team out, nobody is released)
-  const r = Run.create({ starter: 'CHARMANDER', seed: 'SL', coop: true, nuzlocke: true });
-  r.party[0].lost = true; r.party[0].hp = 0;
-  r.softLoss({ preHp: { [r.party[0].uid]: 20 }, enemies: [] });
-  assert.ok(!r.party[0].lost && r.party[0].hp > 0);
 });
 
 t('nuzlocke: each player catches only in their act\'s first wild battle', () => {

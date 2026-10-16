@@ -2192,7 +2192,7 @@ t('HOENN music (display only): Emerald songs by act / battle, FireRed elsewhere'
     const run = strong(spireRun('MY1', undefined, 'kanto', 2), 20);
     const cfg = run.mythicConfig(new RNG('m2'), 6, 'MEWTWO');
     assert.equal(cfg.kind, 'elite');
-    assert.ok(cfg.softLose && cfg.legend === 'MEWTWO' && cfg.enemies[0].bossRule === 'MEWTWO');
+    assert.ok(!cfg.softLose && cfg.legend === 'MEWTWO' && cfg.enemies[0].bossRule === 'MEWTWO');
     const [m] = run.legendCatches(cfg);
     assert.equal(m.species, 'MEWTWO');
     assert.equal(m.level, cfg.enemies[0].level, 'the fight\'s level (not capped at your best POKéMON like the birds)');
@@ -2328,19 +2328,26 @@ t('HOENN music (display only): Emerald songs by act / battle, FireRed elsewhere'
     assert.equal(h.boss, 'LEGEND_GROUDON');
   });
 
-  t('v0.3.25 a lost mythic fight: the run goes on, the team -30% HP from where it came in, nobody released', () => {
-    const run = strong(spireRun('SL1', undefined, 'kanto', 2), 8);
-    run.ascension = NUZLOCKE_ASC;
-    run.party[1].hp = 5;
-    const before = run.party.map(m => m.hp);
-    const cfg = run.mythicConfig(new RNG('sl'), 6, 'MEWTWO');
-    const b = new Battle(run, cfg); b.start();
-    for (let i = 0; i < 40 && !b.result; i++) b.pass();
-    assert.equal(b.result.outcome, 'lose');
-    run.softLoss(b);
-    run.party.forEach((m, i) => assert.equal(m.hp, Math.max(1, before[i] - Math.floor(maxHp(m) * 0.3)), m.species));
-    assert.ok(run.party.every(m => !m.lost) && run.releaseLost().length === 0, 'NUZLOCKE: nobody lost');
-    assert.ok(run.seen.includes('MEWTWO'));
+  t('v0.6.1 a lost mythic fight is GAME OVER (playtest: losing to CERULEAN CAVE MEWTWO sent the run back to the map)', () => {
+    // no mythic battle config asks for a non-lethal loss any more ...
+    for (const id of Object.keys(MYTHICS)) {
+      const run = strong(spireRun('SL1' + id, undefined, 'kanto', 2), 8);
+      const cfg = run.mythicConfig(new RNG('sl' + id), 6, id);
+      assert.ok(cfg && !cfg.softLose, `${id}: no soft loss`);
+      const b = new Battle(run, cfg); b.start();
+      assert.equal(b.preHp, undefined);
+      for (let i = 0; i < 60 && !b.result; i++) b.pass();
+      if (b.result?.outcome === 'enemyFled') continue; // (MEW's HIDE AND SEEK)
+      assert.equal(b.result?.outcome, 'lose', id);
+    }
+    assert.equal(typeof Run.prototype.softLoss, 'undefined', 'Run.softLoss is gone');
+    // ... and the solo flow sends every lost battle to the GAME OVER screen (scenes/flow.js imports canvas code: read it)
+    const flow = fs.readFileSync(new URL('../web/src/scenes/flow.js', import.meta.url), 'utf8');
+    const fin = flow.slice(flow.indexOf('export function battleFinished'), flow.indexOf('export function afterRewards'));
+    const loseLines = fin.split('\n').filter(l => /out === 'lose'/.test(l));
+    assert.equal(loseLines.length, 1, 'one lose branch: ' + loseLines.join(' | '));
+    assert.match(loseLines[0], /endRun\(run, 'lose'\).*GameOverScene/);
+    assert.ok(!/softLose|softLoss/.test(fin));
   });
 }
 

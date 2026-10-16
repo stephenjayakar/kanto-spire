@@ -458,14 +458,7 @@ export class CoopGame {
     this.battleSubs = d.subs;
     this.down = d.down.slice();
     for (let p = 0; p < this.n; p++) if (d.down[p] && d.result.outcome === 'win' && !(this.nuzlocke && !d.subs[p].run.party.some(m => !m.lost))) this.events.push({ seq: this.seq, t: 'revive', p });
-    if (d.result.outcome === 'lose' && cfg.softLose) {
-      // a mythic "?" fight (v0.3.25): the run goes on, every team thrown out with 30% less HP than it came in with
-      for (const s of d.subs) if (!d.away[s.p]) s.run.softLoss(s); // (not the ones who sat it out)
-      this.down = this.runs.map(() => false);
-      this.events.push({ seq: this.seq, t: 'softLoss', foe: cfg.mythic || null });
-      this.toMap();
-      return;
-    }
+    // (a lost mythic "?" fight ends the room like any other since v0.6.1; v0.3.25-v0.6.0 sent it back to the map)
     if (d.result.outcome === 'lose') { this.phase = 'over'; this.result = 'lose'; this.events.push({ seq: this.seq, t: 'over' }); return; }
     if (this.nuzlocke && this.releaseFallen()) return;
     const final = (cfg.gauntlet !== undefined && cfg.gauntlet === this.world.act.gauntlet.length - 1) || (cfg.legendBoss && this.world.act.postgame);

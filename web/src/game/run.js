@@ -796,7 +796,7 @@ export class Run {
 
   // ---- mythic "?" events (v0.3.25: CERULEAN CAVE, FARAWAY ISLAND, BIRTH ISLAND, SKY PILLAR) ----------------------
   // A rare one-off fight with a mythic (acts.js MYTHICS), scaled like the act's legendary node. Win: a one-time
-  // catch offer (one legendary per run), plus a held item choice (v0.5.6: its own item and rare ones, mythicRelicChoices). Lose: the run goes on (cfg.softLose, softLoss()).
+  // catch offer (one legendary per run), plus a held item choice (v0.5.6: its own item and rare ones, mythicRelicChoices). Lose: GAME OVER, like any lost battle (v0.6.1; v0.3.25-v0.6.0 let the run go on: the old softLoss).
   mythicConfig(rng, floor, id) {
     const M = MYTHICS[id];
     if (!M) return null;
@@ -806,26 +806,10 @@ export class Run {
     const e = makeEnemy(M.species, lvl, { rng, moves, hpScale: hp, isBoss: false, isElite: true, legendary: true, bossRule: M.rule, ivs: ivsFrom(220) });
     e.legendary = true;
     const offer = { species: M.species, key: 'MYTHIC_' + id, mythic: id, ei: 0, level: lvl, moves: M.tmMoves ? e.moves.slice() : M.catchMoves };
-    const cfg = { kind: M.wild ? 'wild' : 'elite', mythic: id, enemies: [e], terrain: M.terrain, music: M.music, dmgScale: this.dmgScale() * TUNING.bird.dmg * M.dmg, rng, legend: M.title, catchOffer: offer, softLose: true, rewardRelicW: MYTHIC_RELIC_W };
+    const cfg = { kind: M.wild ? 'wild' : 'elite', mythic: id, enemies: [e], terrain: M.terrain, music: M.music, dmgScale: this.dmgScale() * TUNING.bird.dmg * M.dmg, rng, legend: M.title, catchOffer: offer, rewardRelicW: MYTHIC_RELIC_W };
     if (M.catchMult) cfg.catchMult = M.catchMult;
     return cfg;
   }
-  // A lost mythic fight (cfg.softLose): the run goes on. The mythic throws your team out: everyone who could fight
-  // ends at the HP they came in with, minus 30% of their max HP (never below 1); nobody is lost (NUZLOCKE too).
-  softLoss(battle, frac = 0.3) {
-    const pre = battle.preHp || {};
-    this.stats.battles++;
-    for (const e of battle.enemies || []) this.addSeen(e.species, false);
-    for (const m of this.party) {
-      if (m.lost) delete m.lost;
-      const h0 = pre[m.uid];
-      if (h0 === undefined) continue;
-      m.hp = h0 > 0 ? Math.max(1, h0 - Math.floor(maxHp(m) * frac)) : 0;
-      m.status = null;
-    }
-    this.logEvent({ k: 'softLoss', foe: battle.cfg?.mythic || battle.cfg?.legend || null });
-  }
-
   // withA10 = false: without A10's +1 (the A5+ level cap ignores it since v0.5.18).
   bossLevel(withA10 = true) { return this.act.bossLevel + (this.ascension >= 3 ? (this.actIndex === 0 ? 1 : 2) : 0) + (withA10 && this.ascension >= 10 && this.actIndex >= 1 ? 1 : 0); }
 

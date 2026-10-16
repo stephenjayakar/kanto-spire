@@ -1860,7 +1860,7 @@ const FALLBACKS = [
 // MYTHIC "?" EVENTS (v0.3.25): rare one-off fights with a mythic POKéMON (acts.js MYTHICS, Run.mythicConfig).
 // Each is forced at the first "?" room of an act where it can happen once its roll (from the run's seed, per act)
 // came up, and is never part of the normal pools. Win: a one-time catch offer (ONE LEGENDARY PER RUN) and a held
-// item; lose: the run goes on (the mythic throws your team out: Run.softLoss). Co-op: the room fights (coop.js
+// item; lose: GAME OVER like any lost battle (v0.6.1; before, the run went on with 30% less HP). Co-op: the room fights (coop.js
 // mythicDuoConfig; "Leave" becomes "Sit this one out", v0.5.6) and every player who fought gets their own catch offer.
 //   CERULEAN CAVE  MEWTWO    KANTO act 3, only if a CHAMPION was beaten in an earlier run (flags.champ; co-op: anyone)
 //   FARAWAY ISLAND MEW       any act, ultra rare; more likely after MEW'S JOURNAL's "Fund the research"
@@ -1888,7 +1888,7 @@ export const MYTHIC_ROLL = {
 export const mythicDue = (p, id) => !!MYTHIC_CAN[id](p) && !!MYTHIC_ROLL[id](p);
 // The mythic battle of a "?" event (solo: this config; co-op ignores it and starts the room's duo battle instead).
 export function mythicFight(r, rng, id) { return eventBattle(r, r.mythicConfig(rng, floorOf(r), id)); }
-// The bots: a mythic is worth a lot while you can still catch it; the held item alone is a decent prize; a loss costs 30% HP.
+// The bots: a mythic is worth a lot while you can still catch it; the held item alone is a decent prize; a loss ends the run.
 const mythicAi = (r) => (r.hasLegendary?.() ? 0.9 : 2.4) - (teamHp(r) < 0.55 || r.party.some(isFainted) ? 1.6 : 0);
 const catchLine = (r) => (r.hasLegendary?.() ? ' You already have a legendary this run: win for the held item.' : ' Catching it is your one legendary this run.');
 function mythicEvent(id, e) {
@@ -1908,7 +1908,7 @@ const MYTHIC_EVENTS = [
   mythicEvent('MEWTWO', {
     id: 'cerulean_cave', title: 'CERULEAN CAVE', verb: 'Face MEWTWO',
     text: () => 'Deep in CERULEAN CAVE, a POKéMON made by human hands opens its eyes. Its power fills the cavern.',
-    tip: 'MEWTWO hits hard and every hand you play costs a discard (co-op: it attacks EVERY player each turn). Lose and your team is thrown out (all lose 30% HP); the run goes on.',
+    tip: 'MEWTWO hits hard and every hand you play costs a discard (co-op: it attacks EVERY player each turn). Lose and your run is over.',
     fight: 'MEWTWO: ...', leave: 'Back away quietly', leaveText: 'You left the cave. MEWTWO closed its eyes again.',
   }),
   mythicEvent('MEW', {
@@ -1920,13 +1920,13 @@ const MYTHIC_EVENTS = [
   mythicEvent('DEOXYS', {
     id: 'birth_island', title: 'BIRTH ISLAND', verb: 'Face DEOXYS',
     text: () => 'Your METEORITE hums. On BIRTH ISLAND, a triangle of light breaks open and DEOXYS descends, shifting shape.',
-    tip: 'DEOXYS switches forme every turn: ATTACK (hits much harder), DEFENSE (takes much less damage), SPEED (moves first). Lose and your team is thrown out (all lose 30% HP).',
+    tip: 'DEOXYS switches forme every turn: ATTACK (hits much harder), DEFENSE (takes much less damage), SPEED (moves first). Lose and your run is over.',
     fight: 'DEOXYS shifted into its ATTACK FORME!', leave: 'Back away', leaveText: 'DEOXYS faded into the night sky.',
   }),
   mythicEvent('RAYQUAZA', {
     id: 'sky_pillar', title: 'SKY PILLAR', verb: 'Climb to RAYQUAZA',
     text: r => `${hasAny(r, ['RED_ORB', 'BLUE_ORB']) ? 'Your ORB glows' : 'The clash of GROUDON and KYOGRE echoes'}: atop the SKY PILLAR, RAYQUAZA stirs from its rest.`,
-    tip: 'RAYQUAZA is a top-tier legendary: PRESSURE costs you a discard per hand. Lose and your team is thrown out (all lose 30% HP).',
+    tip: 'RAYQUAZA is a top-tier legendary: PRESSURE costs you a discard per hand. Lose and your run is over.',
     fight: 'RAYQUAZA roared from the top of the SKY PILLAR!', leave: 'Climb back down', leaveText: 'RAYQUAZA went back to sleep in the clouds.',
   }),
 ];

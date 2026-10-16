@@ -50,8 +50,7 @@ export function startBattle(cfg, node, extra = {}) {
 export function battleFinished(battle, scene) {
   const run = G.run;
   const out = battle.result.outcome;
-  // a lost mythic "?" fight (v0.3.25): the run goes on, the team thrown out with 30% less HP (Run.softLoss)
-  if (out === 'lose' && scene.cfg?.softLose) { run.softLoss(battle); return goToMap(); }
+  // (every lost battle ends the run, the mythic "?" fights too since v0.6.1)
   if (out === 'lose') { endRun(run, 'lose'); return setScene(new GameOverScene()); }
   if (out === 'enemyFled' && scene.cfg?.mythic) for (const e of battle.enemies) run.addSeen(e.species, false); // (MEW got away: seen)
   if (out === 'fled' || out === 'enemyFled') {

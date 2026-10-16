@@ -167,8 +167,6 @@ export class Battle {
     this.discardsLeft = Math.max(0, DECK_RULES.discards + (this.mods.discards || 0) + (cfg.discardMod || 0));
     // (co-op NUZLOCKE, v0.5.14: a player who is out has an empty party and sits the battle out with no lead)
     this.leadUid = (run.party.find(m => !isFainted(m)) || run.party[0])?.uid ?? null;
-    // a mythic fight the run survives losing (Run.softLoss): everyone's HP coming in
-    if (cfg.softLose) this.preHp = Object.fromEntries(run.party.map(m => [m.uid, m.hp]));
   }
 
   // ---- helpers --------------------------------------------------------------------------

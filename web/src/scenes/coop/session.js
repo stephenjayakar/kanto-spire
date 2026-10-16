@@ -474,7 +474,7 @@ export class CoopSession {
           const who = names.join(', ');
           coopToast(e.fight ? `${who.charAt(0).toUpperCase() + who.slice(1)} sat this one out: the others take on ${e.foe || 'the mythic'}!` : `Everyone sat it out: ${e.foe || 'the mythic'} is left in peace.`, { t: 5 });
         }
-        else if (e?.t === 'softLoss') coopToast(`${e.foe || 'The mythic'} threw every team out! Every team that fought lost 30% HP, but the run goes on.`, { t: 5 }); // (v0.3.25)
+        else if (e?.t === 'softLoss') coopToast(`${e.foe || 'The mythic'} threw every team out! Every team that fought lost 30% HP, but the run goes on.`, { t: 5 }); // (v0.3.25-v0.6.0 rooms replayed on a frozen engine)
         else if (e?.t === 'released') { // (NUZLOCKE: the POKéMON that fainted in that battle are gone for good)
           const names = (e.mons || []).map(speciesName);
           if (!names.length) continue;

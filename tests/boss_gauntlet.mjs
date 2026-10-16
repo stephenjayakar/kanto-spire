@@ -330,7 +330,7 @@ function harvest(G, from, to) {
         const r = B.doEvent(run, rng, 'smart');
         if (r.battle) {
           const b = B.fight(run, r.battle, 'smart', null);
-          if (r.battle.mythic && b.result.outcome === 'lose') { run.softLoss(b); continue; }
+          if (b.cfg?.softLose && b.result.outcome === 'lose' && run.softLoss) { run.softLoss(b); continue; } // (an older --root checkout: before v0.6.1 a lost mythic fight let the run go on)
           if (b.result.outcome === 'enemyFled') continue;
           if (b.result.outcome === 'lose') break;
           B.postBattle(run, b, rng, 'smart');

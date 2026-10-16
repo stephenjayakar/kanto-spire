@@ -168,7 +168,7 @@ function simulate(i) {
           o.n++; if (b.result.outcome === 'win' || b.result.outcome === 'caught') o.won++; if (b.result.outcome === 'lose') o.lost++; if (b.result.outcome === 'enemyFled') o.fled++;
           if (run.hasLegendary()) o.blocked++;
           const had = run.legendTaken;
-          if (b.result.outcome === 'lose') { run.softLoss(b); continue; } // the run goes on (Run.softLoss)
+          if (b.result.outcome === 'lose') { if (b.cfg?.softLose && run.softLoss) { run.softLoss(b); continue; } return finish(`A${run.actIndex + 1} mythic:${r.battle.mythic}`); } // (game over since v0.6.1; softLose: an older --root checkout)
           if (b.result.outcome === 'enemyFled') continue;
           postBattle(run, b, rng, SKILL, M);
           if (!had && run.legendTaken === r.battle.catchOffer?.species) o.caught++;

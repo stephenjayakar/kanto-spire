@@ -625,9 +625,6 @@ export class BattleScene {
         Sound.playBGM(song, { ctx: this.cfg });
         if (this.cfg.trainer) { this.trainerX = 0; tween(this, { trainerX: 140 }, 0.5); }
         await this.say(this.cfg.trainer ? `You defeated ${this.cfg.trainer.title}!` : 'You won the battle!');
-      } else if (r.outcome === 'lose' && this.cfg.softLose) {
-        Sound.fadeOutBGM(60);
-        await this.say(`${this.cfg.legend || 'The foe'} threw your team out! Everyone lost 30% HP, but the run goes on.`);
       } else if (r.outcome === 'lose') {
         Sound.fadeOutBGM(60);
         await this.say('You blacked out!');
