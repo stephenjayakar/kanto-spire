@@ -11,6 +11,7 @@ import { partyAbilityMods, LEGACY_GEN4_ABILITIES } from './abilities.js';
 import { RELICS, BADGES, CONSUMABLES, BALLS, RELIC_PRICE, VITAMIN_COMBO, tmMove, friendCopy } from './items.js';
 import { CHAMPION_RULE_POOL, ELITE_RULE_POOL, LATE_THREATS } from './bosses.js';
 import { VERSION } from './version.js';
+import { placeMythic } from './events.js';
 
 export const ASCENSIONS = [
   { n: 0, name: 'Standard', desc: 'The base game.' },
@@ -214,6 +215,8 @@ export class Run {
     this.floor = -1;
     this.boss = act.bosses ? this.rng.pick(act.bosses) : null;
     this.swapOwnBoss(); // (v0.3.25: never your own legendary as the act's boss)
+    // (v0.6.2) the act's mythic "?" node, decided now (co-op: CoopGame.mirror places the room's from its probe)
+    if (!this.coop) placeMythic(this, this.map, this.boss);
     this.gauntletIndex = -1;
     if (this.mods().parcel) this.balls.POKE_BALL = (this.balls.POKE_BALL || 0) + 3;
   }
@@ -1224,6 +1227,9 @@ export class Run {
     let maxUid = 0;
     for (const m of r.party) maxUid = Math.max(maxUid, m.uid);
     setUidCounter(maxUid + 1000);
+    // (v0.6.2) a solo save from before mythic nodes: this act's mythic goes on a node ahead of the player now (new acts:
+    // Run.startAct; co-op: CoopGame.mirror). Its own RNG stream, so the run's random stream is untouched.
+    if (!r.coop && r.map && !r.map.mythicDone && !r.finished) placeMythic(r, r.map, r.boss, { minFloor: Number.isFinite(r.floor) ? r.floor : -1, from: r.nodeId || null });
     return r;
   }
 }

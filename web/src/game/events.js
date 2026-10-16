@@ -26,7 +26,7 @@ import { makeEnemy } from './battle.js';
 import { RELICS, CONSUMABLES, BALLS, APRICORN_BALLS, isCurse } from './items.js';
 import { BOSS_RULES } from './bosses.js';
 import { regionOf, regionIdOf, ruleKeyOf } from './regions.js';
-import { MYTHICS } from './acts.js';
+import { MYTHICS, LEGENDS } from './acts.js';
 import { RNG } from './rng.js';
 
 export const SHRINE_SHARE = 0.25;
@@ -1858,16 +1858,16 @@ const FALLBACKS = [
 
 // =============================================================================================================
 // MYTHIC "?" EVENTS (v0.3.25): rare one-off fights with a mythic POKéMON (acts.js MYTHICS, Run.mythicConfig).
-// Each is forced at the first "?" room of an act where it can happen once its roll (from the run's seed, per act)
-// came up, and is never part of the normal pools. Win: a one-time catch offer (ONE LEGENDARY PER RUN) and a held
+// Since v0.6.2 the act's mythic is decided when the act's map is made and sits on a fixed "?" node (placeMythic,
+// below; before, it was forced at the first "?" room once its roll came up); never part of the normal pools. Win: a one-time catch offer (ONE LEGENDARY PER RUN) and a held
 // item; lose: GAME OVER like any lost battle (v0.6.1; before, the run went on with 30% less HP). Co-op: the room fights (coop.js
 // mythicDuoConfig; "Leave" becomes "Sit this one out", v0.5.6) and every player who fought gets their own catch offer.
 //   CERULEAN CAVE  MEWTWO    KANTO act 3, only if a CHAMPION was beaten in an earlier run (flags.champ; co-op: anyone)
 //   FARAWAY ISLAND MEW       any act, ultra rare; more likely after MEW'S JOURNAL's "Fund the research"
 //   BIRTH ISLAND   DEOXYS    holding the METEORITE (co-op: anyone), HOENN act 3+ or the SEVII ISLANDS post-game
 //   SKY PILLAR     RAYQUAZA  holding the RED ORB or BLUE ORB, or met GROUDON / KYOGRE this run; HOENN act 3+
-// MYTHIC_ODDS: the roll per eligible act (MEWTWO: per run; MEW: per act, MEW_FUNDED once the research was funded). The
-// smart bot meets a forced event in ~86% of the acts it can (a "?" on its path), so: MEWTWO ~15% of eligible runs, MEW ~3%
+// MYTHIC_ODDS: the roll per eligible act (MEWTWO: per run; MEW: per act, MEW_FUNDED once the research was funded). Before
+// v0.6.2 the smart bot met a forced event in ~86% of the acts it could (a "?" on its path), so: MEWTWO ~15% of eligible runs, MEW ~3%
 // of all runs (1.7% per act), DEOXYS / RAYQUAZA ~25% of each eligible act (tests/balance.mjs --mythicodds benches them).
 export const MYTHIC_ODDS = { MEWTWO: 0.2, MEW: 0.017, MEW_FUNDED: 0.07, DEOXYS: 0.3, RAYQUAZA: 0.3 };
 export const mythicRoll = (p, salt) => new RNG(`${p.seed}:mythic:${salt}`).next();
@@ -1886,6 +1886,61 @@ export const MYTHIC_ROLL = {
   RAYQUAZA: (p) => mythicRoll(p, 'RAYQUAZA' + act(p)) < MYTHIC_ODDS.RAYQUAZA,
 };
 export const mythicDue = (p, id) => !!MYTHIC_CAN[id](p) && !!MYTHIC_ROLL[id](p);
+
+// ---- MYTHIC NODES (v0.6.2) --------------------------------------------------------------------------------------
+// A mythic is decided when the act's map is made, not when you step on a "?": the act's mythic (if any) sits on one
+// fixed "?" node of the map (node.mythic = id), shown as the mythic itself, and only that node starts its event.
+// Solo: Run.startAct (from the run's state at the start of the act); co-op: CoopGame.mirror (from the room probe,
+// coopProbe: anyone's held items, flags and POKéMON met). The map gets mythicDone either way (old saves: placed on
+// load, ahead of where the player stands). Never the act boss's species (no MEWTWO event in an act MEWTWO ends):
+// another mythic takes its place.
+const mythicSpecies = (id) => MYTHICS[id]?.species || null;
+// The mythic for an act: the first one due (the old order: MEWTWO, MEW, DEOXYS, RAYQUAZA), skipping the boss's
+// species and those met at an event already this run; when the only one due is the boss's species, another one that
+// can show up here instead (MEW always can). bossSpecies: the act boss's species (null for a trainer boss).
+export function actMythic(p, bossSpecies = null) {
+  const seen = p.seenEvents || [];
+  const ids = Object.keys(MYTHIC_CAN).filter(id => MYTHICS[id] && !seen.includes(MYTHIC_EVENT_ID[id]));
+  const due = ids.filter(id => mythicDue(p, id));
+  const ok = due.filter(id => mythicSpecies(id) !== bossSpecies);
+  if (ok.length) return ok[0];
+  if (!due.length) return null;
+  const alt = ids.filter(id => mythicSpecies(id) !== bossSpecies && MYTHIC_CAN[id](p));
+  return alt.length ? new RNG(`${p.seed}:mythicalt:${act(p)}`).pick(alt) : null;
+}
+// Which nodes a placement may use: past the first floors, before the last ones, a plain room (not the rival, a
+// legendary node, a CENTER, an ITEM BALL or an elite); "?" rooms first. from / minFloor (old saves): only nodes ahead.
+function mythicNodeCands(map, minFloor, from) {
+  const F = map.floors;
+  let ahead = null;
+  if (from && map.nodes[from]) {
+    ahead = new Set();
+    const st = [...map.nodes[from].next];
+    while (st.length) { const id = st.pop(); if (ahead.has(id)) continue; ahead.add(id); st.push(...(map.nodes[id]?.next || [])); }
+  }
+  const plain = (n) => ['event', 'wild', 'trainer', 'mart'].includes(n.type) && n.floor > minFloor && (!ahead || ahead.has(n.id));
+  const nodes = Object.values(map.nodes).filter(plain);
+  const mid = nodes.filter(n => n.floor >= 2 && n.floor <= F - 3);
+  return (mid.length ? mid : nodes.filter(n => n.floor >= 1 && n.floor <= F - 2)).sort((a, b) => a.floor - b.floor || a.col - b.col);
+}
+// Places the act's mythic on the map (once per map: map.mythicDone). p: the run (solo) or the co-op probe; map: the
+// act's map; bossKey: the act boss (acts.js LEGENDS key or a trainer); minFloor / from: only nodes ahead (old saves).
+// Own RNG stream (seed, act): never touches the run's random stream. Returns the node or null.
+export function placeMythic(p, map, bossKey, { minFloor = -1, from = null } = {}) {
+  if (!map || !map.nodes || map.mythicDone) return null;
+  map.mythicDone = true;
+  const id = actMythic(p, LEGENDS[bossKey]?.species || null);
+  if (!id) return null;
+  const cands = mythicNodeCands(map, minFloor, from);
+  if (!cands.length) return null;
+  const rng = new RNG(`${p.seed}:mythicnode:${act(p)}`);
+  const n = rng.weighted(cands, c => (c.type === 'event' ? 3 : 1));
+  n.type = 'event';
+  n.mythic = id;
+  return n;
+}
+// The mythic on the node the player stands on (solo: the run's map; co-op probe: mythicHere), or null.
+export const mythicHere = (p) => (p.mythicHere !== undefined ? p.mythicHere : p.map?.nodes?.[p.nodeId]?.mythic) || null;
 // The mythic battle of a "?" event (solo: this config; co-op ignores it and starts the room's duo battle instead).
 export function mythicFight(r, rng, id) { return eventBattle(r, r.mythicConfig(rng, floorOf(r), id)); }
 // The bots: a mythic is worth a lot while you can still catch it; the held item alone is a decent prize; a loss ends the run.
@@ -1895,7 +1950,8 @@ function mythicEvent(id, e) {
   const M = MYTHICS[id];
   return {
     id: e.id, title: e.title, npc: null, mon: M.species, mythic: id, world: null, acts: [0, 1, 2, 3, 4], weight: 1, weightFn: () => 0.001, music: M.music,
-    follows: (p) => MYTHIC_CAN[id](p), spawn: (p) => mythicDue(p, id), forced: (p) => mythicDue(p, id),
+    // (v0.6.2: never drawn for a "?": only its map node starts it, see placeMythic / pickEvent)
+    follows: (p) => MYTHIC_CAN[id](p), spawn: () => false,
     text: r => e.text(r) + catchLine(r),
     choices: [
       { label: r => (r.coop ? `${e.verb} together! (everyone who joins fights)` : `${e.verb} (mythic battle)`), mythic: id, ai: mythicAi, tip: e.tip,
@@ -1930,6 +1986,9 @@ const MYTHIC_EVENTS = [
     fight: 'RAYQUAZA roared from the top of the SKY PILLAR!', leave: 'Climb back down', leaveText: 'RAYQUAZA went back to sleep in the clouds.',
   }),
 ];
+const MYTHIC_EVENT_ID = Object.fromEntries(MYTHIC_EVENTS.map(e => [e.mythic, e.id]));
+// The "?" event of a mythic (acts.js MYTHICS id), e.g. for the map's tooltip on its node (v0.6.2).
+export const mythicEventOf = (id) => MYTHIC_EVENTS.find(e => e.mythic === id) || null;
 // A "?" event's legendary gift (LATIAS, CELEBI): it is the run's one legendary.
 function legendGift(r, mon) { r.markLegendary?.(mon.species); return mon; }
 
@@ -1986,6 +2045,9 @@ const shrineKey = (id, a) => `${id}@${a}`;
 export function pickEvent(run, rng) {
   const a = act(run), world = regionIdOf(run);
   const seen = run.seenEvents || [];
+  // (v0.6.2) the act's mythic node: its event, fixed when the map was made (placeMythic)
+  const myth = mythicHere(run);
+  if (myth && MYTHIC_EVENT_ID[myth]) { const me = eventById(MYTHIC_EVENT_ID[myth]); run.seenEvents = seen.includes(me.id) ? seen : [...seen, me.id]; return me; }
   let ev = EVENTS.find(e => e.forced && inWorld(e, run) && e.acts.includes(a) && !seen.includes(e.id) && e.forced(run) && available(e, run));
   if (!ev) {
     const actPool = EVENTS.filter(e => !e.shrine && inWorld(e, run) && e.acts.includes(a) && !seen.includes(e.id) && available(e, run));
@@ -2025,6 +2087,7 @@ export function coopProbe(world, runs) {
     relicCount: Math.min(...rs.map(r => relicCountOf(r))),
     seenEvents: [...new Set(rs.flatMap(r => r.seenEvents || []))],
     flags: fl,
+    mythicHere: world.map?.nodes?.[world.nodeId]?.mythic || null, // (v0.6.2: the room's mythic node)
   };
 }
 export const isShrineSeen = (run, id, a = act(run)) => (run.seenEvents || []).includes(shrineKey(id, a));

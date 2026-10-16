@@ -6,7 +6,7 @@ import { Run } from '../run.js';
 import { setUidCounter } from '../pokemon.js';
 import { reachable } from '../map.js';
 import { BADGES, CONSUMABLES } from '../items.js';
-import { pickEvent, coopProbe, eventById } from '../events.js';
+import { pickEvent, coopProbe, eventById, placeMythic } from '../events.js';
 import { STARTERS, LEGENDS, BIRD_PARTNER, MYTHICS, swapBoss } from '../acts.js';
 import { REGIONS, SPIRE, COOP_POOLS } from '../regions.js';
 import { DuoBattle, padEnemies } from './duo.js';
@@ -314,6 +314,10 @@ export class CoopGame {
     const w = this.world;
     const owned = this.roomLegends();
     if (owned.length && w.boss) w.boss = swapBoss(w.boss, owned); // (nobody fights their own POKéMON)
+    // (v0.6.2) the act's mythic "?" node, once per map: from the room probe (anyone's items, flags, POKéMON met), so
+    // every client places the same one. A new act's map gets it here (toMap); a map from an older checkpoint gets it
+    // ahead of the room's position.
+    if (w.map && !w.map.mythicDone && this.runs.every(Boolean)) placeMythic(coopProbe(w, this.runs), w.map, w.boss, { minFloor: Number.isFinite(w.floor) ? w.floor : -1, from: w.nodeId || null });
     for (const r of this.runs) {
       r.map = w.map; r.actIndex = w.actIndex; r.nodeId = w.nodeId; r.floor = w.floor; r.boss = w.boss; r.gauntletIndex = w.gauntletIndex;
       r.ascension = this.ascension; r.world = this.worldName;

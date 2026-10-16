@@ -2249,14 +2249,20 @@ t('HOENN music (display only): Emerald songs by act / battle, FireRed elsewhere'
     assert.deepEqual(seen.slice(0, 4), ['ATTACK', 'DEFENSE', 'SPEED', 'ATTACK']);
   });
 
-  t('v0.3.25 mythic events: spawn conditions, forced at the first "?" once due, never in the pools', () => {
+  // (v0.6.2) the act's mythic node: place it on the run's map now and stand on it
+  const onMythicNode = (r) => { r.map.mythicDone = false; for (const n of Object.values(r.map.nodes)) delete n.mythic; const n = EVM.placeMythic(r, r.map, r.boss); if (n) { r.nodeId = n.id; r.floor = n.floor; } return n; };
+  t('v0.3.25 mythic events: spawn conditions, on their map node once due (v0.6.2), never in the pools', () => {
     const due = (p, id) => EVM.mythicDue(p, id);
     // find seeds whose roll comes up (and one where it doesn't)
     const seedFor = (id, a, want) => { for (let i = 0; i < 4000; i++) { const p = { seed: 'SP' + i, actIndex: a, flags: {} }; if (EVM.MYTHIC_ROLL[id](p) === want) return 'SP' + i; } throw new Error('no seed'); };
     const mtSeed = seedFor('MEWTWO', 2, true);
     const k3 = spireRun(mtSeed, undefined, 'kanto', 2, { champ: true });
     assert.ok(due(k3, 'MEWTWO'), 'KANTO act 3 + a CHAMPION beaten before');
-    assert.equal(EVM.pickEvent(k3, new RNG('pk')).id, 'cerulean_cave');
+    const k3n = Object.values(k3.map.nodes).find(n => n.mythic);
+    assert.ok(k3n && k3n.mythic === 'MEWTWO' && k3n.type === 'event' && k3.map.mythicDone, 'placed when the act began');
+    assert.notEqual(EVM.pickEvent(k3, new RNG('pk')).id, 'cerulean_cave', 'another "?" node: not the mythic');
+    k3.seenEvents = []; k3.nodeId = k3n.id; k3.floor = k3n.floor;
+    assert.equal(EVM.pickEvent(k3, new RNG('pk')).id, 'cerulean_cave', 'its node');
     assert.ok(!due(spireRun(mtSeed, undefined, 'kanto', 2), 'MEWTWO'), 'no CHAMPION beaten: never');
     assert.ok(!due(spireRun(mtSeed, undefined, 'kanto', 1, { champ: true }), 'MEWTWO'), 'act 2: never');
     assert.ok(!due(spireRun(mtSeed, ['kanto', 'kanto', 'hoenn', 'kanto'], 'kanto', 2, { champ: true }), 'MEWTWO'), 'a HOENN act 3: never');
@@ -2267,6 +2273,7 @@ t('HOENN music (display only): Emerald songs by act / battle, FireRed elsewhere'
     assert.ok(!due(h3, 'DEOXYS'), 'no METEORITE');
     h3.addRelic('METEORITE');
     assert.ok(due(h3, 'DEOXYS'));
+    assert.ok(onMythicNode(h3)?.mythic === 'DEOXYS');
     assert.equal(EVM.pickEvent(h3, new RNG('pd')).id, 'birth_island');
     const h2 = spireRun(seedFor('DEOXYS', 1, true), ['kanto', 'hoenn', 'hoenn', 'hoenn'], 'kanto', 1); h2.addRelic('METEORITE');
     assert.ok(!due(h2, 'DEOXYS'), 'HOENN act 2: too early');
@@ -2292,7 +2299,7 @@ t('HOENN music (display only): Emerald songs by act / battle, FireRed elsewhere'
     journal.choices[0].run(fr, new RNG('j'));
     assert.equal(fr.flags.mewJournal, 'funded');
     // shown once per run, never in an ordinary pick
-    k3.seenEvents = ['cerulean_cave'];
+    k3.seenEvents = ['cerulean_cave']; k3.nodeId = '6,3';
     for (let i = 0; i < 40; i++) assert.notEqual(EVM.pickEvent({ ...k3, seenEvents: ['cerulean_cave'], acts: k3.acts, act: k3.act }, new RNG('again' + i)).id, 'cerulean_cave');
     let quiet = null; for (let i = 0; i < 4000 && !quiet; i++) { const p = { seed: 'Q' + i, actIndex: 2, flags: {} }; if (!EVM.MYTHIC_ROLL.MEWTWO(p) && !EVM.MYTHIC_ROLL.MEW(p)) quiet = 'Q' + i; }
     const noRoll = spireRun(quiet, undefined, 'kanto', 2, { champ: true }); // (no mythic due: never one from the pool)
@@ -2300,6 +2307,62 @@ t('HOENN music (display only): Emerald songs by act / battle, FireRed elsewhere'
     // the rough odds per eligible act (MEWTWO ~20% roll), checked on the rolls themselves
     let mt = 0; for (let i = 0; i < 2000; i++) if (EVM.MYTHIC_ROLL.MEWTWO({ seed: 'R' + i, actIndex: 2, flags: {} })) mt++;
     assert.ok(mt > 2000 * EVM.MYTHIC_ODDS.MEWTWO * 0.8 && mt < 2000 * EVM.MYTHIC_ODDS.MEWTWO * 1.2, 'MEWTWO roll ' + mt);
+  });
+
+  t('v0.6.2 mythics are decided with the act\'s map: one fixed, visible node, deterministic per seed, old saves too', () => {
+    const seedFor = (id, a) => { for (let i = 0; i < 4000; i++) if (EVM.MYTHIC_ROLL[id]({ seed: 'MN' + i, actIndex: a, flags: {} })) return 'MN' + i; throw new Error('no seed'); };
+    const sd = seedFor('MEWTWO', 2);
+    const a = spireRun(sd, undefined, 'kanto', 2, { champ: true }), b = spireRun(sd, undefined, 'kanto', 2, { champ: true });
+    const nodesOf = (r) => Object.values(r.map.nodes).filter(n => n.mythic);
+    assert.equal(nodesOf(a).length, 1, 'exactly one mythic node');
+    const n = nodesOf(a)[0];
+    assert.deepEqual([n.id, n.mythic, n.type], [nodesOf(b)[0].id, nodesOf(b)[0].mythic, 'event'], 'same seed, same node');
+    assert.ok(n.floor >= 1 && n.floor <= a.map.floors - 2);
+    // no other "?" ever rolls a mythic: every event node but its own gives an ordinary event
+    for (const m of Object.values(a.map.nodes).filter(x => x.type === 'event' && !x.mythic)) {
+      const r = Object.assign(Object.create(Object.getPrototypeOf(a)), a, { seenEvents: [], nodeId: m.id, floor: m.floor });
+      assert.ok(!EVM.pickEvent(r, new RNG('o' + m.id)).mythic, m.id);
+    }
+    // the run's own random stream is untouched by the placement
+    const c = spireRun(sd, undefined, 'kanto', 2, { champ: false });
+    assert.equal(nodesOf(c).length, 0, 'no CHAMPION beaten: no MEWTWO node');
+    assert.equal(c.rng.state, a.rng.state);
+    // an old save (no map.mythicDone): placed on load, only ahead of the player, and saved with the run
+    const o = JSON.parse(JSON.stringify(a)); delete o.map.mythicDone; for (const x of Object.values(o.map.nodes)) delete x.mythic;
+    const first = Object.values(o.map.nodes).filter(x => x.floor === 1)[0];
+    o.floor = 1; o.nodeId = first.id;
+    const r = Run.fromJSON(o);
+    const placed = nodesOf(r);
+    assert.ok(r.map.mythicDone && placed.length === 1 && placed[0].floor > 1, 'placed ahead');
+    const ahead = new Set(); const st = [...r.map.nodes[first.id].next]; while (st.length) { const id = st.pop(); if (!ahead.has(id)) { ahead.add(id); st.push(...r.map.nodes[id].next); } }
+    assert.ok(ahead.has(placed[0].id), 'reachable from where the player stands');
+    const again = JSON.stringify(r); assert.equal(JSON.stringify(Run.fromJSON(JSON.parse(again))), again, 'loads unchanged after that');
+  });
+
+  t('v0.6.2 an act\'s mythic event is never the act boss\'s species (another mythic instead)', () => {
+    // brute force: every act of many runs, with everything that unlocks the mythics
+    let checked = 0, swapped = 0;
+    for (let i = 0; i < 400; i++) {
+      for (const [acts, post] of [[['kanto', 'kanto', 'kanto', 'kanto'], 'kanto'], [['hoenn', 'hoenn', 'hoenn', 'hoenn'], 'hoenn']]) {
+        const r = spireRun('NB' + i, acts, post, 0, { champ: true });
+        r.addRelic('METEORITE'); r.addRelic('RED_ORB');
+        for (let a = 1; a < r.acts.length; a++) {
+          r.startAct(a);
+          const boss = LEGENDS[r.boss]?.species;
+          for (const n of Object.values(r.map.nodes).filter(x => x.mythic)) { checked++; assert.notEqual(MYTHICS[n.mythic].species, boss, `${r.seed} act ${a} ${r.boss}`); }
+          if (boss && EVM.mythicDue(r, boss)) { swapped++; assert.ok(Object.values(r.map.nodes).some(x => x.mythic && x.mythic !== boss), 'a different mythic takes its place'); }
+        }
+      }
+    }
+    assert.ok(checked > 100 && swapped > 10, `${checked} ${swapped}`);
+    // the SEVII post-game with DEOXYS as the boss and DEOXYS due: not DEOXYS (MEW can always come instead)
+    const p = { seed: 'X', actIndex: 4, region: 'kanto', flags: {}, relics: [{ key: 'METEORITE' }], seenEvents: [] };
+    const roll = EVM.MYTHIC_ODDS.DEOXYS; EVM.MYTHIC_ODDS.DEOXYS = 1;
+    try {
+      assert.equal(EVM.actMythic(p, null), 'DEOXYS');
+      const alt = EVM.actMythic(p, 'DEOXYS');
+      assert.ok(alt && alt !== 'DEOXYS', alt);
+    } finally { EVM.MYTHIC_ODDS.DEOXYS = roll; }
   });
 
   t('v0.3.25 boss swap: nobody fights their own MEWTWO / DEOXYS / RAYQUAZA', () => {

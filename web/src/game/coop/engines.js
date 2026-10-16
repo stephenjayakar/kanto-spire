@@ -56,13 +56,16 @@ import { RNG } from '../rng.js';
 // ORIGIN), the SINNOH co-op pools, every ability doing something, CYNTHIA's lead rotation; v0.5.27 is frozen as 'v0527'.
 // v0.6.1 does: a lost mythic "?" fight (MEWTWO, MEW, DEOXYS, RAYQUAZA) is GAME OVER like any lost battle (no more
 // Run.softLoss); v0.6.0 is frozen as 'v060'.
-export const LOGIC_ID = 'v0601';
+// v0.6.2 does: the act's mythic "?" event is placed on a map node when the act begins (never the act boss's species),
+// instead of rolling at the first "?" room; v0.6.1 is frozen as 'v0601'.
+export const LOGIC_ID = 'v0602';
 // Actions from before v0.3.6 carry no stamp: they were played on v0.3.5 (or, for older rooms, earlier; the
 // replay checks the clients' logged checksums and tries every frozen engine, see resume.js).
 export const UNSTAMPED = 'v035';
 // Frozen copies, newest first: id -> the versions it covers and its loader (dynamic import: only fetched when a
 // room needs it).
 export const FROZEN = {
+  v0601: { versions: 'v0.6.1', load: () => import('../../legacy/v0601/engine.js') },
   v060: { versions: 'v0.6.0', load: () => import('../../legacy/v060/engine.js') },
   v0527: { versions: 'v0.5.27', load: () => import('../../legacy/v0527/engine.js') },
   v0519: { versions: 'v0.5.19-v0.5.26', load: () => import('../../legacy/v0519/engine.js') },

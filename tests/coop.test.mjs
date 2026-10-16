@@ -1224,9 +1224,14 @@ t('co-op Pokédex: every player (P2 too) records what they met and caught', () =
   function throughMythic(seed, n, strongTeams = true) {
     const setup = () => {
       const g = CoopGame.fromInit(INITN2(seed, n));
-      g.world.startAct(2); for (const r of g.runs) r.startAct(2);
-      const target = Object.values(g.world.map.nodes).find(x => x.prev.length && x.floor >= 3);
-      target.type = 'event';
+      assert.equal(g.world.flags.champ, undefined, 'a KANTO-only room: nobody known to have beaten a CHAMPION yet');
+      assert.ok(g.apply({ seq: g.seq + 1, p: n - 1, type: 'champ', nonce: 'c1' }), 'a player who has posts champ');
+      assert.equal(g.apply({ seq: g.seq + 1, p: 0, type: 'champ', nonce: 'c2' }), false, 'once is enough');
+      // (v0.6.2) the act's mythic is placed with its map (CoopGame.mirror, from the room probe): walk up to its node
+      g.world.startAct(2); for (const r of g.runs) r.startAct(2); g.mirror();
+      const target = Object.values(g.world.map.nodes).find(x => x.mythic);
+      assert.ok(target && target.mythic === 'MEWTWO' && target.type === 'event' && target.prev.length, 'the MEWTWO node');
+      assert.ok(g.runs.every(r => r.map === g.world.map), 'every player sees the same map');
       g.world.nodeId = target.prev[0]; g.world.floor = target.floor - 1; g.mirror();
       if (strongTeams) for (const r of g.runs) for (const m of r.party) { m.level = 70; m.hp = maxHp(m); }
       if (!strongTeams) for (const r of g.runs) for (const m of r.party) { m.level = 5; m.hp = maxHp(m); }
@@ -1235,9 +1240,6 @@ t('co-op Pokédex: every player (P2 too) records what they met and caught', () =
     const { g, target } = setup();
     const log = [], cks = [], bots = g.runs.map((_, p) => makeBot(seed, p));
     const P = a => { const act = JSON.parse(JSON.stringify({ ...a, seq: g.seq + 1, nonce: 'n' + (g.seq + 1) })); log.push(act); const ok = g.apply(act); cks.push(g.checksum()); return ok; };
-    assert.equal(g.world.flags.champ, undefined, 'a KANTO-only room: nobody known to have beaten a CHAMPION yet');
-    assert.ok(P({ p: n - 1, type: 'champ' }), 'a player who has posts champ');
-    assert.equal(P({ p: 0, type: 'champ' }), false, 'once is enough');
     for (let p = 0; p < n; p++) P({ p, type: 'vote', node: target.id });
     assert.equal(g.phase, 'private'); assert.equal(g.sharedEvent.id, 'cerulean_cave');
     let sawSpread = false, cfg = null, k = 0;
@@ -1270,6 +1272,33 @@ t('co-op Pokédex: every player (P2 too) records what they met and caught', () =
     assert.equal(g.phase, 'over', 'a lost mythic fight ends the room like any lost battle');
     assert.ok(!g.events.some(e => e.t === 'softLoss'));
     assert.ok(g.runs.every(r => !r.legendTaken));
+  });
+  t('v0.6.2 co-op mythic node: placed with the act from the room (anyone\'s METEORITE), the same on every client, old checkpoints too', () => {
+    const seed = rollSeed('DEOXYS', 2, 'CMN_');
+    const mk = () => {
+      const g = CoopGame.fromInit(INITN2(seed, 2, 'hoenn'));
+      g.runs[1].addRelic('METEORITE'); // (only P2 holds it)
+      g.world.startAct(2); for (const r of g.runs) r.startAct(2); g.mirror();
+      return g;
+    };
+    const a = mk(), b = mk();
+    const na = Object.values(a.world.map.nodes).filter(x => x.mythic), nb = Object.values(b.world.map.nodes).filter(x => x.mythic);
+    assert.equal(na.length, 1);
+    assert.equal(na[0].mythic, 'DEOXYS', 'from P2\'s METEORITE');
+    assert.equal(na[0].id, nb[0].id, 'deterministic');
+    assert.equal(a.checksum(), b.checksum());
+    assert.ok(a.runs.every(r => r.map.nodes[na[0].id].mythic === 'DEOXYS'), 'every player\'s map shows it');
+    // the room's pick on that node is the mythic event; on any other "?" it never is
+    a.world.nodeId = na[0].id; a.world.floor = na[0].floor;
+    assert.equal(sharedEventId(a.world, a.runs, a.seed), 'birth_island');
+    for (const m of Object.values(a.world.map.nodes).filter(x => x.type === 'event' && !x.mythic)) { a.world.nodeId = m.id; a.world.floor = m.floor; assert.notEqual(sharedEventId(a.world, a.runs, a.seed), 'birth_island'); }
+    // an older checkpoint's map (no mythicDone): placed on the next mirror, ahead of the room
+    const c = mk();
+    delete c.world.map.mythicDone; for (const x of Object.values(c.world.map.nodes)) delete x.mythic;
+    const first = Object.values(c.world.map.nodes).find(x => x.floor === 2);
+    c.world.nodeId = first.id; c.world.floor = 2; c.mirror();
+    const nc = Object.values(c.world.map.nodes).filter(x => x.mythic);
+    assert.ok(c.world.map.mythicDone && nc.length === 1 && nc[0].floor > 2, 'placed ahead');
   });
   t('v0.3.25 co-op boss swap is based on the room: anyone owning the post-game boss swaps it for everyone', () => {
     const g = CoopGame.fromInit(INITN2('BSW', 3));

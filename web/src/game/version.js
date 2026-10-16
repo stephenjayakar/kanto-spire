@@ -2,9 +2,18 @@
 // Game version and patch notes (shown from the title screen). Versions are major.minor.patch: every production
 // deploy that changes the game bumps the patch (v0.2.0 -> v0.2.1); the owner calls minor bumps (v0.1.x -> v0.2.0);
 // no major bumps yet. Each one gets a new top PATCH_NOTES entry; see AGENTS.md.
-export const VERSION = 'v0.6.1';
+export const VERSION = 'v0.6.2';
 
 export const PATCH_NOTES = [
+  {
+    v: 'v0.6.2',
+    sections: [
+      ['CHANGES', [
+        'Mythic events (MEWTWO in CERULEAN CAVE, MEW, DEOXYS, RAYQUAZA) now show on the map from the start of the act: look for the glowing POKéMON with a "?" and plan your route to it (or around it). They no longer pop up at a random "?"',
+        "An act's mythic event is never the same POKéMON as that act's boss: when it would be, a different mythic shows up instead",
+      ]],
+    ],
+  },
   {
     v: 'v0.6.1',
     sections: [

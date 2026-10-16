@@ -250,26 +250,26 @@ t('resume: unverifiable rooms (no checksums) replay as before', async () => {
 
 // ------------------------------------------------------------------------------------- legacy engine
 t('engines: selection is explicit (stamp first, then the current code, then the other frozen copies)', () => {
-  assert.equal(LOGIC_ID, 'v0601', 'v0.6.1 changes game logic (a lost mythic fight is GAME OVER); v0.6.0 is frozen as v060, v0.5.27 as v0527, v0.5.19-v0.5.26 as v0519, v0.5.18 as v0518, v0.5.17 as v0517, v0.5.16 as v0516, v0.5.14-v0.5.15 as v0514, v0.5.13 as v0513, v0.5.8-v0.5.12 as v058, v0.5.7 as v057, v0.5.6 as v056, v0.5.3-v0.5.5 as v053, v0.5.2 as v052, v0.5.1 as v051; v0.5.0 is not frozen (mid-node rooms restart the node)');
+  assert.equal(LOGIC_ID, 'v0602', 'v0.6.2 changes game logic (mythic nodes placed with the map); v0.6.1 is frozen as v0601, v0.6.0 as v060, v0.5.27 as v0527, v0.5.19-v0.5.26 as v0519, v0.5.18 as v0518, v0.5.17 as v0517, v0.5.16 as v0516, v0.5.14-v0.5.15 as v0514, v0.5.13 as v0513, v0.5.8-v0.5.12 as v058, v0.5.7 as v057, v0.5.6 as v056, v0.5.3-v0.5.5 as v053, v0.5.2 as v052, v0.5.1 as v051; v0.5.0 is not frozen (mid-node rooms restart the node)');
   assert.equal(UNSTAMPED, 'v035');
-  assert.deepEqual(Object.keys(FROZEN), ['v060', 'v0527', 'v0519', 'v0518', 'v0517', 'v0516', 'v0514', 'v0513', 'v058', 'v057', 'v056', 'v053', 'v052', 'v051', 'v040', 'v0323', 'v0319', 'v0311', 'v037', 'v035', 'v031'], 'newest first');
+  assert.deepEqual(Object.keys(FROZEN), ['v0601', 'v060', 'v0527', 'v0519', 'v0518', 'v0517', 'v0516', 'v0514', 'v0513', 'v058', 'v057', 'v056', 'v053', 'v052', 'v051', 'v040', 'v0323', 'v0319', 'v0311', 'v037', 'v035', 'v031'], 'newest first');
   const ids = (l) => l.map(e => (e.current ? 'current:' : '') + e.id);
   // a room stamped by an older logic goes to its own frozen copy first, then the current code, then the rest
-  assert.deepEqual(ids(engineOrder('v057')), ['v057', 'current:v0601', 'v060', 'v0527', 'v0519', 'v0518', 'v0517', 'v0516', 'v0514', 'v0513', 'v058', 'v056', 'v053', 'v052', 'v051', 'v040', 'v0323', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
-  assert.deepEqual(ids(engineOrder('v056')), ['v056', 'current:v0601', 'v060', 'v0527', 'v0519', 'v0518', 'v0517', 'v0516', 'v0514', 'v0513', 'v058', 'v057', 'v053', 'v052', 'v051', 'v040', 'v0323', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
-  assert.deepEqual(ids(engineOrder('v053')), ['v053', 'current:v0601', 'v060', 'v0527', 'v0519', 'v0518', 'v0517', 'v0516', 'v0514', 'v0513', 'v058', 'v057', 'v056', 'v052', 'v051', 'v040', 'v0323', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
-  assert.deepEqual(ids(engineOrder('v051')), ['v051', 'current:v0601', 'v060', 'v0527', 'v0519', 'v0518', 'v0517', 'v0516', 'v0514', 'v0513', 'v058', 'v057', 'v056', 'v053', 'v052', 'v040', 'v0323', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
-  assert.deepEqual(ids(engineOrder('v040')), ['v040', 'current:v0601', 'v060', 'v0527', 'v0519', 'v0518', 'v0517', 'v0516', 'v0514', 'v0513', 'v058', 'v057', 'v056', 'v053', 'v052', 'v051', 'v0323', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
-  assert.deepEqual(ids(engineOrder('v0323')), ['v0323', 'current:v0601', 'v060', 'v0527', 'v0519', 'v0518', 'v0517', 'v0516', 'v0514', 'v0513', 'v058', 'v057', 'v056', 'v053', 'v052', 'v051', 'v040', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
-  assert.deepEqual(ids(engineOrder('v035')), ['v035', 'current:v0601', 'v060', 'v0527', 'v0519', 'v0518', 'v0517', 'v0516', 'v0514', 'v0513', 'v058', 'v057', 'v056', 'v053', 'v052', 'v051', 'v040', 'v0323', 'v0319', 'v0311', 'v037', 'v031']);
-  assert.deepEqual(ids(engineOrder('v052')), ['v052', 'current:v0601', 'v060', 'v0527', 'v0519', 'v0518', 'v0517', 'v0516', 'v0514', 'v0513', 'v058', 'v057', 'v056', 'v053', 'v051', 'v040', 'v0323', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
-  assert.deepEqual(ids(engineOrder('v058')), ['v058', 'current:v0601', 'v060', 'v0527', 'v0519', 'v0518', 'v0517', 'v0516', 'v0514', 'v0513', 'v057', 'v056', 'v053', 'v052', 'v051', 'v040', 'v0323', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
-  assert.deepEqual(ids(engineOrder('v0513')), ['v0513', 'current:v0601', 'v060', 'v0527', 'v0519', 'v0518', 'v0517', 'v0516', 'v0514', 'v058', 'v057', 'v056', 'v053', 'v052', 'v051', 'v040', 'v0323', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
-  assert.deepEqual(ids(engineOrder('zzz')), ['current:v0601', 'v060', 'v0527', 'v0519', 'v0518', 'v0517', 'v0516', 'v0514', 'v0513', 'v058', 'v057', 'v056', 'v053', 'v052', 'v051', 'v040', 'v0323', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('v057')), ['v057', 'current:v0602', 'v0601', 'v060', 'v0527', 'v0519', 'v0518', 'v0517', 'v0516', 'v0514', 'v0513', 'v058', 'v056', 'v053', 'v052', 'v051', 'v040', 'v0323', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('v056')), ['v056', 'current:v0602', 'v0601', 'v060', 'v0527', 'v0519', 'v0518', 'v0517', 'v0516', 'v0514', 'v0513', 'v058', 'v057', 'v053', 'v052', 'v051', 'v040', 'v0323', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('v053')), ['v053', 'current:v0602', 'v0601', 'v060', 'v0527', 'v0519', 'v0518', 'v0517', 'v0516', 'v0514', 'v0513', 'v058', 'v057', 'v056', 'v052', 'v051', 'v040', 'v0323', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('v051')), ['v051', 'current:v0602', 'v0601', 'v060', 'v0527', 'v0519', 'v0518', 'v0517', 'v0516', 'v0514', 'v0513', 'v058', 'v057', 'v056', 'v053', 'v052', 'v040', 'v0323', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('v040')), ['v040', 'current:v0602', 'v0601', 'v060', 'v0527', 'v0519', 'v0518', 'v0517', 'v0516', 'v0514', 'v0513', 'v058', 'v057', 'v056', 'v053', 'v052', 'v051', 'v0323', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('v0323')), ['v0323', 'current:v0602', 'v0601', 'v060', 'v0527', 'v0519', 'v0518', 'v0517', 'v0516', 'v0514', 'v0513', 'v058', 'v057', 'v056', 'v053', 'v052', 'v051', 'v040', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('v035')), ['v035', 'current:v0602', 'v0601', 'v060', 'v0527', 'v0519', 'v0518', 'v0517', 'v0516', 'v0514', 'v0513', 'v058', 'v057', 'v056', 'v053', 'v052', 'v051', 'v040', 'v0323', 'v0319', 'v0311', 'v037', 'v031']);
+  assert.deepEqual(ids(engineOrder('v052')), ['v052', 'current:v0602', 'v0601', 'v060', 'v0527', 'v0519', 'v0518', 'v0517', 'v0516', 'v0514', 'v0513', 'v058', 'v057', 'v056', 'v053', 'v051', 'v040', 'v0323', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('v058')), ['v058', 'current:v0602', 'v0601', 'v060', 'v0527', 'v0519', 'v0518', 'v0517', 'v0516', 'v0514', 'v0513', 'v057', 'v056', 'v053', 'v052', 'v051', 'v040', 'v0323', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('v0513')), ['v0513', 'current:v0602', 'v0601', 'v060', 'v0527', 'v0519', 'v0518', 'v0517', 'v0516', 'v0514', 'v058', 'v057', 'v056', 'v053', 'v052', 'v051', 'v040', 'v0323', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('zzz')), ['current:v0602', 'v0601', 'v060', 'v0527', 'v0519', 'v0518', 'v0517', 'v0516', 'v0514', 'v0513', 'v058', 'v057', 'v056', 'v053', 'v052', 'v051', 'v040', 'v0323', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
   // under the older ids (what those versions did)
-  assert.deepEqual(ids(engineOrder('v040', 'v051')), ['v040', 'current:v051', 'v060', 'v0527', 'v0519', 'v0518', 'v0517', 'v0516', 'v0514', 'v0513', 'v058', 'v057', 'v056', 'v053', 'v052', 'v051', 'v0323', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
-  assert.deepEqual(ids(engineOrder('v0323', 'v040')), ['v0323', 'current:v040', 'v060', 'v0527', 'v0519', 'v0518', 'v0517', 'v0516', 'v0514', 'v0513', 'v058', 'v057', 'v056', 'v053', 'v052', 'v051', 'v040', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
-  assert.deepEqual(ids(engineOrder('v0319', 'v0323')), ['v0319', 'current:v0323', 'v060', 'v0527', 'v0519', 'v0518', 'v0517', 'v0516', 'v0514', 'v0513', 'v058', 'v057', 'v056', 'v053', 'v052', 'v051', 'v040', 'v0323', 'v0311', 'v037', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('v040', 'v051')), ['v040', 'current:v051', 'v0601', 'v060', 'v0527', 'v0519', 'v0518', 'v0517', 'v0516', 'v0514', 'v0513', 'v058', 'v057', 'v056', 'v053', 'v052', 'v051', 'v0323', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('v0323', 'v040')), ['v0323', 'current:v040', 'v0601', 'v060', 'v0527', 'v0519', 'v0518', 'v0517', 'v0516', 'v0514', 'v0513', 'v058', 'v057', 'v056', 'v053', 'v052', 'v051', 'v040', 'v0319', 'v0311', 'v037', 'v035', 'v031']);
+  assert.deepEqual(ids(engineOrder('v0319', 'v0323')), ['v0319', 'current:v0323', 'v0601', 'v060', 'v0527', 'v0519', 'v0518', 'v0517', 'v0516', 'v0514', 'v0513', 'v058', 'v057', 'v056', 'v053', 'v052', 'v051', 'v040', 'v0323', 'v0311', 'v037', 'v035', 'v031']);
   assert.equal(segmentStamp([{ p: -1, type: 'init' }, { p: 0, type: 'vote' }]), 'v035', 'unstamped = v0.3.5');
   assert.equal(segmentStamp([{ p: 0, type: 'vote', eng: 'v037' }, { p: 1, type: 'vote', eng: 'v037' }, { p: 1, eng: 'v035' }]), 'v037');
   for (const id of Object.keys(FROZEN)) assert.ok(fs.existsSync(`web/src/legacy/${id}/engine.js`), id);
@@ -478,7 +478,15 @@ t('old solo save (v0.3.5) loads, round-trips unchanged and plays on', () => {
   assert.equal(run.abilityRules, 1, 'abilities prototype: an old save is marked once its Gen 4 mons are pinned');
   assert.equal(run.dexBias, null, 'v0.5.22 default: no POKéDEX bias for an old run');
   assert.deepEqual(run.requires, ['johto'], 'v0.6.0 default: the content caps of the regions it visits');
-  const { moveOffers, legendTaken, abilityRules, dexBias, requires, ...rest } = JSON.parse(JSON.stringify(run));
+  // v0.6.2: the act's mythic node is placed on load (map.mythicDone, maybe one node ahead turned into its "?")
+  assert.equal(run.map.mythicDone, true, 'v0.6.2: mythic placed on load');
+  const out = JSON.parse(JSON.stringify(run));
+  delete out.map.mythicDone;
+  for (const [id, n] of Object.entries(out.map.nodes)) if (n.mythic) {
+    assert.ok(n.floor > fx.save.floor, 'placed ahead of the player');
+    delete n.mythic; n.type = fx.save.map.nodes[id].type;
+  }
+  const { moveOffers, legendTaken, abilityRules, dexBias, requires, ...rest } = out;
   assert.equal(JSON.stringify(rest), JSON.stringify(fx.save), 'the v0.3.5 fields are unchanged');
   assert.ok(run.party.length >= 1 && run.map && run.rng);
   // a save of this version comes out exactly as it went in, and upgradeJSON is a no-op on it
