@@ -2,9 +2,17 @@
 // Game version and patch notes (shown from the title screen). Versions are major.minor.patch: every production
 // deploy that changes the game bumps the patch (v0.2.0 -> v0.2.1); the owner calls minor bumps (v0.1.x -> v0.2.0);
 // no major bumps yet. Each one gets a new top PATCH_NOTES entry; see AGENTS.md.
-export const VERSION = 'v0.6.6';
+export const VERSION = 'v0.6.7';
 
 export const PATCH_NOTES = [
+  {
+    v: 'v0.6.7',
+    sections: [
+      ['CHANGES', [
+        "Rewards screen: SKIPping a new move (or choosing not to replace one) no longer throws it away. It stays on the list, marked skipped: tap it again to pick a move until you leave the rewards screen. Solo and co-op",
+      ]],
+    ],
+  },
   {
     v: 'v0.6.6',
     sections: [

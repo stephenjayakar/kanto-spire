@@ -194,10 +194,12 @@ export class RewardScene {
       case 'moves': {
         const v = await pick(new MoveChoiceModal({ choices: r.choices }));
         run.logEvent({ k: 'pick', what: 'move', took: v ? `${run.party.find(m => m.uid === v.uid)?.species}:${v.move}` : null, from: r.choices.map(c => c.move) });
-        if (v) {
-          const mon = run.party.find(m => m.uid === v.uid);
-          if (await learnMove(mon, v.move)) { r.claimed = true; }
-        } else { r.claimed = true; r.label += ' (skipped)'; }
+        // SKIP (or "Don't learn" in the replace picker) keeps the reward on the list, marked skipped: tapping it
+        // again reopens the choice until the player leaves the rewards screen (v0.6.7; it used to be lost at once)
+        r.baseLabel ??= r.label;
+        const mon = v && run.party.find(m => m.uid === v.uid);
+        if (mon && await learnMove(mon, v.move)) { r.claimed = true; r.skipped = false; r.label = r.baseLabel; }
+        else { r.skipped = true; r.label = `${r.baseLabel} (skipped, tap to reopen)`; }
         break;
       }
     }
@@ -249,7 +251,7 @@ export class RewardScene {
       if (r.kind === 'mon' || r.kind === 'legend' || r.kind === 'lost' || r.kind === 'legendNote') drawIcon(ctx, r.mon.species, x + 14, ry - 3, { gray: r.kind === 'lost' || r.kind === 'legendNote' });
       else if (r.kind === 'monPick') drawIcon(ctx, r.mons[0].species, x + 14, ry - 3);
       else if (icon) draw(ctx, icon, x + 16, ry + 3);
-      textFit(ctx, r.label, x + 50, ry + 8, w - 90, { color: r.kind === 'lost' ? 'red' : r.claimed ? 'gray' : r.kind === 'legend' ? 'gold' : 'white' });
+      textFit(ctx, r.label, x + 50, ry + 8, w - 90, { color: r.kind === 'lost' ? 'red' : r.claimed || (r.skipped && !hot) ? 'gray' : r.kind === 'legend' ? 'gold' : 'white' });
       if (r.claimed && r.kind !== 'money' && r.kind !== 'lost' && r.kind !== 'legendNote') text(ctx, '✓', x + w - 24, ry + 8, { color: 'green' });
       if (r.kind === 'legendNote' && hover(x + 10, ry, w - 20, 30)) tip('ONE LEGENDARY PER RUN', `${G.run.legendRuleText()} Once a legendary joins you, no other legendary can be caught for the rest of the run. Fights and their held items stay.`, { width: 200 });
       if (hot) {
@@ -260,8 +262,8 @@ export class RewardScene {
       }
     });
     const by = 60 + this.rewards.length * 34 + 6;
-    if (button(ctx, this.rewards.some(r => !r.claimed) ? 'SKIP REST & CONTINUE' : 'CONTINUE', x + w / 2 - 90, by, 180, 26, { color: THEME.green, disabled: this.busy })) {
-      const left = this.rewards.filter(r => !r.claimed && r.kind !== 'money');
+    if (button(ctx, rewardsLeft(this.rewards).length ? 'SKIP REST & CONTINUE' : 'CONTINUE', x + w / 2 - 90, by, 180, 26, { color: THEME.green, disabled: this.busy })) {
+      const left = rewardsLeft(this.rewards);
       if (!left.length) afterRewards(this.battle, this.cfg, this.extra);
       else pushOverlay(new ChoiceModal({ title: 'Leave rewards behind?', body: `Unclaimed: ${left.map(r => r.label).join(', ')}` + (left.some(r => r.kind === 'relic') ? '\nYou can hold as many held items as you like.' : ''), options: [{ label: 'Go back', value: 0, color: THEME.green }, { label: 'Skip them', value: 1, color: THEME.discard }], onClose: v => { if (v === 1) afterRewards(this.battle, this.cfg, this.extra); } }));
     }
@@ -271,6 +273,10 @@ export class RewardScene {
   }
   expAnimK() { return Math.min(1, this.t / (animFast() ? 0.4 : 1.0)); }
 }
+
+// Rewards still waiting on the player (CONTINUE asks first). A move reward they already SKIPped isn't one: they chose
+// to, it just stays tappable until they leave.
+export function rewardsLeft(rewards) { return rewards.filter(r => !r.claimed && !r.skipped && r.kind !== 'money'); }
 
 export function pick(modal) { return new Promise(res => { modal.onClose = res; pushOverlay(modal); }); }
 
