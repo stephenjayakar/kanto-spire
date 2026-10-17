@@ -8,11 +8,12 @@ import { text, textBlock, measure, textFit } from '../../engine/font.js';
 import { swirlBackground, BG_THEMES, button, panel, pixBox, rect, drawTips, tip, THEME } from '../../engine/ui.js';
 import { D } from '../../game/data.js';
 import { G } from '../../game/state.js';
-import { ASCENSIONS, NUZLOCKE_ASC } from '../../game/run.js';
-// Co-op Nuzlocke is a room option (room.nuzlocke, the host's NUZLOCKE switch; see Run.nuzlocke): raising the
-// ascension to A8 turns it on, and the host can switch it either way. nuzOpt: the server has the option (a room
+import { ASCENSIONS, NUZLOCKE_ASC, nuzLocked, nuzSwitchTip } from '../../game/run.js';
+// Co-op Nuzlocke is a room option (room.nuzlocke, the host's NUZLOCKE switch; see Run.nuzlocke). From A8 it is always
+// on and locked (as in solo; the server forces it in coop:create/configure/start); below A8 the host can switch it
+// either way, and lowering the ascension from A8 keeps it on until switched. nuzOpt: the server has the option (a room
 // view with the boolean room.nuzlocke); an older server has none, and A8 does nothing in co-op there.
-const coopAscDesc = (x, nuzOpt) => (x?.n === NUZLOCKE_ASC ? (nuzOpt ? 'Nuzlocke: in co-op it is the NUZLOCKE switch (raising to A8 turns it on).' : 'Nuzlocke: no effect in co-op (your partner revives you after a win).') : x?.desc || '');
+const coopAscDesc = (x, nuzOpt) => (x?.n === NUZLOCKE_ASC ? (nuzOpt ? 'Nuzlocke: always on from A8 (the NUZLOCKE switch is locked ON).' : 'Nuzlocke: no effect in co-op (your partner revives you after a win).') : x?.desc || '');
 const NUZ_TIP = 'Co-op Nuzlocke rules:\n- A POKéMON that faints in battle is released for good.\n- Each player may only catch in their first wild battle of each act.\n- Gift and trade events are hidden, as in solo.\n- A downed partner is not revived after a win.\n- A player whose whole team is released is OUT and spectates while the others carry on.\nThe run is lost only when everyone is down or out.';
 import { availableStarters, ascUnlocked, coopAscCap, MAX_ASC } from '../../game/unlocks.js';
 import { coopWorldFor, coopWorldRegions, isSpireWorld } from '../../game/regions.js';
@@ -383,7 +384,7 @@ export class CoopLobbyScene {
     text(ctx, 'ASCENSION', 236, 210, { color: 'whiteSoft', font: 'small' });
     if (isHost && button(ctx, '<', 300, 205, 22, 20, { color: '#506080', disabled: a <= 0 || this.busy })) this.config({ ascension: a - 1 });
     text(ctx, 'A' + a, 344, 207, { align: 'center', color: a ? 'red' : 'gold' });
-    // raising it to A8 (Nuzlocke) turns NUZLOCKE on too; lowering it never changes the switch
+    // raising it to A8 (Nuzlocke) turns NUZLOCKE on (locked from A8; the server forces it too); lowering it keeps the switch
     if (isHost && button(ctx, '>', 366, 205, 22, 20, { color: '#506080', disabled: a >= maxA || this.busy })) this.config({ ascension: a + 1, ...(nuzOpt && a + 1 === NUZLOCKE_ASC ? { nuzlocke: true } : {}) });
     textBlock(ctx, coopAscDesc(ASCENSIONS[a], nuzOpt), 236, 230, 170, { color: 'gray', font: 'small', lineHeight: 10 });
     if (hover(236, 205, 160, 70)) tip(`ASCENSION ${a}`, (a > 0 ? ASCENSIONS.slice(1, a + 1).map(x => `A${x.n}: ${coopAscDesc(x, nuzOpt)}`).join('\n') + '\n\n' : '') + `Ascension unlocks are per starter: this room can go up to A${maxA}, the highest any of you has unlocked with the starter you picked.`, { width: 220 });
@@ -393,12 +394,13 @@ export class CoopLobbyScene {
     textBlock(ctx, "Each act draws its region from the run seed. SINNOH is in from the start, HOENN joins after the host's 1st win, JOHTO after the 2nd.", 430, 226, 186, { color: 'gray', font: 'small', lineHeight: 10 });
     // the NUZLOCKE switch (host: a button; the others see the host's choice)
     if (nuzOpt) {
-      const on = !!room.nuzlocke;
+      // A8+: locked ON (a disabled button: clicking does nothing; the server would turn it back on anyway)
+      const locked = nuzLocked(a), on = locked || !!room.nuzlocke;
       text(ctx, 'NUZLOCKE', 430, 265, { color: 'whiteSoft', font: 'small' });
-      if (isHost) { if (button(ctx, on ? 'ON' : 'OFF', 480, 261, 40, 18, { color: on ? '#a04848' : '#506080', font: 'small', disabled: this.busy })) this.config({ nuzlocke: !on }); }
+      if (isHost) { if (button(ctx, on ? 'ON' : 'OFF', 480, 261, 40, 18, { color: on ? '#a04848' : '#506080', font: 'small', disabled: this.busy || locked }) && !locked) this.config({ nuzlocke: !on }); }
       else text(ctx, on ? 'ON' : 'OFF', 500, 265, { align: 'center', color: on ? 'red' : 'gray', font: 'small' });
-      text(ctx, on ? 'fainted = released' : 'A8+ turns it on', 528, 265, { color: 'gray', font: 'small', maxW: 88 });
-      if (hover(430, 260, 186, 20)) tip(`NUZLOCKE: ${on ? 'ON' : 'OFF'}`, `${NUZ_TIP}\n\n${isHost ? 'Click to switch it. Raising the ascension to A8 turns it on; you can still switch it off, or on at any ascension.' : 'The host picks it (raising the ascension to A8 turns it on).'}`, { width: 240 });
+      text(ctx, locked ? 'LOCKED (A8+)' : on ? 'fainted = released' : 'always on at A8+', 528, 265, { color: locked ? 'red' : 'gray', font: 'small', maxW: 88 });
+      if (hover(430, 260, 186, 20)) tip(`NUZLOCKE: ${on ? 'ON' : 'OFF'}${locked ? ' (LOCKED)' : ''}`, `${NUZ_TIP}\n\n${nuzSwitchTip(isHost)}`, { width: 240 });
     }
     // buttons
     const both = v.members.length >= 2 && v.members.every(x => x.starter);

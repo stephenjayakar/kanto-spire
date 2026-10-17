@@ -59,6 +59,13 @@ function cleanAscension(a: number) {
   if (!Number.isFinite(a) || a < 0 || a > MAX_ASC) throw new Error(`Ascension must be 0-${MAX_ASC}.`);
   return Math.floor(a);
 }
+// NUZLOCKE is always on from this ascension (web/src/game/run.js NUZLOCKE_ASC; tests/nuzlocke_lock.test.mjs checks
+// they match). Below it the host's NUZLOCKE switch is optional; at A8+ the server forces it on in create, configure
+// and start, whatever a client sends.
+const NUZLOCKE_ASC = 8;
+const nuzFor = (ascension: number, want: boolean | undefined) => ascension >= NUZLOCKE_ASC || !!want;
+// what a room view reports: a lobby at A8+ is a NUZLOCKE room even if it was made before the lock (start forces it)
+const roomNuz = (room: Room) => !!room.nuzlocke || (room.status === "lobby" && room.ascension >= NUZLOCKE_ASC);
 const clampAscension = (n: number) => (Number.isFinite(n) ? Math.max(0, Math.min(MAX_ASC, Math.floor(n))) : 0);
 // Ascension unlocks are per starter: a room can go up to the highest of the players' unlocks for the
 // starters they picked (a member who hasn't sent one, e.g. an older client, doesn't count; none known = no cap).
@@ -132,7 +139,7 @@ function roomCore(room: Room, members: Member[]) {
     _id: room._id, code: room.code, status: room.status,
     host: host ? host.slot : 0, // host's slot (emails are not shared)
     ascension: room.ascension, world: room.world, seed: room.seed,
-    nuzlocke: !!room.nuzlocke, // co-op Nuzlocke option (its presence tells the client this server supports it)
+    nuzlocke: roomNuz(room), // co-op Nuzlocke option (its presence tells the client this server supports it)
     createdAt: room.createdAt, gameVersion: room.gameVersion ?? null, progress: room.progress ?? null,
     maxPlayers: roomCap(members), // seats in this room (2 while an older 2-player client is in it)
   };
@@ -190,10 +197,11 @@ export const create = mutation({
       if (i >= 20) throw new Error("Could not make a room code, try again.");
     }
     const now = Date.now();
+    const asc = cleanAscension(ascension ?? 0);
     const roomId = await ctx.db.insert("coopRooms", {
-      code, status: "lobby", host: email, ascension: cleanAscension(ascension ?? 0), world: world ?? "spire",
+      code, status: "lobby", host: email, ascension: asc, world: world ?? "spire",
       seed: randomFrom("ABCDEFGHJKLMNPQRSTUVWXYZ23456789", 8), nextSeq: 1, createdAt: now, updatedAt: now,
-      ...(nuzlocke ? { nuzlocke: true } : {}),
+      ...(nuzFor(asc, nuzlocke) ? { nuzlocke: true } : {}), // (always on at A8+)
       ...(cleanTag(gameVersion) ? { gameVersion: cleanTag(gameVersion) } : {}), ...(cleanTag(engine) ? { engine: cleanTag(engine) } : {}),
     });
     await ctx.db.insert("coopMembers", {
@@ -265,6 +273,8 @@ export const configure = mutation({
     if (ascension !== undefined) patch.ascension = Math.min(cleanAscension(ascension), ascensionCap(await membersOf(ctx, roomId)));
     if (world !== undefined) patch.world = world;
     if (nuzlocke !== undefined) patch.nuzlocke = nuzlocke;
+    // A8+ is always NUZLOCKE: raising to A8 turns it on and nobody can switch it off there (lowering keeps the switch)
+    if ((patch.ascension ?? room.ascension) >= NUZLOCKE_ASC) patch.nuzlocke = true;
     await ctx.db.patch(room._id, patch);
     return { ascension: patch.ascension ?? room.ascension, world: patch.world ?? room.world, nuzlocke: !!(patch.nuzlocke ?? room.nuzlocke) };
   },
@@ -286,7 +296,7 @@ export const start = mutation({
     for (const [i, m] of members.entries()) if (m.slot !== i) { await ctx.db.patch(m._id, { slot: i }); m.slot = i; }
     const init = {
       type: "init", seed: room.seed, ascension: room.ascension, world: room.world,
-      ...(room.nuzlocke ? { nuzlocke: true } : {}), // only when on: an off room's init stays byte-identical to older ones
+      ...(nuzFor(room.ascension, room.nuzlocke) ? { nuzlocke: true } : {}), // (always at A8+) only when on: an off room's init stays byte-identical to older ones
       starters: members.map((m) => m.starter!), names: members.map((m) => m.name),
     };
     const nonce = "init";
@@ -637,7 +647,7 @@ export const mine = query({
       if (!room || room.status === "closed" || room.updatedAt < now - (room.status === "playing" ? KEEP_RUNS : DAY)) continue;
       const members = await membersOf(ctx, room._id);
       out.push({
-        roomId: room._id, code: room.code, status: room.status, ascension: room.ascension, world: room.world, nuzlocke: !!room.nuzlocke,
+        roomId: room._id, code: room.code, status: room.status, ascension: room.ascension, world: room.world, nuzlocke: roomNuz(room),
         slot: me.slot, isHost: room.host === email, nextSeq: room.nextSeq, createdAt: room.createdAt, updatedAt: room.updatedAt,
         progress: room.progress ?? null,
         members: members.sort((a, b) => a.slot - b.slot).map((m) => ({ slot: m.slot, name: m.name, starter: m.starter ?? null, left: !!m.left, saved: !!m.left && !!m.savedAt })),
@@ -773,7 +783,7 @@ export const mineLive = query({
       out.push({
         at: room.updatedAt,
         row: {
-          roomId: room._id, code: room.code, status: room.status, ascension: room.ascension, world: room.world, nuzlocke: !!room.nuzlocke,
+          roomId: room._id, code: room.code, status: room.status, ascension: room.ascension, world: room.world, nuzlocke: roomNuz(room),
           slot: me.slot, isHost: room.host === email, progress: room.progress ?? null,
           members: members.sort((a, b) => a.slot - b.slot).map((m) => ({ slot: m.slot, name: m.name, starter: m.starter ?? null, left: !!m.left, saved: !!m.left && !!m.savedAt })),
         },

@@ -7,6 +7,7 @@
 // subscription re-runs its read when its room changed, handing the result on only when it differs. Nothing polls.
 import { coopAscCap } from '../../game/unlocks.js';
 import { COOP_WORLDS } from '../../game/regions.js';
+import { NUZLOCKE_ASC } from '../../game/run.js';
 import { NET_PROTO, fnv } from '../../game/coop/wire.js';
 export { NET_PROTO };
 export const KEEPALIVE_MS = 30000, KEEPALIVE_HIDDEN_MS = 60000; // (same as net/coopnet.js)
@@ -135,7 +136,7 @@ export function createRoom(opts = {}) {
     do { code = Array.from({ length: 5 }, () => ALPHABET[Math.floor(Math.random() * ALPHABET.length)]).join(''); } while (rooms.some(r => r.code === code && r.status !== 'closed'));
     const _id = 'dev_' + randomNonce();
     put({
-      _id, code, status: 'lobby', host: self.email, ascension: opts.ascension ?? 0, world: opts.world ?? 'kanto', nuzlocke: !!opts.nuzlocke,
+      _id, code, status: 'lobby', host: self.email, ascension: opts.ascension ?? 0, world: opts.world ?? 'kanto', nuzlocke: !!opts.nuzlocke || (opts.ascension ?? 0) >= NUZLOCKE_ASC, // (always on at A8+, as the server)
       seed: String(Math.floor(Math.random() * 2 ** 31)), nextSeq: 1, createdAt: now, updatedAt: now, actions: [], checkpoints: [],
       members: [{ email: self.email, name: self.name, slot: 0, ready: false, starter: null, lastSeen: now, lastSeq: 0, joinedAt: now, maxPlayers: opts.maxPlayers ?? CLIENT_MAX }],
     });
@@ -186,6 +187,7 @@ export const configure = (roomId, opts = {}) => withRoom(roomId, (room, mine) =>
   if (opts.ascension !== undefined) room.ascension = Math.min(Math.max(0, Math.min(10, opts.ascension | 0)), coopAscCap(room.members));
   if (opts.world !== undefined) room.world = COOP_WORLDS.includes(opts.world) ? opts.world : 'spire';
   if (opts.nuzlocke !== undefined) room.nuzlocke = !!opts.nuzlocke;
+  if (room.ascension >= NUZLOCKE_ASC) room.nuzlocke = true; // (A8+: always NUZLOCKE, as convex/coop.ts configure)
   return { ascension: room.ascension, world: room.world, nuzlocke: !!room.nuzlocke };
 }, { write: true });
 export const startRoom = (roomId) => withRoom(roomId, (room, mine) => {
@@ -197,7 +199,7 @@ export const startRoom = (roomId) => withRoom(roomId, (room, mine) => {
   if (room.ascension > coopAscCap(ms)) throw new Error("No player has that ascension unlocked for their starter.");
   // slots are renumbered 0..n-1 in seat order (a lobby leaver can leave a gap); the init lists them in that order
   ms.forEach((m, i) => { m.slot = i; });
-  room.actions.push({ seq: 1, p: 0, json: JSON.stringify({ type: 'init', seed: room.seed, ascension: room.ascension, world: room.world, ...(room.nuzlocke ? { nuzlocke: true } : {}), starters: ms.map(m => m.starter), names: ms.map(m => m.name), nonce: 'init' }) });
+  room.actions.push({ seq: 1, p: 0, json: JSON.stringify({ type: 'init', seed: room.seed, ascension: room.ascension, world: room.world, ...(room.nuzlocke || room.ascension >= NUZLOCKE_ASC ? { nuzlocke: true } : {}), starters: ms.map(m => m.starter), names: ms.map(m => m.name), nonce: 'init' }) });
   room.status = 'playing'; room.nextSeq = 2;
   return { seq: 1 };
 }, { write: true });

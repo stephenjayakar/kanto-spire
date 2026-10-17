@@ -38,6 +38,11 @@ export const MAX_ASCENSION = ASCENSIONS.length - 1;
 // Nuzlocke rules from this ascension on (v0.0.6: it took the slot of Inflation, which moved into A4).
 // Co-op runs use them only in a NUZLOCKE room (v0.5.14: the host's lobby option, run.coopNuzlocke; see Run.nuzlocke).
 export const NUZLOCKE_ASC = 8;
+// From A8 NUZLOCKE is always on, with no way to switch it off: solo (Run.nuzlocke) and co-op (the lobby's switch is
+// locked ON and convex/coop.ts forces room.nuzlocke in create/configure/start). Below A8 it is co-op's optional switch.
+export const nuzLocked = (asc) => (asc | 0) >= NUZLOCKE_ASC;
+// (the co-op lobby switch's tooltip; at A8+ its title says LOCKED and the button is disabled)
+export const nuzSwitchTip = (isHost) => `Always on from A${NUZLOCKE_ASC}. Below A${NUZLOCKE_ASC}, ${isHost ? 'click to switch it' : 'the host picks it'}.`;
 // Level cap from this ascension on (v0.3.2: it replaced Weary): see Run.levelCap.
 export const LEVEL_CAP_ASC = 5;
 // The levels the A5+ cap sits above the act boss's top level in act i (0-based; TUNING.levelCapOffsets).
