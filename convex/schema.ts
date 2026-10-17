@@ -2,6 +2,12 @@ import { defineSchema, defineTable } from "convex/server";
 import { authTables } from "@convex-dev/auth/server";
 import { v } from "convex/values";
 
+// Co-op room worlds. Shared by the coopRooms table and coop.ts's mutation args so they can't drift again
+// (v0.6.0 added the SINNOH worlds to the args only, and every SINNOH-world room insert failed the schema).
+// v0.1.0 One Spire rooms: "spire" (KANTO + HOENN) / "spire_kanto" (KANTO only) / v0.1.1 "spire_johto" (all three); kanto / hoenn = rooms from before it
+// v0.6.0: "spire_ks" (KANTO + SINNOH), "spire_sinnoh" (KANTO + HOENN + SINNOH), "spire_all" (all four)
+export const COOP_WORLDS = ["kanto", "hoenn", "spire", "spire_kanto", "spire_johto", "spire_ks", "spire_sinnoh", "spire_all"] as const;
+export const coopWorldValidator = v.union(...COOP_WORLDS.map((w) => v.literal(w)));
 export const resultValidator = v.union(v.literal("win"), v.literal("lose"), v.literal("postgame"));
 
 export default defineSchema({
@@ -186,7 +192,7 @@ export default defineSchema({
     host: v.string(), // host email (lowercase); never sent to the partner
     ascension: v.number(),
     // v0.1.0: "spire" (KANTO + HOENN acts) / "spire_kanto" (a host without HOENN yet) / v0.1.1 "spire_johto" (all three); older rooms kanto / hoenn
-    world: v.union(v.literal("kanto"), v.literal("hoenn"), v.literal("spire"), v.literal("spire_kanto"), v.literal("spire_johto")),
+    world: coopWorldValidator, // COOP_WORLDS above
     seed: v.string(),
     nuzlocke: v.optional(v.boolean()), // co-op Nuzlocke room option (host's choice; absent = off); the init action carries it
     nextSeq: v.number(), // seq the next action gets

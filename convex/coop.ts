@@ -1,6 +1,7 @@
 import { internalMutation, mutation, query, MutationCtx, QueryCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { Doc, Id } from "./_generated/dataModel";
+import { coopWorldValidator } from "./schema";
 import { cleanRun, normEmail, playerFor, recordCoopRun, requireUser, runInput } from "./lib";
 
 // Online co-op for 2-4 players: rooms, members and the ordered (lockstep) action log.
@@ -41,10 +42,7 @@ type User = Doc<"users">;
 const HB_LEGACY = 5000; // older clients beat every 5 s and call a partner offline after 20 s without one
 const NET_MAX = 99;
 
-// v0.1.0 One Spire rooms: "spire" (KANTO + HOENN) / "spire_kanto" (KANTO only) / v0.1.1 "spire_johto" (all three); kanto / hoenn = rooms from before it
-// v0.6.0: "spire_ks" (KANTO + SINNOH), "spire_sinnoh" (KANTO + HOENN + SINNOH), "spire_all" (all four)
-const worldV = v.union(v.literal("kanto"), v.literal("hoenn"), v.literal("spire"), v.literal("spire_kanto"), v.literal("spire_johto"),
-  v.literal("spire_ks"), v.literal("spire_sinnoh"), v.literal("spire_all")); // v0.6.0: SINNOH pools (regions.js COOP_POOLS)
+const worldV = coopWorldValidator; // schema.ts COOP_WORLDS (one list for the table and the args)
 
 function randomFrom(abc: string, n: number) {
   let s = "";
