@@ -30,17 +30,31 @@ const root = path.join(__dirname, '..');
   if (!process.env.STATIC_ONLY) {
     const A = require('./coop_auth.cjs');
     console.log(`live coop:create against ${A.CONVEX_URL}`);
-    const token = await A.mintToken(A.P1_EMAIL);
+    A.ensureTestUser(A.P2_EMAIL, A.P2_NAME);
+    const [token, token2] = await Promise.all([A.mintToken(A.P1_EMAIL), A.mintToken(A.P2_EMAIL)]);
     const rooms = [];
+    // the ways a typed code can arrive: as shown, lowercase, with a separator (the server normalizes all three)
+    const typed = [(c) => c, (c) => c.toLowerCase(), (c) => `${c.slice(0, 2)}-${c.slice(2)}`];
+    let n = 0;
     try {
       for (const world of COOP_WORLDS) {
         for (const nuzlocke of [false, true]) {
+          let r;
           try {
-            const r = await A.callConvex(token, 'mutation', 'coop:create', { ascension: 10, world, nuzlocke });
+            r = await A.callConvex(token, 'mutation', 'coop:create', { ascension: 10, world, nuzlocke });
             rooms.push(r.roomId);
             const v = await A.callConvex(token, 'query', 'coop:room', { roomId: r.roomId });
             ok(v.room.world === world && v.room.status === 'lobby', `coop:create world=${world} nuzlocke=${nuzlocke} -> ${r.code}`);
-          } catch (e) { ok(false, `coop:create world=${world} nuzlocke=${nuzlocke} (${e.message})`); }
+          } catch (e) { ok(false, `coop:create world=${world} nuzlocke=${nuzlocke} (${e.message})`); continue; }
+          // join by typed code: P2 lands in the room as slot 1 and sees the room's settings
+          const code = typed[n++ % typed.length](r.code);
+          try {
+            const j = await A.callConvex(token2, 'mutation', 'coop:join', { code, maxPlayers: 4 });
+            const v2 = await A.callConvex(token2, 'query', 'coop:room', { roomId: j.roomId });
+            const v1 = await A.callConvex(token, 'query', 'coop:room', { roomId: r.roomId });
+            ok(j.roomId === r.roomId && j.slot === 1 && v2.me === 1 && !v2.isHost && v2.room.world === world && v1.members.length === 2,
+              `coop:join "${code}" (world=${world}) -> slot ${j.slot}, host sees ${v1.members.length} members`);
+          } catch (e) { ok(false, `coop:join "${code}" (world=${world}) (${e.message})`); }
         }
       }
     } finally {
